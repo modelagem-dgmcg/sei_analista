@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1a1f24">
+  <meta name="description" content="Bancada digital de análise de processos SEI.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="SEI Analista">
+  <title>SEI Analista</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/mascote-analista.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/mascote-analista.png">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <link rel="stylesheet" href="style.css">
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <!-- Biblioteca de Criptografia para rodar localmente sem erro -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+</head>
+<body>
+  <div id="login-screen">
+    <div class="login-box">
+      <div class="login-header"><h1>SEI <span>Analista</span></h1></div>
+      <div class="form-group"><label style="color: #495057;">Login Institucional</label><input type="text" id="login-usuario" placeholder="nome.sobrenome"></div>
+      <div class="form-group"><label style="color: #495057;">Senha</label><input type="password" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter') fazerLogin()"></div>
+      <button class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem; margin-top: 10px;" onclick="fazerLogin()">
+        <i class="ti ti-login-2"></i> Acessar Bancada
+      </button>
+      <div id="login-error" class="alert alert-danger hidden" style="margin-top: 15px; text-align: center;"></div>
+    </div>
+  </div>
+
+  <div id="app" class="hidden">
+    <aside id="sidebar">
+      <div class="sidebar-header"><h1>SEI <span>Analista</span></h1></div>
+      <div class="user-info">
+        <strong id="sidebar-nome">Nome do Analista</strong>
+        <span id="sidebar-gerencia" style="display:block; margin-bottom:5px;">Setor / Gerência</span>
+        <span id="sidebar-email" style="font-size:0.75rem;">usuario@pe.gov.br</span>
+      </div>
+
+      <nav>
+        <a href="#" id="nav-entrada" class="active" onclick="showView('dashboard','entrada'); return false;">
+          <i class="ti ti-inbox"></i> Caixa de Entrada
+          <span id="badge-entrada" style="float:right; background:rgba(255,255,255,0.15); padding:1px 7px; border-radius:10px; font-size:0.72rem;"></span>
+        </a>
+        <a href="#" id="nav-andamento" onclick="showView('dashboard','andamento'); return false;">
+          <i class="ti ti-loader"></i> Em Andamento
+          <span id="badge-andamento" style="float:right; background:rgba(255,255,255,0.15); padding:1px 7px; border-radius:10px; font-size:0.72rem;"></span>
+        </a>
+        <a href="#" id="nav-concluidos" onclick="showView('dashboard','concluidos'); return false;">
+          <i class="ti ti-archive"></i> Concluídos
+        </a>
+        <a href="#" id="nav-novo" onclick="showView('novo'); return false;" style="margin-top:10px; border-top:1px solid rgba(255,255,255,0.1); padding-top:12px;">
+          <i class="ti ti-file-import"></i> Importar Processo
+        </a>
+      </nav>
+
+      <!-- A caixa flutuante de "Encaminhados" é injetada aqui pelo app.js (função
+           atualizarContagensSidebar) — só aparece quando há algo pra acompanhar,
+           e some sozinha quando não houver nada. Não precisa de HTML fixo. -->
+
+      <!-- "Motor de IA" fica separado da navegação do dia a dia — configurado uma
+           única vez, não precisa competir por atenção com o resto do menu. -->
+      <div style="margin-top:auto; padding:0 16px;">
+        <a href="#" id="nav-config" onclick="showView('config'); return false;" style="display:flex; align-items:center; gap:8px; padding:8px 0; font-size:0.8rem; opacity:0.7; text-decoration:none; color:inherit; border-top:1px solid rgba(255,255,255,0.1);">
+          <i class="ti ti-cpu"></i> Motor de IA
+        </a>
+      </div>
+
+      <div class="ai-status"><div id="ai-dot" class="ai-dot off"></div><span id="ai-status-txt">Verificando IA...</span></div>
+    </aside>
+
+    <main id="main-content">
+      <header>
+        <h2 id="page-title">Caixa de Entrada</h2>
+        <button class="btn btn-secondary btn-sm" onclick="logout()"><i class="ti ti-logout"></i> Sair</button>
+      </header>
+      <section id="content"></section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+  <script>
+    // O aplicativo continua funcionando como página comum. O cache e a instalação
+    // só são ativados quando ele é aberto por HTTP/HTTPS, nunca por file://.
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      window.addEventListener('load', () => navigator.serviceWorker.register('./service-worker.js'));
+    }
+  </script>
+</body>
+</html>

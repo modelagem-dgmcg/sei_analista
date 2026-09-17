@@ -1,0 +1,19 @@
+{
+  "name": "SEI Analista",
+  "short_name": "SEI Analista",
+  "description": "Bancada digital de análise de processos SEI.",
+  "lang": "pt-BR",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f1f3f5",
+  "theme_color": "#1a1f24",
+  "icons": [
+    {
+      "src": "icons/mascote-analista.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
