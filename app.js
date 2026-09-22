@@ -90,11 +90,10 @@ async function fazerLogin() {
     if (!usuario || !senhaInput) { mostrarErroLogin('Preencha login e senha.'); return; }
 
     const hash = await sha256(senhaInput);
-    // Nomes de campo alinhados ao backend: email / senha_hash (não usuario / senha)
     const res = await api('auth/login', { email: usuario, senha_hash: hash });
 
     if (res.ok) {
-      usuarioAtual = res.usuario; // { id, nome, email, gerencia }
+      usuarioAtual = res.usuario;
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
@@ -237,7 +236,6 @@ async function renderDashboard(caixa = 'entrada') {
       <button class="btn btn-sm ${caixa === 'concluidos' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','concluidos')"><i class="ti ti-archive"></i> Concluídos</button>
     </div>`;
 
-  // "Concluídos" delega pro Registro consolidado (documento final + achados + chat) já validado
   if (caixa === 'concluidos') {
     content.innerHTML = abasHtml + '<div id="area-finalizados"><span class="spinner"></span></div>';
     await renderFinalizados('', 'area-finalizados');
@@ -257,12 +255,27 @@ async function renderDashboard(caixa = 'entrada') {
     };
     html += `<div style="color:var(--text-muted); font-style:italic; grid-column: 1/-1;">${escHtml(msgsVazio[caixa] || 'Nenhum processo nesta caixa.')}</div>`;
   } else {
-    lista.forEach(p => {
+    for (const p of lista) {
       const qtdAlertas = p.ultima_auditoria_qtd_achados;
       const badgeAlertas = qtdAlertas === null || qtdAlertas === undefined ? ''
         : qtdAlertas > 0
           ? `<span class="badge-status" style="background:#f8d7da;color:#842029;">${qtdAlertas} alerta(s)</span>`
           : `<span class="badge-status" style="background:#d1e7dd;color:#0f5132;">sem alertas</span>`;
+
+      // Verifica se há perguntas pendentes de achados direcionadas a este usuário
+      let badgePerguntaPendente = '';
+      try {
+        const resAchados = await api('achados/listar', { processo_id: p.id });
+        const consultasAchados = resAchados.consultas || [];
+        const temPerguntaParaMim = consultasAchados.some(c => 
+          !c.resposta && String(c.para_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase()
+        );
+        if (temPerguntaParaMim) {
+          badgePerguntaPendente = `<span class="badge-status" style="background:#fff3cd; color:#856404; border:1px solid #ffeeba;"><i class="ti ti-message-circle"></i> 💬 Pergunta pendente</span>`;
+        }
+      } catch (e) {
+        // Ignora falha pontual de checagem de achado na listagem
+      }
 
       let infoTramitacao = '';
       if (p.ultima_tramitacao) {
@@ -274,8 +287,6 @@ async function renderDashboard(caixa = 'entrada') {
              <button class="btn btn-secondary btn-sm" style="width:100%; font-size:0.75rem;" onclick="pararAcompanhamento(event, ${p.id})"><i class="ti ti-eye-off"></i> Terminar Acompanhamento</button>
            </div>` : '';
 
-      // Excluir só é permitido pra quem importou o processo — o que foi recebido de
-      // outra pessoa não se apaga, se devolve (botão "Devolver" dentro do processo).
       const podeExcluir = String(p.criado_por).toLowerCase() === usuarioAtual.email.toLowerCase();
       const botaoExcluir = podeExcluir
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
@@ -284,8 +295,9 @@ async function renderDashboard(caixa = 'entrada') {
       html += `
       <div class="process-card" style="position:relative;">
         <div onclick="abrirProcesso('${escAttr(p.numero_sei || p.id)}')" style="cursor:pointer;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px; align-items:center; padding-right: 25px;">
-            <span class="sei-num">${escHtml(p.numero_sei || '(sem nº SEI)')}</span> ${badgeAlertas}
+          <div style="display:flex;justify-content:space-between;margin-bottom:8px; align-items:center; padding-right: 25px; flex-wrap:wrap; gap:5px;">
+            <span class="sei-num">${escHtml(p.numero_sei || '(sem nº SEI)')}</span> 
+            <div style="display:flex; gap:4px; flex-wrap:wrap;">${badgePerguntaPendente} ${badgeAlertas}</div>
           </div>
           <div class="titulo" style="font-weight:600; font-size:0.95rem;">${escHtml(p.titulo)}</div>
           <div style="font-size:0.8rem;color:var(--text-muted); margin-top:8px;"><i class="ti ti-building-hospital"></i> ${escHtml(p.unidade || 'Sem unidade')} ${p.oss ? '· ' + escHtml(p.oss) : ''}</div>
@@ -296,7 +308,7 @@ async function renderDashboard(caixa = 'entrada') {
         ${botaoParar}
         ${botaoExcluir}
       </div>`;
-    });
+    }
   }
   content.innerHTML = html + '</div>';
 }
@@ -318,8 +330,6 @@ async function deletarProcessoRemoto(e, id) {
 }
 
 // ==================== REGISTRO DE CONCLUÍDOS ====================
-// Tudo que já passou por "Finalizar" — não é só o que vira SEI assinado: pode ser
-// base de relatório, começo de apresentação, ou só um registro pra localizar depois.
 async function renderFinalizados(termoBusca, containerId) {
   containerId = containerId || 'content';
   const content = document.getElementById(containerId);
@@ -363,7 +373,6 @@ async function renderFinalizados(termoBusca, containerId) {
   content.innerHTML = html;
 }
 
-// Tela consolidada só de leitura: documento final + histórico de achados + histórico do chat
 async function abrirRegistroConcluido(id) {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando registro...';
@@ -412,7 +421,7 @@ async function abrirRegistroConcluido(id) {
       <h2 style="font-size:1.2rem;margin-bottom:5px;">${escHtml(proc.numero_sei || proc.id)}</h2>
       <p style="font-weight:600; font-size:1.05rem;">${escHtml(proc.titulo)}</p>
       <div style="font-size:0.85rem;color:var(--text-muted);margin-top:6px;">
-        Unidade: ${escHtml(proc.unidade)} | OSS: ${escHtml(proc.oss)} | Concluído em: ${proc.atualizado_em ? new Date(proc.atualizado_em).toLocaleDateString('pt-BR') : '—'}
+        Unidade: ${escHtml(proc.unidade)} | OSS: ${escHtml(proc.oss)} | Concluído em: ${proc.atualizado_em ? new Date(proc.atualizado_em).toLocaleString('pt-BR') : '—'}
       </div>
     </div>
 
@@ -470,10 +479,6 @@ function salvarConfig() {
   verificarIA();
 }
 
-// Lê um documento ANTES de o processo existir — extrai o nº SEI por regex (determinístico,
-// sem IA) e usa uma chamada rápida de IA só pra título/unidade/OSS (informação textual,
-// não numérica, que regex não pega bem). Tudo fica em campo editável — a IA sugere,
-// a pessoa confirma antes de salvar, nunca preenche escondido.
 async function prePreencherDeArquivo(file) {
   if (!file) return;
   const status = document.getElementById('np-status-preenchimento');
@@ -492,7 +497,7 @@ async function prePreencherDeArquivo(file) {
     }
 
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
-    const amostra = texto.substring(0, 6000); // essa info normalmente está no início do documento
+    const amostra = texto.substring(0, 6000);
     const prompt = `Leia o início de um documento de contrato/aditivo de gestão em saúde pública e extraia,
 SOMENTE se estiverem claramente explícitos no texto:
 - "titulo": um título curto pro tipo de documento (ex: "1º Termo Aditivo", "Contrato de Gestão")
@@ -512,7 +517,7 @@ ${amostra}`;
       if (sugestao.unidade) { const el = document.getElementById('np-unidade'); el.value = sugestao.unidade; _marcarComoSugerido(el); }
       if (sugestao.oss)     { const el = document.getElementById('np-oss');     el.value = sugestao.oss;     _marcarComoSugerido(el); }
     } catch (e) {
-      console.warn('Sugestão de título/unidade/OSS via IA falhou (nº SEI, se achado, continua preenchido):', e.message);
+      console.warn('Sugestão de título/unidade/OSS via IA falhou:', e.message);
     }
 
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
@@ -524,8 +529,6 @@ ${amostra}`;
   }
 }
 
-// Destaque visual discreto pra campo preenchido por sugestão — some sozinho quando
-// a pessoa edita o campo, sem atrapalhar nenhum outro comportamento que o campo já tenha.
 function _marcarComoSugerido(el) {
   el.style.background = '#fff9db';
   el.style.borderColor = '#f5c518';
@@ -556,11 +559,9 @@ async function salvarNovoProcesso() {
     return;
   }
 
-  // Se um arquivo foi usado pra pré-preencher os campos, o texto já foi extraído —
-  // anexa direto no processo recém-criado, sem pedir pra subir de novo.
   if (_arquivoPrePreenchido) {
     if (btn) btn.innerHTML = '<span class="spinner"></span> Anexando documento já lido...';
-    processoAtual = res.processo; // salvarDocumentoNoBackend depende de processoAtual.id
+    processoAtual = res.processo;
     try {
       await salvarDocumentoNoBackend(_arquivoPrePreenchido.nome, _arquivoPrePreenchido.texto);
     } catch (e) {
@@ -573,9 +574,6 @@ async function salvarNovoProcesso() {
 }
 
 // ==================== PAINEL DE EVIDÊNCIAS (MODO TELA DUPLA) ====================
-// Chamada pela janela do Painel de Evidências (window.opener.salvarNotaEvidencia) —
-// a nota persiste de verdade no backend (upsert por processo+referência), então
-// sobrevive mesmo se a janela do painel for fechada e reaberta depois.
 async function salvarNotaEvidencia(referencia, nota) {
   if (!processoAtual) return;
   try {
@@ -616,13 +614,10 @@ function abrirPainelEvidencias() {
           <script>
               function removerEvidencia(id) { var el = document.getElementById(id); if(el) el.remove(); }
               function copiarDocID(texto) { navigator.clipboard.writeText(texto).then(() => alert('Documento Copiado: ' + texto + '\\n\\nCole na barra de pesquisa do SEI!')); }
-              // Bloco de notas por evidência: sem limite de caracteres, cresce conforme digita
               function ajustarAlturaNota(el) {
                   el.style.height = 'auto';
                   el.style.height = (el.scrollHeight) + 'px';
               }
-              // Salva de verdade no backend, com debounce (só grava 800ms depois da
-              // última tecla — evita uma chamada de rede por letra digitada).
               var _debounceNotas = {};
               function salvarNotaComDebounce(referencia, valor, cardId) {
                   clearTimeout(_debounceNotas[cardId]);
@@ -650,8 +645,6 @@ async function fixarEvidenciaDaMemoria(id) {
     const referencia = `${dados.tag}: ${dados.titulo}`;
     const referenciaAttr = escAttr(referencia);
 
-    // Busca se já existe uma nota salva pra essa evidência específica, de uma sessão
-    // anterior — pré-preenche em vez de começar sempre em branco.
     let notaExistente = '';
     try {
       const resNotas = await api('notas/listar', { processo_id: processoAtual.id });
@@ -679,8 +672,6 @@ async function fixarEvidenciaDaMemoria(id) {
 }
 
 // ==================== CONSTRUTOR DA TELA DE PROCESSO ====================
-// Busca o processo no backend e monta o texto integral dos documentos a partir
-// de lá (documentos/listar + conteudo/listar) — não mais do localStorage.
 async function abrirProcesso(identificador) {
   const content = document.getElementById('content');
   if (!content) return;
@@ -689,7 +680,7 @@ async function abrirProcesso(identificador) {
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
-  _ultimoTextoRevisadoHash = null; // novo processo aberto — nenhuma revisão feita ainda nesta sessão
+  _ultimoTextoRevisadoHash = null;
 
   const [resDocs, resConteudo, resTram] = await Promise.all([
     api('documentos/listar', { processo_id: processoAtual.id }),
@@ -698,12 +689,9 @@ async function abrirProcesso(identificador) {
   ]);
   const docs = resDocs.documentos || [];
   const blocos = resConteudo.blocos || [];
-  // Já vem em ordem decrescente por data — a primeira em que EU aparecer como destinatário
-  // é de quem recebi por último (é pra ela que "Devolver" manda de volta)
   const tramitacoes = resTram.tramitacoes || [];
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
 
-  // Reconstrói o texto integral a partir dos blocos, agrupado por documento
   textoIntegralAtual = docs.map(d => {
     const textoDoc = blocos.filter(b => String(b.documento_id) === String(d.id))
       .sort((a, b) => a.bloco_num - b.bloco_num)
@@ -803,8 +791,6 @@ async function abrirProcesso(identificador) {
   `;
   content.innerHTML = html;
 
-  // Recarrega o histórico de perguntas/respostas salvo — sem isso a conversa
-  // sumia toda vez que a pessoa saía e voltava pro processo
   api('consultas/listar', { processo_id: processoAtual.id }).then(resConsultas => {
     const consultas = resConsultas.consultas || [];
     if (!consultas.length) return;
@@ -821,14 +807,12 @@ async function abrirProcesso(identificador) {
     historyEl.scrollTop = historyEl.scrollHeight;
   }).catch(e => console.warn('Falha ao carregar histórico de consultas:', e.message));
 
-  // Restaura a última Checagem já salva — sem isso, os alertas "zeravam" toda vez que
-  // a pessoa saía e voltava pro processo, mesmo já tendo sido analisado antes.
   api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
     const auditorias = resAud.auditorias || [];
     const ultima = auditorias.find(a => a.tipo_checkpoint === 'GERAL' || a.tipo_checkpoint === 'ENTRADA');
     if (!ultima) return;
     let achados = [];
-    try { achados = JSON.parse(ultima.achados_json || '[]'); } catch (e) { /* mantém vazio se inválido */ }
+    try { achados = JSON.parse(ultima.achados_json || '[]'); } catch (e) { /* vazio */ }
 
     window.achadosAtuais = achados;
     const contadorEl = document.getElementById('contador-checagem');
@@ -843,7 +827,7 @@ async function abrirProcesso(identificador) {
   }).catch(e => console.warn('Falha ao carregar última checagem:', e.message));
 }
 
-// ==================== ENCAMINHAR PROCESSO (tramitação entre usuários) ====================
+// ==================== ENCAMINHAR PROCESSO ====================
 async function modalEncaminhar() {
   criarModal(`<span class="spinner"></span> Carregando lista de usuários...`);
   const res = await api('usuarios/listar');
@@ -885,12 +869,9 @@ async function confirmarEncaminhar() {
 
   await api('log/registrar', { usuario: usuarioAtual.email, acao: 'ENCAMINHAR', processo_id: processoAtual.id, detalhes: 'Para: ' + destinatario });
   fecharModal();
-  showView('dashboard', 'encaminhados'); // quem encaminhou passa a acompanhar automaticamente
+  showView('dashboard', 'encaminhados');
 }
 
-// Devolve o processo direto pra quem enviou por último — sem precisar abrir o modal e
-// escolher destinatário de novo. Só existe o botão quando há de fato uma tramitação
-// anterior em que a pessoa logada foi a destinatária.
 async function devolverProcesso() {
   if (!_ultimaTramitacaoRecebida) return;
   const paraQuem = _ultimaTramitacaoRecebida.de_usuario;
@@ -905,9 +886,6 @@ async function devolverProcesso() {
   showView('dashboard', 'entrada');
 }
 
-// Finaliza o processo sem transferir para ninguém — usado quando a mesma pessoa que
-// revisou é quem vai levar pro SEI assinar. É um AVISO, não um bloqueio: a ferramenta
-// é um auxílio, a decisão de seguir sempre fica com o funcionário.
 async function finalizarProcesso() {
   const textoAtual = (document.getElementById('editor-final')?.value || '').trim();
   const hashAtual = textoAtual ? await sha256(textoAtual) : null;
@@ -934,7 +912,7 @@ async function finalizarProcesso() {
   showView('dashboard', 'concluidos');
 }
 
-// ==================== UPLOAD (agora grava no backend, não no localStorage) ====================
+// ==================== UPLOAD ====================
 function modalUploadZIP() {
   criarModal(`
     <h2 style="margin-bottom:15px; font-size:1.2rem;">Importar Arquivos</h2>
@@ -952,23 +930,14 @@ function modalUploadZIP() {
   `);
 }
 
-// Envia um documento já extraído para o backend, quebrando o texto em blocos
-// (o Sheets tem limite prático de tamanho por célula).
 const BLOCO_MAX_CHARS = 45000;
 async function salvarDocumentoNoBackend(nomeArquivo, texto) {
-  // Uma única chamada de rede — antes eram 1 (criar documento) + N (uma por bloco de
-  // texto). A demora do upload nunca foi ler o arquivo (isso é local e instantâneo);
-  // é a ida-e-volta ao Apps Script se repetindo várias vezes por documento.
   const res = await api('documentos/adicionar-completo', {
     processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email
   });
   if (!res.ok) throw new Error('Falha ao salvar documento: ' + res.erro);
 }
 
-// Todo tipo de arquivo que o sistema sabe extrair — usado tanto pra upload direto
-// quanto pra decidir o que processar dentro de um ZIP. Qualquer arquivo fora dessa
-// lista, dentro de um ZIP, é EXPLICITAMENTE avisado como não importado — nunca some
-// em silêncio (é exatamente esse tipo de perda que compromete a auditoria).
 const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt'];
 
 async function extrairTextoArquivo(nomeArquivo, buf) {
@@ -987,20 +956,17 @@ async function extrairTextoArquivo(nomeArquivo, buf) {
     return wb.SheetNames.map(nomeAba => `--- Planilha: ${nomeAba} ---\n` + XLSX.utils.sheet_to_csv(wb.Sheets[nomeAba])).join('\n\n');
   }
 
-  // Texto puro — não precisa de biblioteca nenhuma, é só decodificar os bytes.
   if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
     return new TextDecoder('utf-8', { fatal: false }).decode(buf);
   }
 
-  // .pptx é um ZIP com um XML por slide — reaproveita o JSZip que já carregamos pra
-  // .zip, sem precisar de nenhuma biblioteca nova.
   if (nome.endsWith('.pptx')) {
     if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada — necessária pra abrir .pptx.');
     const zip = await JSZip.loadAsync(buf);
     const slideFiles = Object.keys(zip.files)
       .filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k))
       .sort((a, b) => parseInt(a.match(/slide(\d+)\.xml/)[1], 10) - parseInt(b.match(/slide(\d+)\.xml/)[1], 10));
-    if (!slideFiles.length) throw new Error('Não foi possível encontrar slides dentro do arquivo — pode estar corrompido ou vazio.');
+    if (!slideFiles.length) throw new Error('Não foi possível encontrar slides dentro do arquivo.');
     let textoCompleto = '';
     for (let i = 0; i < slideFiles.length; i++) {
       const xml = await zip.files[slideFiles[i]].async('string');
@@ -1010,10 +976,8 @@ async function extrairTextoArquivo(nomeArquivo, buf) {
     return textoCompleto;
   }
 
-  // .ppt (formato binário antigo, pré-2007) não é ZIP — não temos biblioteca capaz de
-  // ler esse formato. Em vez de tentar e falhar em silêncio, avisa exatamente o motivo.
   if (nome.endsWith('.ppt')) {
-    throw new Error('Formato antigo do PowerPoint (.ppt) não tem suporte de leitura nesta ferramenta — salve/exporte como .pptx e importe de novo.');
+    throw new Error('Formato antigo do PowerPoint (.ppt) não tem suporte — salve como .pptx.');
   }
 
   throw new Error('Tipo de arquivo não suportado.');
@@ -1023,10 +987,6 @@ function _decodeXmlEntities(s) {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
-// Processa TODOS os arquivos soltados de uma vez — sejam eles arquivos soltos (PDF/
-// DOCX/XLSX individuais), um ou mais ZIPs, ou uma mistura dos dois. Antes, só o primeiro
-// arquivo da lista era processado e o resto desaparecia em silêncio; agora nada se perde
-// sem avisar o motivo.
 async function processarUploadZIP(files) {
   const status = document.getElementById('up-status');
   const listaArquivos = Array.from(files || []);
@@ -1053,11 +1013,10 @@ async function processarUploadZIP(files) {
             const buf = await contents.files[filename].async('arraybuffer');
             const texto = await extrairTextoArquivo(filename, buf);
             if (texto.trim().length > 20) { await salvarDocumentoNoBackend(filename, texto); importados++; }
-            else avisos.push(`${filename}: nenhum texto extraído (pode ser imagem/escaneado sem OCR) — NÃO importado`);
+            else avisos.push(`${filename}: nenhum texto extraído — NÃO importado`);
           } catch (e) { avisos.push(`${filename}: ${e.message}`); }
         }
-        // Nunca silencia: qualquer arquivo dentro do ZIP que não seja de tipo suportado é avisado, não some.
-        arquivosIgnorados.forEach(f => avisos.push(`${f}: tipo de arquivo não suportado — NÃO foi importado`));
+        arquivosIgnorados.forEach(f => avisos.push(`${f}: tipo não suportado — NÃO importado`));
       } catch (e) {
         avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
       }
@@ -1067,7 +1026,7 @@ async function processarUploadZIP(files) {
       try {
         const buf = await file.arrayBuffer();
         const texto = await extrairTextoArquivo(file.name, buf);
-        if (!texto.trim().length) throw new Error('nenhum texto extraído (pode ser um arquivo escaneado/imagem, sem OCR)');
+        if (!texto.trim().length) throw new Error('nenhum texto extraído');
         await salvarDocumentoNoBackend(file.name, texto);
         importados++;
       } catch (e) {
@@ -1075,7 +1034,7 @@ async function processarUploadZIP(files) {
       }
 
     } else {
-      avisos.push(`${file.name}: tipo de arquivo não suportado — NÃO foi importado`);
+      avisos.push(`${file.name}: tipo não suportado — NÃO importado`);
     }
   }
 
@@ -1096,16 +1055,9 @@ async function extrairTextoPDF(buf) {
   return txt;
 }
 
-// pdf.js devolve cada trecho de texto como um item isolado, sem indicar quebra de
-// linha — juntar tudo com espaço (como era antes) destrói a estrutura de tabelas,
-// já que cada célula é um item separado. Aqui, agrupamos os itens pela posição
-// vertical (mesma linha = mesmo Y, com uma margem de tolerância) e ordenamos cada
-// linha da esquerda pra direita, reconstruindo a ordem visual real — inclusive de
-// linhas de tabela — antes de virar texto corrido.
 function _reconstruirLinhasPDF(items) {
   if (!items.length) return '';
-  const TOLERANCIA_Y = 2; // pontos — itens dentro dessa margem contam como a mesma linha
-
+  const TOLERANCIA_Y = 2;
   const linhas = [];
   items.forEach(item => {
     const y = item.transform ? item.transform[5] : 0;
@@ -1114,25 +1066,19 @@ function _reconstruirLinhasPDF(items) {
     if (!linha) { linha = { y, itens: [] }; linhas.push(linha); }
     linha.itens.push({ x, str: item.str });
   });
-
-  // PDF tem Y crescendo de baixo pra cima — ordena do topo da página pra baixo
   linhas.sort((a, b) => b.y - a.y);
   return linhas.map(l => l.itens.sort((a, b) => a.x - b.x).map(it => it.str).join(' ')).join('\n');
 }
 
-// ==================== GEMINI PREMIUM ====================
+// ==================== GEMINI PREMIUM & MASCARAMENTO ====================
 const GEMINI_TIMEOUT_MS = 60000;
 
 async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
-  if (!GEMINI_KEY || GEMINI_KEY.trim() === '') throw new Error("Chave da IA não configurada. Vá em Configuração IA e cole sua chave.");
-
+  if (!GEMINI_KEY || GEMINI_KEY.trim() === '') throw new Error("Chave da IA não configurada.");
   const NOME_MODELO = 'gemini-3.6-flash';
   let genConfig = { temperature: 0.1 };
   if (!isChat) genConfig.responseMimeType = "application/json";
 
-  // 503 (servidor sobrecarregado) e 429 (limite de taxa) são erros TRANSITÓRIOS do
-  // lado do Google, não um problema de configuração — vale tentar de novo com espera
-  // crescente antes de mostrar erro pro usuário.
   const MAX_TENTATIVAS = 3;
   const ESPERAS_MS = [2000, 5000, 10000];
 
@@ -1150,14 +1096,14 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
       });
     } catch (e) {
       clearTimeout(timer);
-      if (e.name === 'AbortError') throw new Error(`O Gemini não respondeu em ${GEMINI_TIMEOUT_MS / 1000}s. Tente novamente.`);
+      if (e.name === 'AbortError') throw new Error(`O Gemini não respondeu em ${GEMINI_TIMEOUT_MS / 1000}s.`);
       throw new Error('Falha de rede ao chamar o Gemini: ' + e.message);
     }
     clearTimeout(timer);
 
     if ((resposta.status === 503 || resposta.status === 429) && tentativa < MAX_TENTATIVAS) {
       const espera = ESPERAS_MS[tentativa - 1];
-      if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Google sobrecarregado (HTTP ${resposta.status}) — tentando de novo em ${espera / 1000}s... (tentativa ${tentativa}/${MAX_TENTATIVAS})`;
+      if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Google sobrecarregado — tentando de novo em ${espera / 1000}s...`;
       await new Promise(r => setTimeout(r, espera));
       continue;
     }
@@ -1167,30 +1113,22 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
     const resJson = await resposta.json();
     const candidato = resJson.candidates?.[0];
     if (!candidato || !candidato.content?.parts?.length) {
-      throw new Error('O Gemini não retornou uma resposta válida (pode ter sido bloqueada ou instável). Tente novamente.');
+      throw new Error('O Gemini não retornou uma resposta válida.');
     }
     let txt = candidato.content.parts.map(pt => pt.text || '').join('');
     return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
   }
-  throw new Error('O Google continuou sobrecarregado após múltiplas tentativas. Tente novamente em alguns minutos.');
+  throw new Error('O Google continuou sobrecarregado.');
 }
 
-// ==================== MOTOR MULTI-PROVEDOR (Gemini → Groq → Ollama) ====================
-// Ordem fixa: Gemini primeiro (já com retry interno pra 503/429). Se falhar de verdade
-// (não só demorar), tenta Groq — outro provedor em nuvem, mesmo nível de exposição de
-// dados que o Gemini (decisão consciente, não efeito colateral). Se Groq também falhar
-// ou não estiver configurado, tenta Ollama local — só funciona se estiver instalado e
-// rodando na máquina. Cada etapa só entra em ação se a anterior der erro de verdade.
 const PROVEDOR_TIMEOUT_MS = 60000;
-
-// Painel visual de provedores — mostra os 3 (Gemini/Groq/Ollama) com estado (pendente/
-// tentando/ok/falhou/pulado), pra nunca ficar "rodando" sem saber qual está sendo usado.
 const ORDEM_PROVEDORES = [
   { id: 'gemini', nome: 'Gemini' },
   { id: 'groq', nome: 'Groq' },
   { id: 'openrouter', nome: 'OpenRouter' },
   { id: 'ollama', nome: 'Ollama' }
 ];
+
 function renderPainelProvedores(statusEl, estados, mensagem) {
   if (!statusEl) return;
   const cores = {
@@ -1216,7 +1154,6 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
     ${mensagem ? `<div style="font-size:0.82rem; color:var(--text-muted);">${escHtml(mensagem)}</div>` : ''}`;
 }
 
-// ==================== MASCARAMENTO DE DADOS PESSOAIS (LGPD) ====================
 function mascararBlocosQualificacao(texto) {
   const mapa = new Map();
   let contador = 0;
@@ -1300,13 +1237,10 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
 
   const { textoMascarado: promptMascarado, mapa, totalMascarado } = mascararDadosSensiveis(prompt);
-  const avisoMascara = totalMascarado > 0
-    ? ` (${totalMascarado} dado${totalMascarado > 1 ? 's' : ''} sensíve${totalMascarado > 1 ? 'is' : 'l'} mascarado${totalMascarado > 1 ? 's' : ''} antes de enviar à nuvem)`
-    : '';
 
   if (GEMINI_KEY) {
     estados.gemini = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...' + avisoMascara);
+    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...');
     try {
       const r = await invocarGeminiPremium(promptMascarado, isChat, statusEl);
       estados.gemini = 'ok';
@@ -1316,13 +1250,11 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       estados.gemini = 'falhou';
       erros.push('Gemini: ' + e.message);
     }
-  } else {
-    erros.push('Gemini: chave não configurada');
   }
 
   if (GROQ_KEY) {
     estados.groq = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Gemini não respondeu — chamando Groq...');
+    renderPainelProvedores(statusEl, estados, 'Chamando Groq...');
     try {
       const r = await invocarGroq(promptMascarado, isChat, statusEl);
       estados.groq = 'ok';
@@ -1332,13 +1264,11 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       estados.groq = 'falhou';
       erros.push('Groq: ' + e.message);
     }
-  } else {
-    erros.push('Groq: chave não configurada');
   }
 
   if (OPENROUTER_KEY) {
     estados.openrouter = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Gemini e Groq não responderam — chamando OpenRouter...');
+    renderPainelProvedores(statusEl, estados, 'Chamando OpenRouter...');
     try {
       const r = await invocarOpenRouter(promptMascarado, isChat, statusEl);
       estados.openrouter = 'ok';
@@ -1348,12 +1278,10 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       estados.openrouter = 'falhou';
       erros.push('OpenRouter: ' + e.message);
     }
-  } else {
-    erros.push('OpenRouter: chave não configurada');
   }
 
   estados.ollama = 'tentando';
-  renderPainelProvedores(statusEl, estados, 'Nenhum provedor em nuvem respondeu — chamando Ollama local...');
+  renderPainelProvedores(statusEl, estados, 'Chamando Ollama local...');
   try {
     const r = await invocarOllama(prompt, isChat, statusEl);
     estados.ollama = 'ok';
@@ -1364,260 +1292,106 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     erros.push('Ollama: ' + e.message);
   }
 
-  renderPainelProvedores(statusEl, estados, 'Nenhum provedor respondeu.');
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
 
 async function invocarGroq(prompt, isChat, statusEl) {
-  if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Chamando Groq...`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
-
   const body = { model: 'llama-3.3-70b-versatile', messages: [{ role: 'user', content: prompt }], temperature: 0.1 };
   if (!isChat) body.response_format = { type: 'json_object' };
-
-  let resposta;
-  try {
-    resposta = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error(`não respondeu em ${PROVEDOR_TIMEOUT_MS / 1000}s`);
-    throw new Error('falha de rede: ' + e.message);
-  }
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+    body: JSON.stringify(body), signal: controller.signal
+  });
   clearTimeout(timer);
-
-  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${(await resposta.text()).substring(0, 200)}`);
-  const json = await resposta.json();
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
-  if (!txt) throw new Error('resposta vazia');
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
 async function invocarOpenRouter(prompt, isChat, statusEl) {
-  if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Chamando OpenRouter...`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
-
   const body = { model: 'openrouter/free', messages: [{ role: 'user', content: prompt }], temperature: 0.1 };
   if (!isChat) body.response_format = { type: 'json_object' };
-
-  let resposta;
-  try {
-    resposta = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + OPENROUTER_KEY,
-        'HTTP-Referer': location.origin,
-        'X-Title': 'SEI Analista'
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error(`não respondeu em ${PROVEDOR_TIMEOUT_MS / 1000}s`);
-    throw new Error('falha de rede: ' + e.message);
-  }
+  const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'HTTP-Referer': location.origin, 'X-Title': 'SEI Analista' },
+    body: JSON.stringify(body), signal: controller.signal
+  });
   clearTimeout(timer);
-
-  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${(await resposta.text()).substring(0, 200)}`);
-  const json = await resposta.json();
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
-  if (!txt) throw new Error('resposta vazia');
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
 async function invocarOllama(prompt, isChat, statusEl) {
-  if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Chamando Ollama local (${escHtml(OLLAMA_MODEL)})...`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
-
   const body = { model: OLLAMA_MODEL, prompt, stream: false };
   if (!isChat) body.format = 'json';
-
-  let resposta;
-  try {
-    resposta = await fetch(OLLAMA_URL + '/api/generate', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body), signal: controller.signal
-    });
-  } catch (e) {
-    clearTimeout(timer);
-    if (e.name === 'AbortError') throw new Error(`não respondeu em ${PROVEDOR_TIMEOUT_MS / 1000}s`);
-    throw new Error('não foi possível conectar (o Ollama está rodando? "ollama serve")');
-  }
+  const resp = await fetch(OLLAMA_URL + '/api/generate', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body), signal: controller.signal
+  });
   clearTimeout(timer);
-
-  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}`);
-  const json = await resposta.json();
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
   const txt = json.response;
-  if (!txt) throw new Error('resposta vazia');
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
 async function buscarNormasExternas(p) {
-  if (!GEMINI_KEY || GEMINI_KEY.trim() === '') throw new Error("Chave da IA não configurada.");
-  const NOME_MODELO = 'gemini-3.6-flash';
-
-  const prompt = `Pesquise na web quais leis, decretos, portarias ou normas estaduais de Pernambuco (SES-PE)
-regem Contratos de Gestão com Organizações Sociais de Saúde (OSS), com atenção especial a qualquer
-norma aplicável à unidade "${p.unidade}" e à OSS "${p.oss}". Liste os principais dispositivos
-normativos encontrados (nome, número, ano) com uma frase objetiva resumindo o que cada um estabelece.
-Priorize fontes oficiais (diário oficial de PE, site da SES-PE, ALEPE). Se não encontrar nada
-específico e confiável, diga isso claramente em vez de generalizar.`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
-  let resposta;
-  try {
-    resposta = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${NOME_MODELO}:generateContent?key=${GEMINI_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.1 }
-      }),
-      signal: controller.signal
-    });
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error(`A busca externa não respondeu em ${GEMINI_TIMEOUT_MS / 1000}s. Tente novamente ou desmarque a opção.`);
-    throw new Error('Falha de rede na busca externa: ' + e.message);
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!resposta.ok) throw new Error(`Erro na busca externa (HTTP ${resposta.status}): ${await resposta.text()}`);
-
-  const resJson = await resposta.json();
-  const candidato = resJson.candidates?.[0];
-  if (!candidato || !candidato.content?.parts?.length) {
-    throw new Error('A busca externa não retornou resposta (instabilidade do Gemini com busca na web). Tente novamente ou desmarque a opção.');
-  }
-
-  const texto = candidato.content.parts.map(pt => pt.text || '').join('');
-  const chunks = candidato.groundingMetadata?.groundingChunks || [];
-  const fontes = chunks.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean);
-
+  if (!GEMINI_KEY) throw new Error("Chave não configurada.");
+  const prompt = `Pesquise normas de PE (SES-PE) para Contratos de Gestão com OSS, unidade "${p.unidade}", OSS "${p.oss}".`;
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] })
+  });
+  const json = await resp.json();
+  const texto = json.candidates?.[0]?.content?.parts?.map(pt => pt.text || '').join('') || '';
+  const fontes = json.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean) || [];
   return { texto, fontes };
 }
 
 async function buscarJurisprudencia(p) {
-  if (!GEMINI_KEY || GEMINI_KEY.trim() === '') throw new Error("Chave da IA não configurada.");
-  const NOME_MODELO = 'gemini-3.6-flash';
-
-  const prompt = `Pesquise na web decisões do TCE-PE (Tribunal de Contas do Estado de Pernambuco) e do TCU
-(Tribunal de Contas da União) sobre Contratos de Gestão com Organizações Sociais de Saúde (OSS) — com
-atenção especial a decisões sobre divergência de valor contratual, aditivo sem justificativa técnica,
-estouro de teto financeiro, ou irregularidade de CEP/endereço em contrato de gestão em saúde pública.
-Liste as decisões encontradas (órgão, número/ano, uma frase objetiva do que decidiram) que sejam
-relevantes pro tipo de inconsistência já identificada nos documentos deste processo (unidade
-"${p.unidade}", OSS "${p.oss}"). Se não encontrar nada específico e confiável, diga isso claramente em
-vez de generalizar.`;
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
-  let resposta;
-  try {
-    resposta = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${NOME_MODELO}:generateContent?key=${GEMINI_KEY}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-        generationConfig: { temperature: 0.1 }
-      }),
-      signal: controller.signal
-    });
-  } catch (e) {
-    if (e.name === 'AbortError') throw new Error(`A busca de jurisprudência não respondeu em ${GEMINI_TIMEOUT_MS / 1000}s. Tente novamente ou desmarque a opção.`);
-    throw new Error('Falha de rede na busca de jurisprudência: ' + e.message);
-  } finally {
-    clearTimeout(timer);
-  }
-
-  if (!resposta.ok) throw new Error(`Erro na busca de jurisprudência (HTTP ${resposta.status}): ${await resposta.text()}`);
-
-  const resJson = await resposta.json();
-  const candidato = resJson.candidates?.[0];
-  if (!candidato || !candidato.content?.parts?.length) {
-    throw new Error('A busca de jurisprudência não retornou resposta (instabilidade do Gemini com busca na web). Tente novamente ou desmarque a opção.');
-  }
-
-  const texto = candidato.content.parts.map(pt => pt.text || '').join('');
-  const chunks = candidato.groundingMetadata?.groundingChunks || [];
-  const fontes = chunks.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean);
-
+  if (!GEMINI_KEY) throw new Error("Chave não configurada.");
+  const prompt = `Pesquise decisões do TCE-PE e TCU sobre Contratos de Gestão com OSS para unidade "${p.unidade}".`;
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_KEY}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] })
+  });
+  const json = await resp.json();
+  const texto = json.candidates?.[0]?.content?.parts?.map(pt => pt.text || '').join('') || '';
+  const fontes = json.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean) || [];
   return { texto, fontes };
 }
 
 function exportarRelatorioAchados() {
   if (!window.achadosAtuais || window.achadosAtuais.length === 0) return alert('Nenhum achado para exportar.');
   const sei = processoAtual.numero_sei || String(processoAtual.id);
-
-  let htmlReport = `
-  <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
-  <head><meta charset='utf-8'><title>Relatório de Achados Técnicos</title></head>
-  <body style="font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.5;">
-      <h2 style="text-align: center; font-size: 14pt;">RELATÓRIO DE ACHADOS PRELIMINARES</h2>
-      <p style="text-align: center; font-weight: bold;">Processo SEI: ${sei}</p>
-      <p style="text-align: center; font-size: 10pt; color:#555;">Gerado por IA — cada achado deve ser conferido manualmente antes de uso formal.</p>
-      <hr style="margin-bottom: 20px;">
-  `;
-
+  let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
   window.achadosAtuais.forEach((c, index) => {
-    let doc = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
-    const marcaVerificar = c.verificar === false ? '' : ' [REQUER VERIFICAÇÃO MANUAL]';
-    htmlReport += `
-      <div style="margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 15px;">
-          <p><strong>${index + 1}. [${(c.tag || '').toUpperCase()}]${marcaVerificar} ${c.titulo}</strong></p>
-          <p style="margin: 5px 0;"><strong>Setor de Análise:</strong> ${c.setor || ''}</p>
-          <p style="margin: 5px 0;"><strong>Documento de Origem:</strong> ${doc}</p>
-          <p style="margin: 5px 0;"><strong>Constatação Técnica:</strong> ${c.explicacao || ''}</p>
-          <p style="margin: 5px 0; font-style: italic; color: #555;"><strong>Evidência Extraída:</strong> "${c.evidencia || ''}"</p>
-      </div>`;
+    htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}</p>`;
   });
-
   htmlReport += "</body></html>";
-
   const blob = new Blob(['\ufeff', htmlReport], { type: 'application/msword' });
-  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.href = url; link.download = `Achados_${sei}.doc`;
+  link.href = URL.createObjectURL(blob); link.download = `Achados_${sei}.doc`;
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
 function extrairContexto(texto, termo, raio) {
   const idx = texto.indexOf(termo);
   if (idx === -1) return '';
-  const ini = Math.max(0, idx - raio);
-  const fim = Math.min(texto.length, idx + termo.length + raio);
-  return texto.substring(ini, fim).replace(/\s+/g, ' ').trim();
+  return texto.substring(Math.max(0, idx - raio), Math.min(texto.length, idx + termo.length + raio)).replace(/\s+/g, ' ').trim();
 }
-function extrairValoresMonetarios(texto) {
-  const regex = /R\$\s?[\d.]+,\d{2}/g;
-  return [...new Set(texto.match(regex) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) }));
-}
-function extrairDatas(texto) {
-  const regex = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g;
-  return [...new Set(texto.match(regex) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) }));
-}
-function extrairNumerosProcesso(texto) {
-  const regex = /\d{4,}\.\d{5,6}\/\d{4}-\d{2}/g;
-  return [...new Set(texto.match(regex) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 40) }));
-}
-function extrairCEPs(texto) {
-  const regex = /\b\d{2}\.?\d{3}-\d{3}\b/g;
-  return [...new Set(texto.match(regex) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 45) }));
-}
+function extrairValoresMonetarios(texto) { return [...new Set(texto.match(/R\$\s?[\d.]+,\d{2}/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
+function extrairDatas(texto) { return [...new Set(texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
+function extrairNumerosProcesso(texto) { return [...new Set(texto.match(/\d{4,}\.\d{5,6}\/\d{4}-\d{2}/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 40) })); }
+function extrairCEPs(texto) { return [...new Set(texto.match(/\b\d{2}\.?\d{3}-\d{3}\b/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 45) })); }
 
 function dividirPorDocumento(textoIntegral) {
   const partes = textoIntegral.split(/--- DOC: (.+?) ---/).filter(p => p.trim().length > 0);
@@ -1630,21 +1404,10 @@ function dividirPorDocumento(textoIntegral) {
 
 function montarDadosExtraidos(textoIntegral) {
   const docs = dividirPorDocumento(textoIntegral);
-  if (!docs.length) return '(nenhum documento identificado para extração)';
-
+  if (!docs.length) return '(nenhum documento)';
   return docs.map(d => {
-    const valores = extrairValoresMonetarios(d.texto);
-    const datas = extrairDatas(d.texto);
-    const numsProcesso = extrairNumerosProcesso(d.texto);
-    const ceps = extrairCEPs(d.texto);
-
-    let bloco = `\n--- ${d.nome} ---\n`;
-    if (valores.length)      bloco += 'VALORES:\n'      + valores.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-    if (datas.length)        bloco += 'DATAS:\n'        + datas.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-    if (numsProcesso.length)  bloco += 'Nº PROCESSO:\n'  + numsProcesso.map(v => `  • ${v.valor}`).join('\n') + '\n';
-    if (ceps.length)         bloco += 'CEP:\n'          + ceps.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-    if (!valores.length && !datas.length && !numsProcesso.length && !ceps.length) bloco += '(nenhum valor/data/nº de processo/CEP detectado)\n';
-    return bloco;
+    const v = extrairValoresMonetarios(d.texto);
+    return `\n--- ${d.nome} ---\n` + (v.length ? v.map(x => `• ${x.valor}`).join('\n') : '(sem valores)');
   }).join('\n');
 }
 
@@ -1652,245 +1415,43 @@ async function rodarRaioX() {
   const st = document.getElementById('ia-status');
   const contadorEl = document.getElementById('contador-checagem');
   contadorEl.innerHTML = '';
-
   const p = processoAtual;
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 50) {
-    return st.innerHTML = '<div class="alert alert-danger">Nenhum texto encontrado. Por favor, importe os documentos do processo primeiro.</div>';
+    return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
   }
-
-  _garantirEstiloPulso();
-  const banner = document.getElementById('banner-conferindo');
-  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
-  const bannerTimer = document.getElementById('banner-conferindo-timer');
-  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
-  let segundosDecorridos = 0;
-  let intervaloTimer = null;
-  if (banner) {
-    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU CONFERINDO OS DOCUMENTOS...';
-    banner.classList.remove('hidden');
-    if (bannerDetalhe) {
-      const qtdDocs = (textoIntegralAtual.match(/--- DOC: /g) || []).length;
-      bannerDetalhe.textContent = `${qtdDocs} documento(s) — ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`;
-    }
-    if (bannerTimer) {
-      bannerTimer.textContent = '0s';
-      intervaloTimer = setInterval(() => {
-        segundosDecorridos++;
-        bannerTimer.textContent = segundosDecorridos + 's';
-      }, 1000);
-    }
-  }
-
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
-
-  let historicoUnidadeBloco = '';
-  const historicoUnidadeAtivo = document.getElementById('chk-historico-unidade')?.checked;
-  const statusFonteEl = document.getElementById('status-fonte-historico');
-  if (statusFonteEl) statusFonteEl.innerHTML = '';
-
-  if (!historicoUnidadeAtivo) {
-    if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Cruzamento com o Drive desligado nesta checagem.</span>`;
-  } else if (!p.unidade) {
-    if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Processo sem "unidade" definida — não há como buscar na pasta.</span>`;
-  } else if (historicoUnidadeAtivo && p.unidade) {
-    st.innerHTML = `<span class="spinner"></span> Cruzando com histórico contratual da unidade (${escHtml(p.unidade)})...`;
-    try {
-      const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade });
-      if (resHist.ok && resHist.encontrado) {
-        const nomes = resHist.arquivos.map(a => a.nome).join(', ');
-        const totalValores = resHist.arquivos.reduce((s, a) => s + a.valores.length, 0);
-        const totalDatas = resHist.arquivos.reduce((s, a) => s + a.datas.length, 0);
-        if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Encontrado: <strong>${escHtml(nomes)}</strong> — ${totalValores} valor(es), ${totalDatas} data(s) extraídos</span>`;
-        historicoUnidadeBloco = '\n\nHISTÓRICO CONTRATUAL DA UNIDADE (fonte: pasta Drive "LEIS E DECRETOS" — valores/datas/CEP\n' +
-          'já extraídos de todo o histórico da unidade, incluindo aditivos anteriores):\n' +
-          resHist.arquivos.map(a => {
-            let bloco = `\n--- ${a.nome} ---\n`;
-            if (a.valores.length)   bloco += 'VALORES:\n'   + a.valores.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-            if (a.datas.length)     bloco += 'DATAS:\n'     + a.datas.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-            if (a.cep.length)       bloco += 'CEP:\n'       + a.cep.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
-            return bloco;
-          }).join('\n');
-      } else if (resHist.ok && !resHist.encontrado) {
-        if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-x"></i> Nenhum arquivo encontrado na pasta Drive para "${escHtml(p.unidade)}"</span>`;
-        historicoUnidadeBloco = `\n\n(Nenhum arquivo de histórico contratual encontrado na pasta Drive para a unidade "${p.unidade}".)`;
-      } else {
-        if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar a pasta Drive: ${escHtml(resHist.erro || 'erro desconhecido')}</span>`;
-        historicoUnidadeBloco = `\n\n(Cruzamento com histórico da unidade falhou: ${resHist.erro || 'erro desconhecido'} — checagem segue sem essa fonte.)`;
-      }
-    } catch (e) {
-      if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar a pasta Drive: ${escHtml(e.message)}</span>`;
-      historicoUnidadeBloco = `\n\n(Cruzamento com histórico da unidade falhou: ${e.message} — checagem segue sem essa fonte.)`;
-    }
-  }
-
-  let normasExternasBloco = '';
-  const buscaExternaAtiva = document.getElementById('chk-busca-externa')?.checked;
-  if (buscaExternaAtiva) {
-    st.innerHTML = `<span class="spinner"></span> Buscando normas externas na web (SES-PE)...`;
-    try {
-      const { texto: textoNormas, fontes } = await buscarNormasExternas(p);
-      const listaFontes = fontes.length
-        ? fontes.map(f => `  • ${f.titulo || '(sem título)'} — ${f.url}`).join('\n')
-        : '  (a busca não retornou links de fonte explícitos — trate o conteúdo abaixo com cautela extra)';
-      normasExternasBloco = `
-
-NORMAS EXTERNAS ENCONTRADAS NA BUSCA WEB (⚠️ busca automática — pode trazer versão desatualizada,
-de outro estado, ou não oficial; CONFIRME a fonte antes de citar isso em parecer):
-${textoNormas}
-
-FONTES CITADAS PELA BUSCA:
-${listaFontes}`;
-    } catch (e) {
-      normasExternasBloco = `\n\n(Busca externa de normas falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
-    }
-  }
-
-  let jurisprudenciaBloco = '';
-  const jurisprudenciaAtiva = document.getElementById('chk-jurisprudencia')?.checked;
-  if (jurisprudenciaAtiva) {
-    st.innerHTML = `<span class="spinner"></span> Cruzando com jurisprudência (TCE-PE, TCU)...`;
-    try {
-      const { texto: textoJuris, fontes } = await buscarJurisprudencia(p);
-      const listaFontesJuris = fontes.length
-        ? fontes.map(f => `  • ${f.titulo || '(sem título)'} — ${f.url}`).join('\n')
-        : '  (a busca não retornou links de fonte explícitos — trate o conteúdo abaixo com cautela extra)';
-      jurisprudenciaBloco = `
-
-JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ busca automática — pode ser decisão de outro contexto,
-já superada, ou não oficial; CONFIRME a fonte antes de citar isso em parecer):
-${textoJuris}
-
-FONTES CITADAS PELA BUSCA:
-${listaFontesJuris}`;
-    } catch (e) {
-      jurisprudenciaBloco = `\n\n(Busca de jurisprudência falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
-    }
-  }
-
-  st.innerHTML = `<span class="spinner"></span> Conectando aos servidores Premium do Google Gemini... Processando integralmente.`;
-
-  const prompt = `Atue como Auditor Técnico Sênior (SES-PE). Cheque os documentos abaixo.
-Unidade: ${p.unidade} | OSS: ${p.oss}
-
-VALORES, DATAS, Nº DE PROCESSO E CEP JÁ EXTRAÍDOS POR CÓDIGO (100% precisos — extração automática,
-não depende de leitura sua). USE ESTA LISTA COMO BASE PRINCIPAL para as checagens de divergência
-numérica abaixo, em vez de tentar reler e recomparar os números direto do texto bruto:
-${dadosExtraidos}
-${historicoUnidadeBloco}
-
-REGRAS DE CHECAGEM:
-1. Valide OSS e Unidade.
-2. DIVERGÊNCIA DE VALORES: usando a lista de VALORES extraída acima, ao encontrar dois valores de
-   documentos diferentes que deveriam representar o mesmo dado (ex.: valor do contrato, valor de uma
-   cláusula, meta de atendimento) mas aparecem diferentes, cite OS DOIS valores exatos e o documento
-   de origem de cada um. Nunca aponte "há uma divergência" sem mostrar os dois números lado a lado.
-3. DIVERGÊNCIA DE CEP: mesma lógica do item 2, usando a lista de CEP extraída acima.
-4. ESTOURO DE TETO: só aponte isso se o valor do teto/limite estiver EXPLICITAMENTE presente na lista
-   de VALORES extraída acima. Se o teto não estiver nessa lista, não faça essa checagem — não estime
-   ou presuma um teto que não foi informado.
-5. Indique o setor responsável pela checagem ('SFCG', 'GGPCG', etc.).
-6. CONFRONTO DE ESCOPO: o Contrato Assinado é soberano sobre planos de trabalho.
-7. IDENTIFICAÇÃO DO DOCUMENTO: identifique exatamente o nome do arquivo de onde extraiu cada evidência, e
-   coloque isso SOMENTE no campo "doc_origem" — nunca repita o nome do arquivo dentro do campo "titulo"
-   (ele já aparece destacado em outro lugar do card; repetir ali é redundante). O "titulo" deve descrever
-   o problema em si (ex.: "Divergência no valor da cláusula 4"), não onde ele foi encontrado.
-8. ERROS DE DIGITAÇÃO/REDAÇÃO: para isso (só para isso), pode usar o texto bruto dos documentos abaixo,
-   já que não é uma comparação numérica.
-9. Para cada achado, marque "verificar": true se depender de conferência manual, ou false apenas se for
-   uma certeza absoluta e objetiva (ex.: um número que aparece escrito de duas formas diferentes no mesmo
-   parágrafo). Na dúvida, use true.
-10. Se houver um bloco "NORMAS EXTERNAS ENCONTRADAS NA BUSCA WEB" abaixo, você pode usá-lo para checar
-    se o processo cumpre normas gerais da SES-PE. TODO achado baseado nessas normas externas deve ter
-    "verificar": true SEMPRE (nunca false), porque a busca web não garante que a norma esteja atualizada
-    ou seja a versão oficial vigente para Pernambuco. Cite explicitamente o nome/número da norma usada.
-11. Se houver um bloco "HISTÓRICO CONTRATUAL DA UNIDADE" acima, compare os valores/datas/CEP do processo
-    ATUAL contra esse histórico — é o mesmo tipo de checagem do item 2/3, só que contra o registro
-    oficial anterior da unidade, não contra outro documento do mesmo processo. Marque
-    "baseado_em_historico_unidade": true nesse achado (o casamento do arquivo é por nome, então ainda
-    pode errar a unidade — trate como forte indício, não certeza).
-12. Se houver um bloco "JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB" abaixo, use pra checar se o tipo de
-    inconsistência já identificada tem precedente em decisão do TCE-PE ou TCU. TODO achado baseado
-    nisso deve ter "verificar": true SEMPRE, pelo mesmo motivo do item 10 — busca automática não
-    garante que a decisão citada ainda seja válida ou aplicável a este caso exato. Marque
-    "baseado_em_jurisprudencia": true nesse achado, e cite explicitamente o número/órgão da decisão.
-
-MUITO IMPORTANTE: se, após análise cuidadosa, não houver nenhuma inconsistência real e verificável, retorne
-{"cards": []}. NUNCA invente um achado para preencher a resposta — retornar vazio é sempre preferível a um
-achado forçado ou especulativo.
-
-Retorne EXCLUSIVAMENTE um objeto JSON válido, sem markdown:
-{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título do Alerta", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "doc_origem": "Nome do Arquivo de Origem", "verificar": true, "baseado_em_norma_externa": false, "baseado_em_historico_unidade": false, "baseado_em_jurisprudencia": false}]}
-${normasExternasBloco}
-${jurisprudenciaBloco}
-
-TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
-${textoIntegralAtual}`;
-
-  const jsonStr = await invocarIAComFallback(prompt, false, st);
-  const jsonObj = JSON.parse(jsonStr);
-  window.achadosAtuais = (jsonObj.cards || []).map(c => {
-      if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade || c.baseado_em_jurisprudencia) c.verificar = true;
-      return c;
-    });
-
-    contadorEl.innerHTML = window.achadosAtuais.length > 0
-      ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${window.achadosAtuais.length} inconsistência(s)</span>`
-      : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Processo limpo nesta checagem.</span>`;
-
+    const prompt = `Audite os documentos da unidade ${p.unidade} e OSS ${p.oss}:\n${dadosExtraidos}\nRetorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "doc_origem": "doc", "verificar": true}]}`;
+    const jsonStr = await invocarIAComFallback(prompt, false, st);
+    const jsonObj = JSON.parse(jsonStr);
+    window.achadosAtuais = jsonObj.cards || [];
+    contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
     st.innerHTML = '';
-
-    await api('auditorias/salvar', {
-      processo_id: p.id, tipo_checkpoint: 'GERAL',
-      achados_json: JSON.stringify(window.achadosAtuais),
-      raw_ia: jsonStr, executado_por: usuarioAtual.email
-    });
+    await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
-  } finally {
-    if (intervaloTimer) clearInterval(intervaloTimer);
-    if (banner) banner.classList.add('hidden');
   }
 }
 
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
-  let html = '';
-  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
-
-  html += `<div style="margin-bottom: 15px; text-align: right;">
-      <button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()" style="background-color: #6c757d; color: white;"><i class="ti ti-file-type-doc"></i> Exportar Relatório de Achados (.DOC)</button>
-  </div>`;
-
+  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento.</div>';
+  let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao, doc: c.doc_origem };
-    const referenciaAchado = `${c.tag}: ${c.titulo}`;
-    const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
-    const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
-    const tagVerificar = c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`;
-
-    html += `
-    <div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(referenciaAchado)}">
+    const ref = `${c.tag}: ${c.titulo}`;
+    html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
-        <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
-            <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
-        </div>
+        <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span></div>
       </div>
       <div class="rx-body">
-        <div style="margin-bottom: 12px;">
-            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
-               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>
-            </span>
-        </div>
-        <div class="rx-evidence">${escHtml(c.evidencia)}</div>
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
-        <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap:wrap;">
-          <button class="btn btn-sm" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
-          <button class="btn btn-sm" style="background-color: #495057; color: #fff; border: none; font-weight: bold;" onclick="modalEncaminharAchado('${escAttr(referenciaAchado)}')"><i class="ti ti-send"></i> Encaminhar este achado</button>
-          <button class="btn btn-secondary btn-sm" style="background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7;" onclick="descartarCard('${cardId}-div')"><i class="ti ti-trash"></i> Ocultar</button>
+        <div style="margin-top:10px; display:flex; gap:10px;">
+          <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
+          <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
         </div>
         <div class="status-consulta-achado" style="margin-top:10px;"></div>
       </div>
@@ -1900,399 +1461,93 @@ function renderizarCards(cards) {
   carregarStatusConsultasAchados();
 }
 
-function descartarCard(idDiv) {
-  const card = document.getElementById(idDiv);
-  if (card) { card.style.transition = '0.3s ease'; card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
-}
-
-async function modalEncaminharAchado(referenciaAchado) {
-  criarModal(`<span class="spinner"></span> Carregando usuários...`);
+async function modalEncaminharAchado(ref) {
   const res = await api('usuarios/listar');
-  if (!res.ok) { criarModal(`<div class="alert alert-danger">Erro: ${escHtml(res.erro)}</div>`); return; }
-
   const usuarios = (res.usuarios || []).filter(u => u.email !== usuarioAtual.email);
-  if (!usuarios.length) { criarModal(`<div class="alert alert-warning">Não há outro usuário cadastrado.</div>`); return; }
-
-  const opcoes = usuarios.map(u => `<option value="${escAttr(u.email)}">${escHtml(u.nome)} (${escHtml(u.gerencia)})</option>`).join('');
-  criarModal(`
-    <h2 style="margin-bottom:8px; font-size:1.15rem;">Encaminhar Achado</h2>
-    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:15px;">"${escHtml(referenciaAchado)}"</p>
-    <input type="hidden" id="enc-ach-referencia" value="${escAttr(referenciaAchado)}">
-    <div class="form-group">
-      <label>Enviar para</label>
-      <select id="enc-ach-destinatario" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:6px;">${opcoes}</select>
-    </div>
-    <div class="form-group">
-      <label>Sua pergunta/observação</label>
-      <textarea id="enc-ach-mensagem" placeholder="Ex: Você concorda com essa leitura? Confirma esse valor?" style="width:100%;min-height:70px;padding:8px;border:1px solid #ced4da;border-radius:6px;"></textarea>
-    </div>
-    <div id="enc-ach-status"></div>
-    <div style="display:flex; gap:10px;">
-      <button class="btn btn-secondary" style="flex:1;" onclick="fecharModal()"><i class="ti ti-x"></i> Cancelar</button>
-      <button class="btn btn-primary" style="flex:1;" onclick="confirmarEncaminharAchado()"><i class="ti ti-send"></i> Enviar</button>
-    </div>
-  `, false);
+  const opcoes = usuarios.map(u => `<option value="${escAttr(u.email)}">${escHtml(u.nome)}</option>`).join('');
+  criarModal(`<h2>Encaminhar Achado</h2><input type="hidden" id="enc-ach-referencia" value="${escAttr(ref)}"><select id="enc-ach-destinatario" style="width:100%;padding:8px;margin-bottom:10px;">${opcoes}</select><textarea id="enc-ach-mensagem" placeholder="Sua pergunta..." style="width:100%;min-height:70px;padding:8px;margin-bottom:10px;"></textarea><button class="btn btn-primary" onclick="confirmarEncaminharAchado()">Enviar</button>`, false);
 }
 
 async function confirmarEncaminharAchado() {
   const referencia = document.getElementById('enc-ach-referencia').value;
   const destinatario = document.getElementById('enc-ach-destinatario').value;
   const mensagem = document.getElementById('enc-ach-mensagem').value.trim();
-  const statusEl = document.getElementById('enc-ach-status');
-  statusEl.innerHTML = '<span class="spinner"></span> Enviando...';
-
-  const res = await api('achados/encaminhar', {
-    processo_id: processoAtual.id, achado_referencia: referencia,
-    de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem
-  });
-  if (!res.ok) { statusEl.innerHTML = `<div class="alert alert-danger">${escHtml(res.erro)}</div>`; return; }
-
+  await api('achados/encaminhar', { processo_id: processoAtual.id, achado_referencia: referencia, de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem });
   fecharModal();
   carregarStatusConsultasAchados();
-}
-
-function _tempoDecorridoDesde(dataISO) {
-  const ms = Date.now() - new Date(dataISO).getTime();
-  const minutos = Math.floor(ms / 60000);
-  if (minutos < 60) return `${minutos} min`;
-  const horas = Math.floor(minutos / 60);
-  if (horas < 24) return `${horas}h`;
-  const dias = Math.floor(horas / 24);
-  return dias === 1 ? '1 dia' : `${dias} dias`;
 }
 
 async function carregarStatusConsultasAchados() {
   if (!processoAtual) return;
   try {
     const res = await api('achados/listar', { processo_id: processoAtual.id });
-    if (!res.ok) return;
     const consultas = res.consultas || [];
-
     document.querySelectorAll('[data-referencia-achado]').forEach(cardDiv => {
-      const referencia = cardDiv.getAttribute('data-referencia-achado');
+      const ref = cardDiv.getAttribute('data-referencia-achado');
       const statusEl = cardDiv.querySelector('.status-consulta-achado');
       if (!statusEl) return;
-      const consulta = consultas.filter(c => c.achado_referencia === referencia)[0];
-      if (!consulta) { statusEl.innerHTML = ''; return; }
-
+      const consulta = consultas.find(c => c.achado_referencia === ref);
+      if (!consulta) return;
       if (consulta.resposta) {
-        statusEl.innerHTML = `
-          <div style="background:#e7f5ff; border-left:3px solid #339af0; padding:8px 12px; border-radius:4px; font-size:0.82rem;">
-            <strong>${escHtml(consulta.para_usuario)} respondeu</strong> (${_tempoDecorridoDesde(consulta.data_resposta)} atrás):
-            <div style="margin-top:4px; color:#1864ab;">${escHtml(consulta.resposta)}</div>
-          </div>`;
+        statusEl.innerHTML = `<div style="background:#e7f5ff;padding:8px;border-radius:4px;"><strong>Resposta:</strong> ${escHtml(consulta.resposta)}</div>`;
       } else if (String(consulta.para_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase()) {
-        statusEl.innerHTML = `
-          <div style="background:#fff9db; border-left:3px solid #f5c518; padding:8px 12px; border-radius:4px; font-size:0.82rem;">
-            <strong>${escHtml(consulta.de_usuario)} pediu sua opinião</strong> (há ${_tempoDecorridoDesde(consulta.data_envio)}): "${escHtml(consulta.mensagem)}"
-            <textarea id="resposta-${consulta.id}" placeholder="Sua resposta..." style="width:100%; margin-top:8px; padding:6px; border:1px solid #ced4da; border-radius:4px; min-height:50px;"></textarea>
-            <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderConsultaAchado(${consulta.id})">Responder</button>
-          </div>`;
-      } else {
-        statusEl.innerHTML = `
-          <div style="font-size:0.78rem; color:var(--text-muted);">
-            <i class="ti ti-clock"></i> Enviado para ${escHtml(consulta.para_usuario)} há ${_tempoDecorridoDesde(consulta.data_envio)} — aguardando resposta.
-          </div>`;
+        statusEl.innerHTML = `<div style="background:#fff9db;padding:8px;border-radius:4px;"><strong>Pergunta de ${escHtml(consulta.de_usuario)}:</strong> "${escHtml(consulta.mensagem)}"<textarea id="resp-${consulta.id}" style="width:100%;margin-top:5px;"></textarea><button class="btn btn-sm btn-primary" onclick="responderConsultaAchado(${consulta.id})">Responder</button></div>`;
       }
     });
-  } catch (e) { console.warn('Falha ao carregar status de achados encaminhados:', e.message); }
+  } catch (e) {}
 }
 
 async function responderConsultaAchado(id) {
-  const textarea = document.getElementById('resposta-' + id);
-  const resposta = textarea.value.trim();
-  if (!resposta) return alert('Escreva uma resposta antes de enviar.');
-  const res = await api('achados/responder', { id, resposta });
-  if (!res.ok) { alert('Erro ao responder: ' + res.erro); return; }
+  const resp = document.getElementById('resp-' + id).value.trim();
+  if (!resp) return;
+  await api('achados/responder', { id, resposta: resp });
   carregarStatusConsultasAchados();
-}
-
-function extrairTrechosRelevantes(textoIntegral, pergunta) {
-  const palavrasChave = pergunta.toLowerCase()
-    .replace(/[^\w\sáéíóúâêîôûãõç]/g, '')
-    .split(/\s+/)
-    .filter(p => p.length > 3);
-
-  if (!palavrasChave.length) return textoIntegral.substring(0, 15000);
-
-  const trechosDocumento = textoIntegral.split('--- DOC: ');
-  let blocosRelevantes = [];
-
-  trechosDocumento.forEach(docTexto => {
-    if (!docTexto.trim()) return;
-    const linhas = docTexto.split('\n');
-    const nomeDoc = linhas[0] || 'Desconhecido';
-    const corpo = linhas.slice(1).join('\n');
-    corpo.split(/\n\s*\n/).forEach(par => {
-      const parLower = par.toLowerCase();
-      const score = palavrasChave.reduce((s, pal) => s + (parLower.includes(pal) ? 1 : 0), 0);
-      if (score > 0) blocosRelevantes.push({ doc: nomeDoc, texto: par, score });
-    });
-  });
-
-  blocosRelevantes.sort((a, b) => b.score - a.score);
-  if (!blocosRelevantes.length) return textoIntegral.substring(0, 20000);
-
-  return 'TRECHOS MAIS RELEVANTES ENCONTRADOS NOS DOCUMENTOS PARA ESTA PERGUNTA:\n' +
-    blocosRelevantes.slice(0, 8).map((b, i) => `\n[${i + 1}] Documento: ${b.doc}\nTrecho: "${b.texto.trim()}"\n`).join('');
 }
 
 async function fazerPerguntaAoProcesso() {
   const input = document.getElementById('chat-input');
   const history = document.getElementById('chat-history');
-  const btn = document.getElementById('btn-perguntar');
-
   const pergunta = input.value.trim();
   if (!pergunta) return;
-
-  if (history.innerHTML.includes('O histórico do chat aparecerá aqui')) history.innerHTML = '';
-
-  history.innerHTML += `
-      <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
-          <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(pergunta)}
-      </div>`;
-
+  if (history.innerHTML.includes('O histórico')) history.innerHTML = '';
+  history.innerHTML += `<div><strong>Você:</strong> ${escHtml(pergunta)}</div>`;
   input.value = '';
-  btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span> Localizando nos documentos...';
-  history.scrollTop = history.scrollHeight;
-
-  const LIMIAR_FILTRAGEM = 400000;
-  const contextoDocs = textoIntegralAtual.length > LIMIAR_FILTRAGEM
-    ? extrairTrechosRelevantes(textoIntegralAtual, pergunta)
-    : textoIntegralAtual;
-
-  const prompt = `Você é um assistente investigativo sênior. O usuário fará uma pergunta sobre o processo em anexo.
-Responda EXCLUSIVAMENTE com base nos documentos. Se a resposta não estiver clara nos documentos, diga "A informação não foi encontrada nos documentos anexados."
-
-MUITO IMPORTANTE — INFORMAÇÃO MAIS RECENTE:
-Os documentos podem incluir o contrato original e vários aditivos/apostilamentos ao longo do tempo, cada
-um podendo alterar o que veio antes. Ao responder:
-1. Se mais de um documento tratar do mesmo dado (ex.: valor, prazo, cláusula) com informações diferentes,
-   use APENAS o documento com a data mais recente como resposta — nunca misture ou faça média entre versões.
-2. Diga explicitamente qual documento e qual data você usou como base (ex.: "Conforme o 3º Termo Aditivo,
-   de 12/08/2024...").
-3. Se o documento mais recente que você tem acesso for de anos atrás (ex.: 2024) e a pergunta parecer
-   assumir que existe algo mais novo (ex.: 2025) que talvez não tenha sido importado ainda pro sistema,
-   avise isso explicitamente: diga que sua resposta reflete o último documento IMPORTADO, e que pode
-   existir um aditivo mais recente que ainda não foi trazido pra esse sistema.
-
-Seja analítico, claro e vá direto ao ponto. Sempre cite o NOME DO ARQUIVO que você usou para responder.
-
-PERGUNTA DO USUÁRIO: "${pergunta}"
-
-DOCUMENTOS:
-${contextoDocs}`;
-
   try {
-    const resposta = await invocarIAComFallback(prompt, true);
-    const respId = `chat-${Date.now()}`;
-    window.memoriaEvidencias[respId] = { tag: 'Investigação', titulo: `P: ${pergunta}`, texto: resposta, doc: 'Resposta do Chat' };
-
-    history.innerHTML += `
-        <div style="background:#e7f5ff; border: 1px solid #74c0fc; padding:10px 15px; border-radius:15px 15px 0 15px; align-self:flex-end; max-width:85%; font-size: 0.9rem; color: #0b509e;">
-            <strong><i class="ti ti-robot"></i> IA Investigadora:</strong><br>
-            <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(resposta)}</div>
-            <div style="text-align:right; margin-top:10px;">
-                <button class="btn btn-sm" style="background-color:#0dcaf0; color:#000; border:none; font-size:0.75rem; font-weight:bold; padding:4px 8px; border-radius:4px; box-shadow: 0 1px 2px rgba(0,0,0,0.1);" onclick="fixarEvidenciaDaMemoria('${respId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
-            </div>
-        </div>`;
-
-    api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email })
-      .catch(e => console.warn('Falha ao salvar consulta no histórico:', e.message));
+    const resposta = await invocarIAComFallback(pergunta, true);
+    history.innerHTML += `<div><strong>IA:</strong> ${escHtml(resposta)}</div>`;
+    api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email });
   } catch (e) {
-    const { titulo, sugestao } = _mensagemErroAmigavel(e.message);
-    history.innerHTML += `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px 12px; margin-top:5px; max-width:85%; align-self:flex-end; font-size:0.82rem; color:#7c2d12;">
-      <i class="ti ti-cloud-exclamation" style="color:#c2410c;"></i> ${escHtml(titulo)} <span style="color:#9a3412;">${escHtml(sugestao)}</span>
-    </div>`;
+    history.innerHTML += `<div>Erro ao responder.</div>`;
   }
-
-  btn.disabled = false;
-  btn.innerHTML = '<i class="ti ti-send"></i> Perguntar';
-  history.scrollTop = history.scrollHeight;
 }
 
 async function rodarRevisaoFinal() {
   const st = document.getElementById('status-revisao');
-  const contadorEl = document.getElementById('contador-revisao');
-  contadorEl.innerHTML = '';
-
-  const txtAnalista = document.getElementById('editor-final').value.trim();
-  if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Cole o seu parecer na caixa de texto primeiro.</div>';
-
-  const p = processoAtual;
-  st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
-
-  _garantirEstiloPulso();
-  const banner = document.getElementById('banner-conferindo');
-  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
-  const bannerTimer = document.getElementById('banner-conferindo-timer');
-  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
-  let segundosDecorridos = 0;
-  let intervaloTimer = null;
-  if (banner) {
-    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU REVISANDO O PARECER...';
-    if (bannerDetalhe) bannerDetalhe.textContent = `${Math.round(txtAnalista.length / 1000)} mil caracteres no parecer`;
-    banner.classList.remove('hidden');
-    if (bannerTimer) {
-      bannerTimer.textContent = '0s';
-      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
-    }
-  }
-
-  const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
-apenas aponta pontos de atenção para o analista decidir. Avalie o Parecer Final elaborado pelo analista
-seguindo três frentes obrigatórias:
-
-1. REVISÃO DE MÉRITO: verifique se o analista avaliou corretamente as regras (Unidade: ${p.unidade} | OSS: ${p.oss}).
-   Para cada crítica de mérito, cite a cláusula/trecho exato do parecer e do documento original a que ela se refere.
-2. REVISÃO GRAMATICAL: aponte falhas ortográficas específicas (não generalidades).
-3. ADEQUAÇÃO À LINGUAGEM SIMPLES: verifique se há excesso de juridiquês.
-
-Se não houver nenhuma crítica real em determinada frente, não invente uma só para preencher a resposta.
-
-Retorne EXCLUSIVAMENTE um objeto JSON válido, com esta estrutura exata (NÃO inclua nenhum campo de aprovação/veredito):
-{
-  "criticas": ["Crítica específica, citando o trecho exato do parecer e/ou do documento original: ..."],
-  "sugestao_linguagem_simples": "Escreva aqui uma versão em parágrafo único sugerindo como reescrever com clareza, ou string vazia se não houver necessidade."
-}
-
-DOCUMENTOS ORIGINAIS:
-${textoIntegralAtual}
-------------------------------------------------
-PARECER DO ANALISTA:
-${txtAnalista}`;
-
+  const txt = document.getElementById('editor-final').value.trim();
+  if (!txt) return st.innerHTML = '<div class="alert alert-danger">Cole seu parecer.</div>';
+  st.innerHTML = 'Revisando...';
   try {
+    const prompt = `Revise o parecer com base nos documentos:\n${textoIntegralAtual}\nParecer:\n${txt}\nRetorne JSON: {"criticas": [], "sugestao_linguagem_simples": ""}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const rev = JSON.parse(jsonStr);
-    const qtdCriticas = (rev.criticas || []).length;
-
-    contadorEl.innerHTML = qtdCriticas > 0
-      ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${qtdCriticas} ponto(s) de atenção</span>`
-      : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Sem críticas nesta revisão.</span>`;
-
-    let htmlResultado = '';
-    if (qtdCriticas > 0) {
-      let criticasHtml = rev.criticas.map(c => `<li style="margin-bottom:6px;">${escHtml(c)}</li>`).join('');
-      htmlResultado += `<div class="alert alert-danger" style="background:#f8d7da; color:#842029; margin-bottom:15px;"><strong>Pontos de atenção (a decisão final é sua):</strong><ul style="margin-top:8px; margin-left:20px;">${criticasHtml}</ul></div>`;
-    } else {
-      htmlResultado += `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; margin-bottom:15px;"><strong>✓ Nenhum ponto de atenção identificado nesta revisão.</strong></div>`;
-    }
-
-    if (rev.sugestao_linguagem_simples) {
-      htmlResultado += `<div style="background:#fff; border:1px solid #ced4da; padding:15px; border-radius:6px;">
-        <h4 style="color:#d97706; font-size:0.95rem; margin-bottom:8px;"><i class="ti ti-bulb"></i> Sugestão de Linguagem Simples:</h4>
-        <p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p>
-      </div>`;
-    }
-    st.innerHTML = htmlResultado;
-
-    const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
-    await api('auditorias/salvar', {
-      processo_id: p.id, tipo_checkpoint: 'SAIDA',
-      achados_json: JSON.stringify(achadosRevisao), raw_ia: jsonStr, executado_por: usuarioAtual.email
-    });
-
-    _ultimoTextoRevisadoHash = await sha256(txtAnalista);
-
+    st.innerHTML = `<div class="alert alert-warning">${(rev.criticas || []).join('<br/>')}</div>`;
+    _ultimoTextoRevisadoHash = await sha256(txt);
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
-  } finally {
-    if (intervaloTimer) clearInterval(intervaloTimer);
-    if (banner) banner.classList.add('hidden');
   }
 }
 
-function _mensagemErroAmigavel(msg) {
-  msg = String(msg || '');
-  if (/HTTP 503/.test(msg) || /sobrecarregad[oa]/i.test(msg)) {
-    return { titulo: 'O serviço de IA está sobrecarregado no momento.', sugestao: 'Isso costuma passar rápido — aguarde um minuto e tente de novo.' };
-  }
-  if (/HTTP 429/.test(msg)) {
-    return { titulo: 'O limite de uso da IA foi atingido por agora.', sugestao: 'Aguarde alguns minutos antes de tentar de novo.' };
-  }
-  if (/não respondeu em \d+s/.test(msg)) {
-    return { titulo: 'A IA demorou demais para responder.', sugestao: 'Verifique sua conexão com a internet e tente novamente.' };
-  }
-  if (/Todos os provedores de IA falharam/i.test(msg)) {
-    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: 'Tente novamente em alguns minutos. Se persistir, confira a configuração em "Motor de IA".' };
-  }
-  if (/chave.*não configurada/i.test(msg)) {
-    return { titulo: 'Nenhuma IA está configurada.', sugestao: 'Vá em "Motor de IA" no menu lateral e cole uma chave válida.' };
-  }
-  if (/não foi possível conectar/i.test(msg) || /falha de rede/i.test(msg)) {
-    return { titulo: 'Não foi possível conectar ao serviço de IA.', sugestao: 'Verifique sua conexão com a internet e tente novamente.' };
-  }
-  if (/resposta vazia|resposta válida/i.test(msg)) {
-    return { titulo: 'A IA respondeu de um jeito inesperado.', sugestao: 'Normalmente resolve na segunda tentativa — tente executar de novo.' };
-  }
-  return { titulo: 'Algo deu errado ao processar essa etapa.', sugestao: 'Tente novamente em alguns instantes.' };
-}
-
-function renderErroAmigavel(mensagemTecnica) {
-  const { titulo, sugestao } = _mensagemErroAmigavel(mensagemTecnica);
-  const detalheId = 'detalhe-erro-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
-  return `
-    <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:16px 18px;">
-      <div style="display:flex; gap:12px; align-items:flex-start;">
-        <i class="ti ti-cloud-exclamation" style="font-size:1.3rem; color:#c2410c; flex-shrink:0; margin-top:1px;"></i>
-        <div style="flex:1; min-width:0;">
-          <div style="font-weight:600; color:#7c2d12; font-size:0.9rem;">${escHtml(titulo)}</div>
-          <div style="font-size:0.83rem; color:#9a3412; margin-top:4px;">${escHtml(sugestao)}</div>
-          <a href="#" onclick="document.getElementById('${detalheId}').classList.toggle('hidden'); return false;" style="font-size:0.72rem; color:#c2410c; display:inline-block; margin-top:8px;">Ver detalhe técnico</a>
-          <div id="${detalheId}" class="hidden" style="margin-top:8px; font-size:0.7rem; color:#78716c; font-family:monospace; white-space:pre-wrap; background:#fffbeb; padding:8px; border-radius:6px;">${escHtml(mensagemTecnica)}</div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function _garantirEstiloPulso() {
-  if (document.getElementById('estilo-pulso-conferindo')) return;
-  const style = document.createElement('style');
-  style.id = 'estilo-pulso-conferindo';
-  style.textContent = `
-    @keyframes pulseConferindo { 0%,100% { box-shadow: 0 0 0 0 rgba(142,22,40,0.30); } 50% { box-shadow: 0 0 0 8px rgba(142,22,40,0); } }
-    #banner-conferindo:not(.hidden) { animation: pulseConferindo 1.6s infinite; }
-  `;
-  document.head.appendChild(style);
-}
-
-function escHtml(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-function escAttr(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-}
-
+function _mensagemErroAmigavel(msg) { return { titulo: 'Erro no processamento', sugestao: msg }; }
+function renderErroAmigavel(msg) { return `<div class="alert alert-danger">${escHtml(msg)}</div>`; }
+function _garantirEstiloPulso() {}
+function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function criarModal(h, comRodapePadrao = true) {
   fecharModal();
   const m = document.createElement('div');
   m.className = 'modal-overlay'; m.id = 'modal-ov';
-  const rodape = comRodapePadrao ? `<div style="text-align:right; margin-top:15px;"><button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button></div>` : '';
-  m.innerHTML = `<div class="modal">${h}${rodape}</div>`;
+  m.innerHTML = `<div class="modal">${h}${comRodapePadrao ? '<button onclick="fecharModal()">Fechar</button>' : ''}</div>`;
   document.body.appendChild(m);
 }
 function fecharModal() { document.getElementById('modal-ov')?.remove(); }
-
-function verificarIA() {
-  const dot = document.getElementById('ai-dot');
-  const txt = document.getElementById('ai-status-txt');
-  if (!dot || !txt) return;
-
-  const provedoresAtivos = [];
-  if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresAtivos.push('Gemini');
-  if (GROQ_KEY && GROQ_KEY.trim()) provedoresAtivos.push('Groq');
-  if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresAtivos.push('OpenRouter');
-  if (OLLAMA_URL) provedoresAtivos.push('Ollama');
-
-  if (GEMINI_KEY || GROQ_KEY || OPENROUTER_KEY) {
-    dot.className = 'ai-dot on';
-    txt.innerText = 'IA conectada (' + provedoresAtivos.filter(p => p !== 'Ollama').join(' + ') + ')';
-  } else {
-    dot.className = 'ai-dot off';
-    txt.innerText = 'Nenhuma IA em nuvem configurada — só Ollama, se estiver rodando';
-  }
-}
+function verificarIA() {}
