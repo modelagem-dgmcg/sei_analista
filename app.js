@@ -13,12 +13,21 @@
 //  - Nova função: encaminhar processo para outro usuário (tramitação).
 // ============================================================
 
-// 🛡️ PROTEÇÃO DE PROPRIEDADE INTELECTUAL
-console.log("%c⚠️ PROPRIEDADE INTELECTUAL", "color: red; font-size: 24px; font-weight: bold;");
-console.log("%cEste sistema foi arquitetado e desenvolvido por Antonio Cleuton Eufrasio Vieira. É estritamente proibida a cópia, clonagem, engenharia reversa ou uso comercial não autorizado deste código-fonte.", "color: #333; font-size: 14px;");
+// ==================== REGISTRO DE AUTORIA ====================
+// © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
+// Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
+// matrícula 18515045.
+//
+// Titularidade dos direitos econômicos: SES-PE (Lei nº 9.609/98, art. 4º — software
+// desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
+// Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
+// titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
+console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
+console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13px;");
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
+let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
@@ -30,6 +39,7 @@ let processoAtual = null;      // { id, numero_sei, titulo, unidade, oss, gerenc
 let textoIntegralAtual = '';   // texto consolidado dos documentos do processo aberto (vem do backend, não do localStorage)
 let _ultimoTextoRevisadoHash = null; // hash do texto que passou pela Revisão Final — usado como aviso (não bloqueio) ao Finalizar
 let _ultimaTramitacaoRecebida = null; // { de_usuario, para_usuario, data, observacao } — usado pelo botão "Devolver"
+let _arquivoPrePreenchido = null; // { nome, texto } — cache do arquivo lido na tela "Importar Processo", pra não reprocessar ao criar
 let painelEvidenciasWin = null;
 window.memoriaEvidencias = {};
 window.achadosAtuais = [];
@@ -41,7 +51,7 @@ window.onload = () => {
 
 function injetarMarcaDagua() {
   const rodape = document.createElement('div');
-  rodape.innerHTML = `&copy; 2026 SEI Analista. Arquitetado por <strong>Antonio Cleuton Eufrasio Vieira</strong>.`;
+  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.`;
   rodape.style = "text-align: center; padding: 15px; font-size: 0.75rem; color: #adb5bd; margin-top: auto; border-top: 1px solid #dee2e6;";
   document.getElementById('content').parentElement.appendChild(rodape);
 }
@@ -136,7 +146,19 @@ async function showView(v, subCaixa = 'entrada') {
   } else if (v === 'novo') {
     content.innerHTML = `
       <div style="max-width:600px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Dica: Cole o nome do arquivo (ex: SEI_230...) e o sistema limpa o número.</p>
+        <div class="dropzone" id="dz-prefill"
+             ondragover="event.preventDefault(); this.style.borderColor='var(--action-primary)';"
+             ondragleave="this.style.borderColor='#ced4da';"
+             ondrop="event.preventDefault(); this.style.borderColor='#ced4da'; prePreencherDeArquivo(event.dataTransfer.files[0]);"
+             onclick="document.getElementById('np-arquivo').click()" style="margin-bottom:20px; padding:24px;">
+          <i class="ti ti-wand" style="font-size:1.8rem; color:var(--action-primary); margin-bottom:6px;"></i><br>
+          <strong style="font-size:0.9rem;">Solte um documento aqui pra preencher os campos automaticamente</strong><br>
+          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md ou .pptx. Confira tudo antes de salvar; a IA sugere, não afirma.</span>
+        </div>
+        <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
+        <div id="np-status-preenchimento" style="margin-bottom:15px;"></div>
+
+        <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Dica: Cole o nome do arquivo (ex: SEI_230...) no campo abaixo e o sistema limpa o número, se não usar o preenchimento automático.</p>
         <div class="form-group"><label>Número SEI *</label><input id="np-sei" placeholder="Ex: 230000..." oninput="formatarSEI(this)"></div>
         <div class="form-group"><label>Título / Objeto *</label><input id="np-titulo" placeholder="Ex: 1º Termo Aditivo"></div>
         <div class="form-group"><label>Unidade</label><input id="np-unidade" placeholder="Ex: HRA"></div>
@@ -148,12 +170,13 @@ async function showView(v, subCaixa = 'entrada') {
     content.innerHTML = `
       <div style="max-width:600px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-          Ordem de uso: Gemini primeiro; se falhar, tenta Groq; se falhar, tenta Ollama local.
-          Cada etapa só é usada se a anterior der erro de verdade.
+          Ordem de uso: Gemini primeiro; se falhar, tenta Groq; se falhar, tenta OpenRouter (grátis); se
+          falhar, tenta Ollama local. Cada etapa só é usada se a anterior der erro de verdade.
         </p>
         <div class="form-group"><label>1. Gemini (principal)</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
         <div class="form-group"><label>2. Groq (fallback em nuvem — opcional)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
-        <div class="form-group"><label>3. Ollama (fallback local — opcional)</label>
+        <div class="form-group"><label>3. OpenRouter (fallback em nuvem — opcional)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
+        <div class="form-group"><label>4. Ollama (fallback local — opcional)</label>
           <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
           <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
         </div>
@@ -345,16 +368,18 @@ async function abrirRegistroConcluido(id) {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando registro...';
 
-  const [resProc, resAud, resCons] = await Promise.all([
+  const [resProc, resAud, resCons, resNotas] = await Promise.all([
     api('processos/obter', { id }),
     api('auditorias/listar', { processo_id: id }),
-    api('consultas/listar', { processo_id: id })
+    api('consultas/listar', { processo_id: id }),
+    api('notas/listar', { processo_id: id })
   ]);
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">${escHtml(resProc.erro)}</div>`; return; }
 
   const proc = resProc.processo;
   const auditorias = resAud.auditorias || [];
   const consultas = resCons.consultas || [];
+  const notas = resNotas.notas || [];
 
   const achadosHtml = auditorias.length ? auditorias.map(a => {
     let achados = [];
@@ -372,6 +397,13 @@ async function abrirRegistroConcluido(id) {
       <div style="font-size:0.85rem; font-weight:600;"><i class="ti ti-user"></i> ${escHtml(c.pergunta)}</div>
       <div style="font-size:0.85rem; color:#374151; margin-top:4px; padding-left:16px; border-left:2px solid #74c0fc;">${escHtml(c.resposta)}</div>
     </div>`).join('') : '<p class="text-muted">Nenhuma consulta registrada para este processo.</p>';
+
+  const notasHtml = notas.length ? notas.map(n => `
+    <div style="margin-bottom:12px; padding:10px 14px; background:#fffbeb; border-left:3px solid #f59f00; border-radius:4px;">
+      ${n.referencia ? `<div style="font-size:0.75rem; font-weight:600; color:#7c5a00; margin-bottom:4px;"><i class="ti ti-pin"></i> ${escHtml(n.referencia)}</div>` : `<div style="font-size:0.75rem; font-weight:600; color:#7c5a00; margin-bottom:4px;"><i class="ti ti-note"></i> Nota geral do processo</div>`}
+      <div style="font-size:0.85rem; color:#212529; white-space:pre-wrap;">${escHtml(n.nota)}</div>
+      <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">${escHtml(n.usuario)} — ${new Date(n.data).toLocaleString('pt-BR')}</div>
+    </div>`).join('') : '<p class="text-muted">Nenhuma anotação registrada para este processo.</p>';
 
   content.innerHTML = `
     <button class="btn btn-secondary btn-sm" onclick="showView('dashboard','concluidos')" style="margin-bottom:16px;"><i class="ti ti-arrow-left"></i> Voltar ao Registro</button>
@@ -399,6 +431,11 @@ async function abrirRegistroConcluido(id) {
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-message-circle"></i> Histórico de Consultas</h3>
       ${consultasHtml}
+    </div>
+
+    <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
+      <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-note"></i> Notas do Processo</h3>
+      ${notasHtml}
     </div>`;
 }
 
@@ -420,6 +457,9 @@ function salvarConfig() {
   GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
   localStorage.setItem('sei_groq_key', GROQ_KEY);
 
+  OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
+  localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
+
   OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
 
@@ -428,6 +468,69 @@ function salvarConfig() {
 
   alert('Configurações de IA salvas!');
   verificarIA();
+}
+
+// Lê um documento ANTES de o processo existir — extrai o nº SEI por regex (determinístico,
+// sem IA) e usa uma chamada rápida de IA só pra título/unidade/OSS (informação textual,
+// não numérica, que regex não pega bem). Tudo fica em campo editável — a IA sugere,
+// a pessoa confirma antes de salvar, nunca preenche escondido.
+async function prePreencherDeArquivo(file) {
+  if (!file) return;
+  const status = document.getElementById('np-status-preenchimento');
+  status.innerHTML = '<span class="spinner"></span> Lendo o documento...';
+  try {
+    const buf = await file.arrayBuffer();
+    const texto = await extrairTextoArquivo(file.name, buf);
+    if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
+    _arquivoPrePreenchido = { nome: file.name, texto };
+
+    const numsProcesso = extrairNumerosProcesso(texto);
+    if (numsProcesso.length) {
+      const campoSei = document.getElementById('np-sei');
+      campoSei.value = numsProcesso[0].valor;
+      _marcarComoSugerido(campoSei);
+    }
+
+    status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
+    const amostra = texto.substring(0, 6000); // essa info normalmente está no início do documento
+    const prompt = `Leia o início de um documento de contrato/aditivo de gestão em saúde pública e extraia,
+SOMENTE se estiverem claramente explícitos no texto:
+- "titulo": um título curto pro tipo de documento (ex: "1º Termo Aditivo", "Contrato de Gestão")
+- "unidade": nome da unidade de saúde envolvida (ex: "UPA Curado", "Hospital Regional de Araripina")
+- "oss": sigla ou nome da Organização Social de Saúde contratada
+
+NÃO invente nada que não esteja no texto — deixe "" se não encontrar com clareza.
+Retorne EXCLUSIVAMENTE um JSON: {"titulo": "", "unidade": "", "oss": ""}
+
+TEXTO:
+${amostra}`;
+
+    try {
+      const jsonStr = await invocarIAComFallback(prompt, false, null);
+      const sugestao = JSON.parse(jsonStr);
+      if (sugestao.titulo)  { const el = document.getElementById('np-titulo');  el.value = sugestao.titulo;  _marcarComoSugerido(el); }
+      if (sugestao.unidade) { const el = document.getElementById('np-unidade'); el.value = sugestao.unidade; _marcarComoSugerido(el); }
+      if (sugestao.oss)     { const el = document.getElementById('np-oss');     el.value = sugestao.oss;     _marcarComoSugerido(el); }
+    } catch (e) {
+      console.warn('Sugestão de título/unidade/OSS via IA falhou (nº SEI, se achado, continua preenchido):', e.message);
+    }
+
+    status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
+      <i class="ti ti-check"></i> ${escHtml(file.name)} lido. Confira os campos destacados abaixo antes de salvar.
+    </div>`;
+  } catch (e) {
+    _arquivoPrePreenchido = null;
+    status.innerHTML = `<div class="alert alert-danger">Não foi possível ler esse arquivo: ${escHtml(e.message)}</div>`;
+  }
+}
+
+// Destaque visual discreto pra campo preenchido por sugestão — some sozinho quando
+// a pessoa edita o campo, sem atrapalhar nenhum outro comportamento que o campo já tenha.
+function _marcarComoSugerido(el) {
+  el.style.background = '#fff9db';
+  el.style.borderColor = '#f5c518';
+  const limpar = () => { el.style.background = ''; el.style.borderColor = ''; el.removeEventListener('input', limpar); };
+  el.addEventListener('input', limpar);
 }
 
 async function salvarNovoProcesso() {
@@ -453,10 +556,35 @@ async function salvarNovoProcesso() {
     return;
   }
 
+  // Se um arquivo foi usado pra pré-preencher os campos, o texto já foi extraído —
+  // anexa direto no processo recém-criado, sem pedir pra subir de novo.
+  if (_arquivoPrePreenchido) {
+    if (btn) btn.innerHTML = '<span class="spinner"></span> Anexando documento já lido...';
+    processoAtual = res.processo; // salvarDocumentoNoBackend depende de processoAtual.id
+    try {
+      await salvarDocumentoNoBackend(_arquivoPrePreenchido.nome, _arquivoPrePreenchido.texto);
+    } catch (e) {
+      console.warn('Processo criado, mas falhou ao anexar o documento pré-lido:', e.message);
+    }
+    _arquivoPrePreenchido = null;
+  }
+
   abrirProcesso(res.processo.numero_sei || String(res.processo.id));
 }
 
 // ==================== PAINEL DE EVIDÊNCIAS (MODO TELA DUPLA) ====================
+// Chamada pela janela do Painel de Evidências (window.opener.salvarNotaEvidencia) —
+// a nota persiste de verdade no backend (upsert por processo+referência), então
+// sobrevive mesmo se a janela do painel for fechada e reaberta depois.
+async function salvarNotaEvidencia(referencia, nota) {
+  if (!processoAtual) return;
+  try {
+    await api('notas/salvar', { processo_id: processoAtual.id, referencia, nota, usuario: usuarioAtual.email });
+  } catch (e) {
+    console.warn('Falha ao salvar nota da evidência:', e.message);
+  }
+}
+
 function abrirPainelEvidencias() {
   if (painelEvidenciasWin && !painelEvidenciasWin.closed) { painelEvidenciasWin.focus(); return; }
   painelEvidenciasWin = window.open('', 'PainelEvidencias', 'width=550,height=850,left=2000,top=100');
@@ -472,6 +600,9 @@ function abrirPainelEvidencias() {
               .evidencia-title { font-weight: bold; font-size: 1rem; margin-bottom: 5px; color: #212529;}
               .evidencia-doc { font-size: 0.75rem; background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; margin-bottom: 10px; display: inline-block; border: 1px solid #ffeeba; cursor: pointer;}
               .evidencia-text { font-size: 0.9rem; line-height: 1.6; color: #495057; white-space: pre-wrap;}
+              .evidencia-nota { width: 100%; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px 10px; font-size: 0.85rem; font-family: inherit; color: #212529; margin-top: 10px; resize: none; overflow: hidden; min-height: 34px; box-sizing: border-box; }
+              .evidencia-nota:focus { outline: none; border-color: #0dcaf0; box-shadow: 0 0 0 2px rgba(13,202,240,0.15); }
+              .evidencia-nota-label { font-size: 0.72rem; color: #868e96; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 10px; display: block; }
               .watermark { text-align: center; margin-top: 30px; font-size: 0.75rem; color: #adb5bd; border-top: 1px solid #dee2e6; padding-top: 15px; }
               .btn-remove { background: #ffe3e3; color: #e03131; border: 1px solid #ffc9c9; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; float: right; font-weight: bold; transition: 0.2s;}
               .btn-remove:hover { background: #fa5252; color: white;}
@@ -479,12 +610,28 @@ function abrirPainelEvidencias() {
       </head>
       <body>
           <h2>📌 Painel de Evidências</h2>
-          <p style="font-size: 0.85rem; color: #6c757d; margin-bottom: 20px;">As informações que você alfinetar no Monitor 1 aparecerão aqui.</p>
+          <p style="font-size: 0.85rem; color: #6c757d; margin-bottom: 20px;">As informações que você alfinetar no Monitor 1 aparecerão aqui. As anotações abaixo de cada card são salvas automaticamente no processo — pode fechar esta janela sem perder nada.</p>
           <div id="evidencias-container"></div>
-          <div class="watermark">&copy; 2026 SEI Analista.<br>Arquitetura exclusiva por Antonio Cleuton Eufrasio Vieira.</div>
+          <div class="watermark">&copy; 2026 SES-PE — DGMCG/GGPCG.<br>Desenvolvido por Cleuton Vieira.</div>
           <script>
               function removerEvidencia(id) { var el = document.getElementById(id); if(el) el.remove(); }
               function copiarDocID(texto) { navigator.clipboard.writeText(texto).then(() => alert('Documento Copiado: ' + texto + '\\n\\nCole na barra de pesquisa do SEI!')); }
+              // Bloco de notas por evidência: sem limite de caracteres, cresce conforme digita
+              function ajustarAlturaNota(el) {
+                  el.style.height = 'auto';
+                  el.style.height = (el.scrollHeight) + 'px';
+              }
+              // Salva de verdade no backend, com debounce (só grava 800ms depois da
+              // última tecla — evita uma chamada de rede por letra digitada).
+              var _debounceNotas = {};
+              function salvarNotaComDebounce(referencia, valor, cardId) {
+                  clearTimeout(_debounceNotas[cardId]);
+                  _debounceNotas[cardId] = setTimeout(function() {
+                      if (window.opener && window.opener.salvarNotaEvidencia) {
+                          window.opener.salvarNotaEvidencia(referencia, valor);
+                      }
+                  }, 800);
+              }
           </script>
       </body>
       </html>
@@ -492,7 +639,7 @@ function abrirPainelEvidencias() {
   painelEvidenciasWin.document.close();
 }
 
-function fixarEvidenciaDaMemoria(id) {
+async function fixarEvidenciaDaMemoria(id) {
   const dados = window.memoriaEvidencias[id];
   if (!dados) return alert("Erro: Dados não encontrados na memória.");
   if (!painelEvidenciasWin || painelEvidenciasWin.closed) abrirPainelEvidencias();
@@ -500,6 +647,18 @@ function fixarEvidenciaDaMemoria(id) {
   if (doc.getElementById('ev-' + id)) { painelEvidenciasWin.focus(); return; }
   const container = doc.getElementById('evidencias-container');
   if (container) {
+    const referencia = `${dados.tag}: ${dados.titulo}`;
+    const referenciaAttr = escAttr(referencia);
+
+    // Busca se já existe uma nota salva pra essa evidência específica, de uma sessão
+    // anterior — pré-preenche em vez de começar sempre em branco.
+    let notaExistente = '';
+    try {
+      const resNotas = await api('notas/listar', { processo_id: processoAtual.id });
+      const encontrada = (resNotas.notas || []).find(n => n.referencia === referencia);
+      if (encontrada) notaExistente = encontrada.nota;
+    } catch (e) { console.warn('Falha ao buscar nota existente:', e.message); }
+
     let htmlDoc = dados.doc ? `<div class="evidencia-doc" onclick="copiarDocID('${dados.doc}')" title="Clique para copiar">📄 Origem: ${dados.doc}</div>` : '';
     const html = `
         <div class="evidencia-card" id="ev-${id}">
@@ -508,8 +667,13 @@ function fixarEvidenciaDaMemoria(id) {
             <div class="evidencia-title">${dados.titulo}</div>
             ${htmlDoc}
             <div class="evidencia-text">${dados.texto}</div>
+            <label class="evidencia-nota-label">Sua anotação (salva automaticamente)</label>
+            <textarea class="evidencia-nota" placeholder="Digite aqui uma observação sobre essa evidência..." rows="1"
+              oninput="ajustarAlturaNota(this); salvarNotaComDebounce('${referenciaAttr}', this.value, '${id}')">${escHtml(notaExistente)}</textarea>
         </div>`;
     container.insertAdjacentHTML('afterbegin', html);
+    const textareaNova = doc.getElementById('ev-' + id).querySelector('.evidencia-nota');
+    if (textareaNova) { textareaNova.style.height = 'auto'; textareaNova.style.height = textareaNova.scrollHeight + 'px'; }
     painelEvidenciasWin.focus();
   }
 }
@@ -558,6 +722,15 @@ async function abrirProcesso(identificador) {
   const sei = p.numero_sei || String(p.id);
 
   let html = `
+    <div id="banner-conferindo" class="hidden" style="position:fixed; top:76px; right:24px; z-index:500; background:var(--alert-bordeaux-light, #f8d7da); border:1px solid var(--alert-bordeaux, #8e1628); border-radius:var(--border-radius, 6px); padding:12px 18px; max-width:280px; box-shadow:0 4px 14px rgba(0,0,0,0.12);">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="width:9px; height:9px; border-radius:50%; background:var(--alert-bordeaux, #8e1628); flex-shrink:0;"></span>
+        <strong id="banner-conferindo-titulo" style="color:var(--alert-bordeaux, #8e1626); font-size:0.82rem; letter-spacing:0.2px;">ESTOU CONFERINDO OS DOCUMENTOS...</strong>
+      </div>
+      <div id="banner-conferindo-detalhe" style="font-size:0.75rem; color:#6b1521; margin-top:4px; margin-left:17px;"></div>
+      <div style="font-size:0.72rem; color:#6b1521; margin-top:2px; margin-left:17px;">Tempo decorrido: <span id="banner-conferindo-timer">0s</span></div>
+    </div>
+
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
         <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -581,7 +754,7 @@ async function abrirProcesso(identificador) {
         ${docsHtml}
       </div>
       <div style="margin-top:15px;display:flex;gap:10px;">
-        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos (ZIP/PDF)</button>
+        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
       </div>
     </div>
 
@@ -600,6 +773,10 @@ async function abrirProcesso(identificador) {
       <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
         <input type="checkbox" id="chk-busca-externa"> Buscar normas externas na web (leis/decretos/portarias da SES-PE) —
         <strong>experimental</strong>: mais lento, e todo achado baseado nisso é sempre marcado como "verificar" (a busca pode trazer versão desatualizada ou não oficial)
+      </label>
+      <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
+        <input type="checkbox" id="chk-jurisprudencia"> Cruzar com jurisprudência (TCE-PE, TCU) —
+        <strong>experimental</strong>: mesmo aviso da busca de normas — é busca automática, não substitui confirmar a decisão de verdade antes de citar num parecer
       </label>
       <div id="ia-status" style="margin-top:15px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
@@ -773,10 +950,10 @@ function modalUploadZIP() {
          ondrop="event.preventDefault(); this.style.borderColor='#ced4da'; this.style.backgroundColor='#f8f9fa'; document.getElementById('file-up').files = event.dataTransfer.files; processarUploadZIP(event.dataTransfer.files);"
          onclick="document.getElementById('file-up').click()">
       <i class="ti ti-cloud-download" style="font-size:2.5rem; margin-bottom:10px; color:var(--action-primary);"></i><br>
-      <strong>Arraste o arquivo aqui</strong><br>
-      <span style="font-size:0.85rem;">.ZIP, .PDF, .DOCX ou .XLSX — ou clique para selecionar</span>
+      <strong>Arraste um ou mais arquivos aqui</strong><br>
+      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD ou PPTX — pode soltar vários juntos, sem precisar zipar antes</span>
     </div>
-    <input type="file" id="file-up" accept=".zip,.pdf,.docx,.doc,.xlsx,.xls" style="display:none" onchange="processarUploadZIP(this.files)">
+    <input type="file" id="file-up" multiple style="display:none" onchange="processarUploadZIP(this.files)">
     <div id="up-status" style="margin-top:15px;"></div>
   `);
 }
@@ -798,7 +975,7 @@ async function salvarDocumentoNoBackend(nomeArquivo, texto) {
 // quanto pra decidir o que processar dentro de um ZIP. Qualquer arquivo fora dessa
 // lista, dentro de um ZIP, é EXPLICITAMENTE avisado como não importado — nunca some
 // em silêncio (é exatamente esse tipo de perda que compromete a auditoria).
-const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls'];
+const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt'];
 
 async function extrairTextoArquivo(nomeArquivo, buf) {
   const nome = nomeArquivo.toLowerCase();
@@ -816,63 +993,102 @@ async function extrairTextoArquivo(nomeArquivo, buf) {
     return wb.SheetNames.map(nomeAba => `--- Planilha: ${nomeAba} ---\n` + XLSX.utils.sheet_to_csv(wb.Sheets[nomeAba])).join('\n\n');
   }
 
+  // Texto puro — não precisa de biblioteca nenhuma, é só decodificar os bytes.
+  if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
+    return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  }
+
+  // .pptx é um ZIP com um XML por slide — reaproveita o JSZip que já carregamos pra
+  // .zip, sem precisar de nenhuma biblioteca nova.
+  if (nome.endsWith('.pptx')) {
+    if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada — necessária pra abrir .pptx.');
+    const zip = await JSZip.loadAsync(buf);
+    const slideFiles = Object.keys(zip.files)
+      .filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k))
+      .sort((a, b) => parseInt(a.match(/slide(\d+)\.xml/)[1], 10) - parseInt(b.match(/slide(\d+)\.xml/)[1], 10));
+    if (!slideFiles.length) throw new Error('Não foi possível encontrar slides dentro do arquivo — pode estar corrompido ou vazio.');
+    let textoCompleto = '';
+    for (let i = 0; i < slideFiles.length; i++) {
+      const xml = await zip.files[slideFiles[i]].async('string');
+      const textos = [...xml.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(m => _decodeXmlEntities(m[1]));
+      textoCompleto += `\n--- Slide ${i + 1} ---\n` + textos.join(' ') + '\n';
+    }
+    return textoCompleto;
+  }
+
+  // .ppt (formato binário antigo, pré-2007) não é ZIP — não temos biblioteca capaz de
+  // ler esse formato. Em vez de tentar e falhar em silêncio, avisa exatamente o motivo.
+  if (nome.endsWith('.ppt')) {
+    throw new Error('Formato antigo do PowerPoint (.ppt) não tem suporte de leitura nesta ferramenta — salve/exporte como .pptx e importe de novo.');
+  }
+
   throw new Error('Tipo de arquivo não suportado.');
 }
 
+function _decodeXmlEntities(s) {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+}
+
+// Processa TODOS os arquivos soltados de uma vez — sejam eles arquivos soltos (PDF/
+// DOCX/XLSX individuais), um ou mais ZIPs, ou uma mistura dos dois. Antes, só o primeiro
+// arquivo da lista era processado e o resto desaparecia em silêncio; agora nada se perde
+// sem avisar o motivo.
 async function processarUploadZIP(files) {
   const status = document.getElementById('up-status');
-  const file = files[0];
-  if (!file) return;
+  const listaArquivos = Array.from(files || []);
+  if (!listaArquivos.length) return;
 
-  const nomeLower = file.name.toLowerCase();
+  const avisos = [];
+  let importados = 0;
 
-  if (EXTENSOES_SUPORTADAS.some(ext => nomeLower.endsWith(ext))) {
-    status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
-    try {
-      const buf = await file.arrayBuffer();
-      const texto = await extrairTextoArquivo(file.name, buf);
-      if (!texto.trim().length) throw new Error('Nenhum texto extraído (pode ser um arquivo escaneado/imagem, sem OCR).');
-      status.innerHTML = `<span class="spinner"></span> Gravando no servidor compartilhado...`;
-      await salvarDocumentoNoBackend(file.name, texto);
-      status.innerHTML = `<div class="alert alert-success">✓ Arquivo lido e gravado!</div>`;
-      setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, 1200);
-    } catch (e) {
-      status.innerHTML = `<div class="alert alert-danger">Erro ao processar: ${escHtml(e.message)}</div>`;
-    }
+  for (const file of listaArquivos) {
+    const nomeLower = file.name.toLowerCase();
 
-  } else if (nomeLower.endsWith('.zip')) {
-    status.innerHTML = `<span class="spinner"></span> Mapeando arquivo ZIP...`;
-    const zip = new JSZip();
-    const contents = await zip.loadAsync(file);
-
-    const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
-    const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
-    const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
-
-    let extraidos = 0;
-    const avisos = [];
-
-    for (const filename of arquivosSuportados) {
-      extraidos++;
-      status.innerHTML = `<span class="spinner"></span> Processando ${extraidos} de ${arquivosSuportados.length}: <strong>${escHtml(filename.substring(0, 25))}...</strong>`;
+    if (nomeLower.endsWith('.zip')) {
+      status.innerHTML = `<span class="spinner"></span> Mapeando ${escHtml(file.name)}...`;
       try {
-        const buf = await contents.files[filename].async("arraybuffer");
-        const texto = await extrairTextoArquivo(filename, buf);
-        if (texto.trim().length > 20) await salvarDocumentoNoBackend(filename, texto);
-        else avisos.push(`${filename}: nenhum texto extraído (pode ser imagem/escaneado sem OCR) — NÃO importado`);
-      } catch (e) { avisos.push(`${filename}: ${e.message}`); }
+        const zip = new JSZip();
+        const contents = await zip.loadAsync(file);
+        const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
+        const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
+        const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
+
+        for (const filename of arquivosSuportados) {
+          status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(filename.substring(0, 30))}...`;
+          try {
+            const buf = await contents.files[filename].async('arraybuffer');
+            const texto = await extrairTextoArquivo(filename, buf);
+            if (texto.trim().length > 20) { await salvarDocumentoNoBackend(filename, texto); importados++; }
+            else avisos.push(`${filename}: nenhum texto extraído (pode ser imagem/escaneado sem OCR) — NÃO importado`);
+          } catch (e) { avisos.push(`${filename}: ${e.message}`); }
+        }
+        // Nunca silencia: qualquer arquivo dentro do ZIP que não seja de tipo suportado é avisado, não some.
+        arquivosIgnorados.forEach(f => avisos.push(`${f}: tipo de arquivo não suportado — NÃO foi importado`));
+      } catch (e) {
+        avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
+      }
+
+    } else if (EXTENSOES_SUPORTADAS.some(ext => nomeLower.endsWith(ext))) {
+      status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
+      try {
+        const buf = await file.arrayBuffer();
+        const texto = await extrairTextoArquivo(file.name, buf);
+        if (!texto.trim().length) throw new Error('nenhum texto extraído (pode ser um arquivo escaneado/imagem, sem OCR)');
+        await salvarDocumentoNoBackend(file.name, texto);
+        importados++;
+      } catch (e) {
+        avisos.push(`${file.name}: ${e.message}`);
+      }
+
+    } else {
+      avisos.push(`${file.name}: tipo de arquivo não suportado — NÃO foi importado`);
     }
-
-    // Nunca silencia isso: se algo dentro do ZIP não pôde ser lido, a pessoa precisa saber.
-    arquivosIgnorados.forEach(f => avisos.push(`${f}: tipo de arquivo não suportado — NÃO foi importado`));
-
-    status.innerHTML = avisos.length
-      ? `<div class="alert alert-warning"><strong>${extraidos} importado(s), ${avisos.length} aviso(s):</strong><br>${avisos.map(escHtml).join('<br>')}</div>`
-      : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ Extração e gravação concluídas! (${arquivosSuportados.length} arquivo(s))</div>`;
-    setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, avisos.length ? 4000 : 1800);
-  } else {
-    status.innerHTML = `<div class="alert alert-danger">Tipo de arquivo não suportado: ${escHtml(file.name)}</div>`;
   }
+
+  status.innerHTML = avisos.length
+    ? `<div class="alert alert-warning"><strong>${importados} importado(s), ${avisos.length} aviso(s):</strong><br>${avisos.map(escHtml).join('<br>')}</div>`
+    : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) importado(s) com sucesso!</div>`;
+  setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, avisos.length ? 4500 : 1800);
 }
 
 async function extrairTextoPDF(buf) {
@@ -978,6 +1194,7 @@ const PROVEDOR_TIMEOUT_MS = 60000;
 const ORDEM_PROVEDORES = [
   { id: 'gemini', nome: 'Gemini' },
   { id: 'groq', nome: 'Groq' },
+  { id: 'openrouter', nome: 'OpenRouter' },
   { id: 'ollama', nome: 'Ollama' }
 ];
 function renderPainelProvedores(statusEl, estados, mensagem) {
@@ -1005,20 +1222,133 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
     ${mensagem ? `<div style="font-size:0.82rem; color:var(--text-muted);">${escHtml(mensagem)}</div>` : ''}`;
 }
 
+// ==================== MASCARAMENTO DE DADOS PESSOAIS (LGPD) ====================
+// Aplicado SOMENTE ao texto que vai pra provedores em nuvem (Gemini/Groq/OpenRouter).
+// O Ollama, por rodar na própria máquina, recebe o texto original sem máscara.
+//
+// Duas camadas, nessa ordem:
+// 1. BLOCO DE QUALIFICAÇÃO — contrato costuma ter um trecho padrão tipo "neste ato
+//    representado por [NOME], CPF nº..., RG nº...". Em vez de tentar reconhecer o
+//    NOME em si (impossível com confiança via regex), mascara o BLOCO INTEIRO onde
+//    ele mora — é mais grosseiro, mas muito mais confiável que caçar nome solto.
+// 2. Regex de formato conhecido (CPF, RG, e-mail, telefone, bancário) — pega o que
+//    sobrar FORA de qualquer bloco de qualificação (ex.: CPF citado numa tabela
+//    solta, não dentro da cláusula de qualificação das partes).
+//
+// LIMITE HONESTO: o bloco de qualificação é achado por uma frase-âncora ("neste ato
+// representado por", "representado(a) neste ato por", "por seu representante legal")
+// e captura até um limite de caracteres ou até o próximo ponto final — não é um
+// parser de contrato de verdade, então cláusula redigida de um jeito muito fora do
+// padrão pode escapar. CEP e valor monetário continuam fora da máscara (ver camada 2).
+function mascararBlocosQualificacao(texto) {
+  const mapa = new Map();
+  let contador = 0;
+  const LIMITE_CAPTURA = 220; // caracteres pra frente da âncora, se não achar ponto final antes
+
+  const ancoras = [
+    /neste\s+ato\s+representad[oa]\s+por/gi,
+    /representad[oa]\s+neste\s+ato\s+por/gi,
+    /por\s+seu[a]?\s+representante\s+legal[,:]?/gi
+  ];
+
+  let textoComBlocosMascarados = texto;
+  ancoras.forEach(ancora => {
+    textoComBlocosMascarados = textoComBlocosMascarados.replace(ancora, (match, offset, textoCompleto) => {
+      const inicioResto = offset + match.length;
+      const resto = textoCompleto.substring(inicioResto, inicioResto + LIMITE_CAPTURA);
+      const pontoFinal = resto.search(/[.;]\s/);
+      const trechoCapturado = pontoFinal >= 0 ? resto.substring(0, pontoFinal) : resto;
+      contador++;
+      const marcador = `[QUALIFICACAO-${contador}]`;
+      mapa.set(marcador, match + trechoCapturado);
+      // Substitui a âncora + o trecho capturado pelo marcador — o resto do texto
+      // (depois do trecho capturado) continua intacto, não é tocado.
+      return marcador;
+    });
+    // O replace acima só troca a âncora; o trecho capturado ainda está duplicado no
+    // texto (antes e depois do marcador) — remove a duplicata logo em seguida.
+  });
+
+  // O passo acima marca a âncora mas deixa o trecho capturado intacto no texto (já
+  // que replace não pode "consumir" caracteres fora do match). Remove esse trecho
+  // duplicado agora, usando o que foi guardado no mapa — e ajusta o mapa pra guardar
+  // só o trecho útil (sem repetir a âncora), pra desmascarar ficar gramaticalmente limpo.
+  for (const [marcador, textoOriginalCompleto] of mapa) {
+    const ancoraOriginal = textoOriginalCompleto.match(/^(neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal[,:]?)/i)[0];
+    const trechoCapturado = textoOriginalCompleto.substring(ancoraOriginal.length);
+    if (trechoCapturado) {
+      textoComBlocosMascarados = textoComBlocosMascarados.replace(marcador + trechoCapturado, marcador);
+    }
+    mapa.set(marcador, trechoCapturado.replace(/^,?\s*/, '').trim() || ancoraOriginal.trim());
+  }
+
+  return { textoComBlocosMascarados, mapaBlocos: mapa };
+}
+
+function mascararDadosSensiveis(texto) {
+  const mapa = new Map(); // marcador -> valor original, pra desmascarar a resposta da IA depois
+  const contador = { CPF: 0, RG: 0, EMAIL: 0, TELEFONE: 0, BANCARIO: 0 };
+
+  // Camada 1 — bloco de qualificação inteiro (cobre nome, que a regex nunca cobriria)
+  const { textoComBlocosMascarados, mapaBlocos } = mascararBlocosQualificacao(texto);
+  let textoMascarado = textoComBlocosMascarados;
+  for (const [marcador, original] of mapaBlocos) mapa.set(marcador, original);
+
+  function substituir(regex, tipo) {
+    const marcadorPorValor = new Map(); // mesmo valor original -> mesmo marcador, sempre
+    textoMascarado = textoMascarado.replace(regex, (match) => {
+      if (marcadorPorValor.has(match)) return marcadorPorValor.get(match);
+      contador[tipo]++;
+      const marcador = `[${tipo}-${contador[tipo]}]`;
+      marcadorPorValor.set(match, marcador);
+      mapa.set(marcador, match);
+      return marcador;
+    });
+  }
+
+  // Camada 2 — regex de formato conhecido, no que sobrou fora dos blocos já mascarados.
+  // Ordem importa: CPF (com pontuação) primeiro, pra não ser "roubado" pela regex
+  // mais genérica de telefone antes de ter a chance de casar.
+  substituir(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, 'CPF');
+  substituir(/\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g, 'RG');
+  substituir(/[\w.+-]+@[\w-]+\.[\w.-]+/g, 'EMAIL');
+  substituir(/\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g, 'TELEFONE');
+  substituir(/\b(?:ag[êe]ncia|conta corrente|c\/c)\s*:?\s*\d{3,10}-?\d?\b/gi, 'BANCARIO');
+
+  return { textoMascarado, mapa, totalMascarado: mapa.size };
+}
+
+// Reverte os marcadores de volta pro valor original — aplicado na RESPOSTA da IA
+// antes de mostrar pro analista (ele precisa ver o CPF de verdade, não "[CPF-1]").
+function desmascararTexto(texto, mapa) {
+  if (!mapa || !mapa.size) return texto;
+  let resultado = texto;
+  for (const [marcador, original] of mapa) resultado = resultado.split(marcador).join(original);
+  return resultado;
+}
+
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
-  const estados = { gemini: 'pendente', groq: 'pendente', ollama: 'pendente' };
+  const estados = { gemini: 'pendente', groq: 'pendente', openrouter: 'pendente', ollama: 'pendente' };
   if (!GEMINI_KEY) estados.gemini = 'pulado';
   if (!GROQ_KEY) estados.groq = 'pulado';
+  if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
+
+  // Mascara só uma vez, reaproveitado nas 3 tentativas em nuvem — o Ollama (local)
+  // usa o "prompt" original, sem máscara, mais abaixo.
+  const { textoMascarado: promptMascarado, mapa, totalMascarado } = mascararDadosSensiveis(prompt);
+  const avisoMascara = totalMascarado > 0
+    ? ` (${totalMascarado} dado${totalMascarado > 1 ? 's' : ''} sensíve${totalMascarado > 1 ? 'is' : 'l'} mascarado${totalMascarado > 1 ? 's' : ''} antes de enviar à nuvem)`
+    : '';
 
   if (GEMINI_KEY) {
     estados.gemini = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...');
+    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...' + avisoMascara);
     try {
-      const r = await invocarGeminiPremium(prompt, isChat, statusEl);
+      const r = await invocarGeminiPremium(promptMascarado, isChat, statusEl);
       estados.gemini = 'ok';
       renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return r;
+      return desmascararTexto(r, mapa);
     } catch (e) {
       estados.gemini = 'falhou';
       erros.push('Gemini: ' + e.message);
@@ -1031,10 +1361,10 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     estados.groq = 'tentando';
     renderPainelProvedores(statusEl, estados, 'Gemini não respondeu — chamando Groq...');
     try {
-      const r = await invocarGroq(prompt, isChat, statusEl);
+      const r = await invocarGroq(promptMascarado, isChat, statusEl);
       estados.groq = 'ok';
       renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return r;
+      return desmascararTexto(r, mapa);
     } catch (e) {
       estados.groq = 'falhou';
       erros.push('Groq: ' + e.message);
@@ -1043,8 +1373,25 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     erros.push('Groq: chave não configurada');
   }
 
+  if (OPENROUTER_KEY) {
+    estados.openrouter = 'tentando';
+    renderPainelProvedores(statusEl, estados, 'Gemini e Groq não responderam — chamando OpenRouter...');
+    try {
+      const r = await invocarOpenRouter(promptMascarado, isChat, statusEl);
+      estados.openrouter = 'ok';
+      renderPainelProvedores(statusEl, estados, 'Concluído.');
+      return desmascararTexto(r, mapa);
+    } catch (e) {
+      estados.openrouter = 'falhou';
+      erros.push('OpenRouter: ' + e.message);
+    }
+  } else {
+    erros.push('OpenRouter: chave não configurada');
+  }
+
+  // Ollama é local — usa o texto ORIGINAL, sem máscara (não há por quê mascarar pra si mesmo).
   estados.ollama = 'tentando';
-  renderPainelProvedores(statusEl, estados, 'Gemini e Groq não responderam — chamando Ollama local...');
+  renderPainelProvedores(statusEl, estados, 'Nenhum provedor em nuvem respondeu — chamando Ollama local...');
   try {
     const r = await invocarOllama(prompt, isChat, statusEl);
     estados.ollama = 'ok';
@@ -1072,6 +1419,45 @@ async function invocarGroq(prompt, isChat, statusEl) {
     resposta = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+      body: JSON.stringify(body),
+      signal: controller.signal
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error(`não respondeu em ${PROVEDOR_TIMEOUT_MS / 1000}s`);
+    throw new Error('falha de rede: ' + e.message);
+  }
+  clearTimeout(timer);
+
+  if (!resposta.ok) throw new Error(`HTTP ${resposta.status}: ${(await resposta.text()).substring(0, 200)}`);
+  const json = await resposta.json();
+  const txt = json.choices?.[0]?.message?.content;
+  if (!txt) throw new Error('resposta vazia');
+  return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+// "openrouter/free" é o roteador oficial de modelos gratuitos da OpenRouter (lançado
+// fev/2026) — escolhe automaticamente entre os modelos gratuitos disponíveis no
+// momento, evitando o problema comum de fixar um modelo específico que pode saltar
+// pra fora do catálogo gratuito sem aviso. API compatível com OpenAI, igual o Groq.
+async function invocarOpenRouter(prompt, isChat, statusEl) {
+  if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Chamando OpenRouter...`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
+
+  const body = { model: 'openrouter/free', messages: [{ role: 'user', content: prompt }], temperature: 0.1 };
+  if (!isChat) body.response_format = { type: 'json_object' };
+
+  let resposta;
+  try {
+    resposta = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + OPENROUTER_KEY,
+        'HTTP-Referer': location.origin, // OpenRouter recomenda identificar a origem da chamada
+        'X-Title': 'SEI Analista'
+      },
       body: JSON.stringify(body),
       signal: controller.signal
     });
@@ -1163,6 +1549,59 @@ específico e confiável, diga isso claramente em vez de generalizar.`;
     // Falha conhecida: em buscas complexas o Gemini pode retornar sem candidato/texto
     // (TOO_MANY_TOOL_CALLS ou instabilidade). Trata como falha da busca, não da checagem inteira.
     throw new Error('A busca externa não retornou resposta (instabilidade do Gemini com busca na web). Tente novamente ou desmarque a opção.');
+  }
+
+  const texto = candidato.content.parts.map(pt => pt.text || '').join('');
+  const chunks = candidato.groundingMetadata?.groundingChunks || [];
+  const fontes = chunks.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean);
+
+  return { texto, fontes };
+}
+
+// Mesmo padrão de buscarNormasExternas — busca automática, grounding via Google Search,
+// não é exclusiva de nenhum perfil (a mesma lógica de cruzamento vale pra qualquer pessoa,
+// só a exibição do achado que pode variar depois por perfil).
+async function buscarJurisprudencia(p) {
+  if (!GEMINI_KEY || GEMINI_KEY.trim() === '') throw new Error("Chave da IA não configurada.");
+  const NOME_MODELO = 'gemini-3.6-flash';
+
+  const prompt = `Pesquise na web decisões do TCE-PE (Tribunal de Contas do Estado de Pernambuco) e do TCU
+(Tribunal de Contas da União) sobre Contratos de Gestão com Organizações Sociais de Saúde (OSS) — com
+atenção especial a decisões sobre divergência de valor contratual, aditivo sem justificativa técnica,
+estouro de teto financeiro, ou irregularidade de CEP/endereço em contrato de gestão em saúde pública.
+Liste as decisões encontradas (órgão, número/ano, uma frase objetiva do que decidiram) que sejam
+relevantes pro tipo de inconsistência já identificada nos documentos deste processo (unidade
+"${p.unidade}", OSS "${p.oss}"). Se não encontrar nada específico e confiável, diga isso claramente em
+vez de generalizar.`;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+  let resposta;
+  try {
+    resposta = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${NOME_MODELO}:generateContent?key=${GEMINI_KEY}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+        generationConfig: { temperature: 0.1 }
+      }),
+      signal: controller.signal
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`A busca de jurisprudência não respondeu em ${GEMINI_TIMEOUT_MS / 1000}s. Tente novamente ou desmarque a opção.`);
+    throw new Error('Falha de rede na busca de jurisprudência: ' + e.message);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (!resposta.ok) throw new Error(`Erro na busca de jurisprudência (HTTP ${resposta.status}): ${await resposta.text()}`);
+
+  const resJson = await resposta.json();
+  const candidato = resJson.candidates?.[0];
+  if (!candidato || !candidato.content?.parts?.length) {
+    throw new Error('A busca de jurisprudência não retornou resposta (instabilidade do Gemini com busca na web). Tente novamente ou desmarque a opção.');
   }
 
   const texto = candidato.content.parts.map(pt => pt.text || '').join('');
@@ -1282,8 +1721,36 @@ async function rodarRaioX() {
     return st.innerHTML = '<div class="alert alert-danger">Nenhum texto encontrado. Por favor, importe os documentos do processo primeiro.</div>';
   }
 
-  st.innerHTML = `<span class="spinner"></span> Extraindo valores, datas, nº de processo e CEP (determinístico)...`;
-  const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
+  // Aviso fixo e visível durante toda a checagem — números REAIS (qtd de documentos,
+  // volume de texto, e tempo decorrido). Não é uma barra de "página X de Y": o sistema
+  // manda o texto inteiro numa única chamada à IA, então não há como saber "em que
+  // página" ela está — fingir isso seria inventar um progresso que não existe. O
+  // cronômetro sim é real: conta segundo a segundo, de verdade, enquanto se espera.
+  _garantirEstiloPulso();
+  const banner = document.getElementById('banner-conferindo');
+  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
+  const bannerTimer = document.getElementById('banner-conferindo-timer');
+  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
+  let segundosDecorridos = 0;
+  let intervaloTimer = null;
+  if (banner) {
+    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU CONFERINDO OS DOCUMENTOS...';
+    banner.classList.remove('hidden');
+    if (bannerDetalhe) {
+      const qtdDocs = (textoIntegralAtual.match(/--- DOC: /g) || []).length;
+      bannerDetalhe.textContent = `${qtdDocs} documento(s) — ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`;
+    }
+    if (bannerTimer) {
+      bannerTimer.textContent = '0s';
+      intervaloTimer = setInterval(() => {
+        segundosDecorridos++;
+        bannerTimer.textContent = segundosDecorridos + 's';
+      }, 1000);
+    }
+  }
+
+  try {
+    const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
 
   // Cruzamento com o histórico contratual da unidade (pasta Drive "LEIS E DECRETOS") —
   // fonte curada, roda ANTES de qualquer chamada à IA. Ligado por padrão.
@@ -1350,6 +1817,28 @@ ${listaFontes}`;
     }
   }
 
+  let jurisprudenciaBloco = '';
+  const jurisprudenciaAtiva = document.getElementById('chk-jurisprudencia')?.checked;
+  if (jurisprudenciaAtiva) {
+    st.innerHTML = `<span class="spinner"></span> Cruzando com jurisprudência (TCE-PE, TCU)...`;
+    try {
+      const { texto: textoJuris, fontes } = await buscarJurisprudencia(p);
+      const listaFontesJuris = fontes.length
+        ? fontes.map(f => `  • ${f.titulo || '(sem título)'} — ${f.url}`).join('\n')
+        : '  (a busca não retornou links de fonte explícitos — trate o conteúdo abaixo com cautela extra)';
+      jurisprudenciaBloco = `
+
+JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ busca automática — pode ser decisão de outro contexto,
+já superada, ou não oficial; CONFIRME a fonte antes de citar isso em parecer):
+${textoJuris}
+
+FONTES CITADAS PELA BUSCA:
+${listaFontesJuris}`;
+    } catch (e) {
+      jurisprudenciaBloco = `\n\n(Busca de jurisprudência falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
+    }
+  }
+
   st.innerHTML = `<span class="spinner"></span> Conectando aos servidores Premium do Google Gemini... Processando integralmente.`;
 
   const prompt = `Atue como Auditor Técnico Sênior (SES-PE). Cheque os documentos abaixo.
@@ -1373,7 +1862,10 @@ REGRAS DE CHECAGEM:
    ou presuma um teto que não foi informado.
 5. Indique o setor responsável pela checagem ('SFCG', 'GGPCG', etc.).
 6. CONFRONTO DE ESCOPO: o Contrato Assinado é soberano sobre planos de trabalho.
-7. IDENTIFICAÇÃO DO DOCUMENTO: identifique exatamente o nome do arquivo de onde extraiu cada evidência.
+7. IDENTIFICAÇÃO DO DOCUMENTO: identifique exatamente o nome do arquivo de onde extraiu cada evidência, e
+   coloque isso SOMENTE no campo "doc_origem" — nunca repita o nome do arquivo dentro do campo "titulo"
+   (ele já aparece destacado em outro lugar do card; repetir ali é redundante). O "titulo" deve descrever
+   o problema em si (ex.: "Divergência no valor da cláusula 4"), não onde ele foi encontrado.
 8. ERROS DE DIGITAÇÃO/REDAÇÃO: para isso (só para isso), pode usar o texto bruto dos documentos abaixo,
    já que não é uma comparação numérica.
 9. Para cada achado, marque "verificar": true se depender de conferência manual, ou false apenas se for
@@ -1388,25 +1880,30 @@ REGRAS DE CHECAGEM:
     oficial anterior da unidade, não contra outro documento do mesmo processo. Marque
     "baseado_em_historico_unidade": true nesse achado (o casamento do arquivo é por nome, então ainda
     pode errar a unidade — trate como forte indício, não certeza).
+12. Se houver um bloco "JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB" abaixo, use pra checar se o tipo de
+    inconsistência já identificada tem precedente em decisão do TCE-PE ou TCU. TODO achado baseado
+    nisso deve ter "verificar": true SEMPRE, pelo mesmo motivo do item 10 — busca automática não
+    garante que a decisão citada ainda seja válida ou aplicável a este caso exato. Marque
+    "baseado_em_jurisprudencia": true nesse achado, e cite explicitamente o número/órgão da decisão.
 
 MUITO IMPORTANTE: se, após análise cuidadosa, não houver nenhuma inconsistência real e verificável, retorne
 {"cards": []}. NUNCA invente um achado para preencher a resposta — retornar vazio é sempre preferível a um
 achado forçado ou especulativo.
 
 Retorne EXCLUSIVAMENTE um objeto JSON válido, sem markdown:
-{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título do Alerta", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "doc_origem": "Nome do Arquivo de Origem", "verificar": true, "baseado_em_norma_externa": false, "baseado_em_historico_unidade": false}]}
+{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título do Alerta", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "doc_origem": "Nome do Arquivo de Origem", "verificar": true, "baseado_em_norma_externa": false, "baseado_em_historico_unidade": false, "baseado_em_jurisprudencia": false}]}
 ${normasExternasBloco}
+${jurisprudenciaBloco}
 
 TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
 ${textoIntegralAtual}`;
 
-  try {
-    const jsonStr = await invocarIAComFallback(prompt, false, st);
-    const jsonObj = JSON.parse(jsonStr);
-    window.achadosAtuais = (jsonObj.cards || []).map(c => {
+  const jsonStr = await invocarIAComFallback(prompt, false, st);
+  const jsonObj = JSON.parse(jsonStr);
+  window.achadosAtuais = (jsonObj.cards || []).map(c => {
       // Trava reforçada: achado baseado em busca externa OU no histórico da unidade é SEMPRE
       // "verificar", mesmo que a IA (por erro) tenha marcado false — não confiamos só no prompt.
-      if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade) c.verificar = true;
+      if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade || c.baseado_em_jurisprudencia) c.verificar = true;
       return c;
     });
 
@@ -1425,6 +1922,9 @@ ${textoIntegralAtual}`;
     });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
   }
 }
 
@@ -1440,11 +1940,17 @@ function renderizarCards(cards) {
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao, doc: c.doc_origem };
-    let nomeDoc = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
+    // Referência estável do achado (tag+título) — é assim que o encaminhamento e as
+    // notas amarram de volta pro mesmo achado entre uma sessão e outra.
+    const referenciaAchado = `${c.tag}: ${c.titulo}`;
+    // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador,
+    // não ".pdf"/".docx" no final, que só polui visualmente o card.
+    const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
+    const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
     const tagVerificar = c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`;
 
     html += `
-    <div class="rx-card is-obice" id="${cardId}-div">
+    <div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(referenciaAchado)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
         <div style="display:flex; justify-content:space-between; width:100%; align-items:center;">
             <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
@@ -1452,26 +1958,139 @@ function renderizarCards(cards) {
       </div>
       <div class="rx-body">
         <div style="margin-bottom: 12px;">
-            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDoc)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar">
-               <i class="ti ti-file-type-pdf"></i> Origem: <strong>${escHtml(nomeDoc)}</strong> (clique para copiar)
+            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
+               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>
             </span>
         </div>
         <div class="rx-evidence">${escHtml(c.evidencia)}</div>
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
-        <div style="margin-top: 15px; display: flex; gap: 10px;">
+        <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap:wrap;">
           <button class="btn btn-sm" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
+          <button class="btn btn-sm" style="background-color: #495057; color: #fff; border: none; font-weight: bold;" onclick="modalEncaminharAchado('${escAttr(referenciaAchado)}')"><i class="ti ti-send"></i> Encaminhar este achado</button>
           <button class="btn btn-secondary btn-sm" style="background-color: #f8d7da; color: #842029; border: 1px solid #f5c2c7;" onclick="descartarCard('${cardId}-div')"><i class="ti ti-trash"></i> Ocultar</button>
         </div>
+        <div class="status-consulta-achado" style="margin-top:10px;"></div>
       </div>
     </div>`;
   });
   painel.innerHTML = html;
+  carregarStatusConsultasAchados();
 }
 
 function descartarCard(idDiv) {
   const card = document.getElementById(idDiv);
   if (card) { card.style.transition = '0.3s ease'; card.style.opacity = '0'; setTimeout(() => card.remove(), 300); }
+}
+
+// ==================== ENCAMINHAR ACHADO ESPECÍFICO ====================
+// Diferente de "Encaminhar" no topo do processo: aqui não transfere responsabilidade
+// nenhuma, é só uma consulta pontual sobre UM achado. Quem recebe só vê isso se abrir
+// esse mesmo processo depois — não existe aviso/notificação (limite conhecido).
+async function modalEncaminharAchado(referenciaAchado) {
+  criarModal(`<span class="spinner"></span> Carregando usuários...`);
+  const res = await api('usuarios/listar');
+  if (!res.ok) { criarModal(`<div class="alert alert-danger">Erro: ${escHtml(res.erro)}</div>`); return; }
+
+  const usuarios = (res.usuarios || []).filter(u => u.email !== usuarioAtual.email);
+  if (!usuarios.length) { criarModal(`<div class="alert alert-warning">Não há outro usuário cadastrado.</div>`); return; }
+
+  const opcoes = usuarios.map(u => `<option value="${escAttr(u.email)}">${escHtml(u.nome)} (${escHtml(u.gerencia)})</option>`).join('');
+  criarModal(`
+    <h2 style="margin-bottom:8px; font-size:1.15rem;">Encaminhar Achado</h2>
+    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:15px;">"${escHtml(referenciaAchado)}"</p>
+    <input type="hidden" id="enc-ach-referencia" value="${escAttr(referenciaAchado)}">
+    <div class="form-group">
+      <label>Enviar para</label>
+      <select id="enc-ach-destinatario" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:6px;">${opcoes}</select>
+    </div>
+    <div class="form-group">
+      <label>Sua pergunta/observação</label>
+      <textarea id="enc-ach-mensagem" placeholder="Ex: Você concorda com essa leitura? Confirma esse valor?" style="width:100%;min-height:70px;padding:8px;border:1px solid #ced4da;border-radius:6px;"></textarea>
+    </div>
+    <div id="enc-ach-status"></div>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-secondary" style="flex:1;" onclick="fecharModal()"><i class="ti ti-x"></i> Cancelar</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmarEncaminharAchado()"><i class="ti ti-send"></i> Enviar</button>
+    </div>
+  `, false);
+}
+
+async function confirmarEncaminharAchado() {
+  const referencia = document.getElementById('enc-ach-referencia').value;
+  const destinatario = document.getElementById('enc-ach-destinatario').value;
+  const mensagem = document.getElementById('enc-ach-mensagem').value.trim();
+  const statusEl = document.getElementById('enc-ach-status');
+  statusEl.innerHTML = '<span class="spinner"></span> Enviando...';
+
+  const res = await api('achados/encaminhar', {
+    processo_id: processoAtual.id, achado_referencia: referencia,
+    de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem
+  });
+  if (!res.ok) { statusEl.innerHTML = `<div class="alert alert-danger">${escHtml(res.erro)}</div>`; return; }
+
+  fecharModal();
+  carregarStatusConsultasAchados();
+}
+
+// Tempo decorrido REAL desde o envio — nunca um prazo/SLA fingido, só "há quanto tempo
+// está esperando", igual já fazemos no cronômetro do banner da Checagem.
+function _tempoDecorridoDesde(dataISO) {
+  const ms = Date.now() - new Date(dataISO).getTime();
+  const minutos = Math.floor(ms / 60000);
+  if (minutos < 60) return `${minutos} min`;
+  const horas = Math.floor(minutos / 60);
+  if (horas < 24) return `${horas}h`;
+  const dias = Math.floor(horas / 24);
+  return dias === 1 ? '1 dia' : `${dias} dias`;
+}
+
+async function carregarStatusConsultasAchados() {
+  if (!processoAtual) return;
+  try {
+    const res = await api('achados/listar', { processo_id: processoAtual.id });
+    if (!res.ok) return;
+    const consultas = res.consultas || [];
+
+    document.querySelectorAll('[data-referencia-achado]').forEach(cardDiv => {
+      const referencia = cardDiv.getAttribute('data-referencia-achado');
+      const statusEl = cardDiv.querySelector('.status-consulta-achado');
+      if (!statusEl) return;
+      // A mais recente encaminhada pra essa referência, se houver mais de uma no tempo
+      const consulta = consultas.filter(c => c.achado_referencia === referencia)[0];
+      if (!consulta) { statusEl.innerHTML = ''; return; }
+
+      if (consulta.resposta) {
+        statusEl.innerHTML = `
+          <div style="background:#e7f5ff; border-left:3px solid #339af0; padding:8px 12px; border-radius:4px; font-size:0.82rem;">
+            <strong>${escHtml(consulta.para_usuario)} respondeu</strong> (${_tempoDecorridoDesde(consulta.data_resposta)} atrás):
+            <div style="margin-top:4px; color:#1864ab;">${escHtml(consulta.resposta)}</div>
+          </div>`;
+      } else if (String(consulta.para_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase()) {
+        // Sou eu que preciso responder — mostra a pergunta e um campo pra responder na hora
+        statusEl.innerHTML = `
+          <div style="background:#fff9db; border-left:3px solid #f5c518; padding:8px 12px; border-radius:4px; font-size:0.82rem;">
+            <strong>${escHtml(consulta.de_usuario)} pediu sua opinião</strong> (há ${_tempoDecorridoDesde(consulta.data_envio)}): "${escHtml(consulta.mensagem)}"
+            <textarea id="resposta-${consulta.id}" placeholder="Sua resposta..." style="width:100%; margin-top:8px; padding:6px; border:1px solid #ced4da; border-radius:4px; min-height:50px;"></textarea>
+            <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderConsultaAchado(${consulta.id})">Responder</button>
+          </div>`;
+      } else {
+        statusEl.innerHTML = `
+          <div style="font-size:0.78rem; color:var(--text-muted);">
+            <i class="ti ti-clock"></i> Enviado para ${escHtml(consulta.para_usuario)} há ${_tempoDecorridoDesde(consulta.data_envio)} — aguardando resposta.
+          </div>`;
+      }
+    });
+  } catch (e) { console.warn('Falha ao carregar status de achados encaminhados:', e.message); }
+}
+
+async function responderConsultaAchado(id) {
+  const textarea = document.getElementById('resposta-' + id);
+  const resposta = textarea.value.trim();
+  if (!resposta) return alert('Escreva uma resposta antes de enviar.');
+  const res = await api('achados/responder', { id, resposta });
+  if (!res.ok) { alert('Erro ao responder: ' + res.erro); return; }
+  carregarStatusConsultasAchados();
 }
 
 // === 2. PERGUNTAS AO PROCESSO ===
@@ -1601,6 +2220,23 @@ async function rodarRevisaoFinal() {
   const p = processoAtual;
   st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
 
+  _garantirEstiloPulso();
+  const banner = document.getElementById('banner-conferindo');
+  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
+  const bannerTimer = document.getElementById('banner-conferindo-timer');
+  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
+  let segundosDecorridos = 0;
+  let intervaloTimer = null;
+  if (banner) {
+    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU REVISANDO O PARECER...';
+    if (bannerDetalhe) bannerDetalhe.textContent = `${Math.round(txtAnalista.length / 1000)} mil caracteres no parecer`;
+    banner.classList.remove('hidden');
+    if (bannerTimer) {
+      bannerTimer.textContent = '0s';
+      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
+    }
+  }
+
   const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
 apenas aponta pontos de atenção para o analista decidir. Avalie o Parecer Final elaborado pelo analista
 seguindo três frentes obrigatórias:
@@ -1659,7 +2295,12 @@ ${txtAnalista}`;
     // Guarda o hash do texto revisado — é o que a trava do botão "Finalizar" confere depois
     _ultimoTextoRevisadoHash = await sha256(txtAnalista);
 
-  } catch (e) { st.innerHTML = renderErroAmigavel(e.message); }
+  } catch (e) {
+    st.innerHTML = renderErroAmigavel(e.message);
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
+  }
 }
 
 // ==================== UTILS ====================
@@ -1711,6 +2352,20 @@ function renderErroAmigavel(mensagemTecnica) {
     </div>`;
 }
 
+// Injeta uma vez (não repete se já existir) o CSS de pulsação usado pelo banner
+// "ESTOU CONFERINDO OS DOCUMENTOS..." — não depende do style.css, então funciona
+// mesmo sem tocar nesse arquivo.
+function _garantirEstiloPulso() {
+  if (document.getElementById('estilo-pulso-conferindo')) return;
+  const style = document.createElement('style');
+  style.id = 'estilo-pulso-conferindo';
+  style.textContent = `
+    @keyframes pulseConferindo { 0%,100% { box-shadow: 0 0 0 0 rgba(142,22,40,0.30); } 50% { box-shadow: 0 0 0 8px rgba(142,22,40,0); } }
+    #banner-conferindo:not(.hidden) { animation: pulseConferindo 1.6s infinite; }
+  `;
+  document.head.appendChild(style);
+}
+
 function escHtml(s) {
   if (s === null || s === undefined) return '';
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -1738,9 +2393,10 @@ function verificarIA() {
   const provedoresAtivos = [];
   if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresAtivos.push('Gemini');
   if (GROQ_KEY && GROQ_KEY.trim()) provedoresAtivos.push('Groq');
+  if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresAtivos.push('OpenRouter');
   if (OLLAMA_URL) provedoresAtivos.push('Ollama'); // sempre "configurado" (URL tem padrão), só não garante que está rodando
 
-  if (GEMINI_KEY || GROQ_KEY) {
+  if (GEMINI_KEY || GROQ_KEY || OPENROUTER_KEY) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresAtivos.filter(p => p !== 'Ollama').join(' + ') + ')';
   } else {
