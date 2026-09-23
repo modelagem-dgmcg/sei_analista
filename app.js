@@ -16,6 +16,19 @@ let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
+// Habilitado/desabilitado — SEPARADO da chave, de propósito. Desligar um provedor não
+// apaga a chave dele (pra não precisar colar tudo de novo depois); só faz o motor pular
+// esse provedor por ora. Padrão: habilitado (só desliga quem a pessoa desligar de fato).
+function _lerHabilitado(chaveStorage) {
+  const v = localStorage.getItem(chaveStorage);
+  return v === null ? true : v === 'true';
+}
+let GEMINI_ATIVO = _lerHabilitado('sei_gemini_ativo');
+let GROQ_ATIVO = _lerHabilitado('sei_groq_ativo');
+let KIMI_ATIVO = _lerHabilitado('sei_kimi_ativo');
+let OPENROUTER_ATIVO = _lerHabilitado('sei_openrouter_ativo');
+let OLLAMA_ATIVO = _lerHabilitado('sei_ollama_ativo');
+
 // Ordem de tentativa dos provedores — cada pessoa pode reordenar (tela "Motor de IA"),
 // porque o provedor que funciona rápido pra uma pessoa pode não ser o mesmo pra outra
 // (rede, cota, região). Padrão de fábrica: Gemini primeiro, igual sempre foi.
@@ -237,31 +250,35 @@ async function showView(v, subCaixa = 'entrada') {
     const opcoesPrioridade = (id) => [1, 2, 3, 4, 5].map(n =>
       `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id) + 1 === n ? 'selected' : ''}>${n}</option>`
     ).join('');
+    const checkboxAtivo = (id, ativo) => `
+      <label title="Ligado/desligado — desligar não apaga a chave, só faz o sistema não usar esse provedor por ora" style="display:flex; align-items:center; gap:4px; font-size:0.72rem; color:var(--text-muted); cursor:pointer; white-space:nowrap; margin-top:6px;">
+        <input type="checkbox" id="ativo-${id}" ${ativo ? 'checked' : ''} style="cursor:pointer;"> Habilitado
+      </label>`;
     content.innerHTML = `
       <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
           O número ao lado de cada provedor é a ordem de tentativa — 1 é tentado primeiro, e só passa
-          pro próximo se o anterior der erro de verdade (não é sobre gostar mais ou menos, é sobre qual
-          responde mais rápido/confiável pra você). Pode repetir número — nesse caso, a ordem entre eles
-          fica a de sempre (Gemini, Groq, Kimi, OpenRouter, Ollama). Ollama, por rodar local, não muda
-          quando qualquer outro estiver sobrecarregado — mas continua exigindo estar instalado e aberto
-          na sua máquina.
+          pro próximo se o anterior der erro de verdade. Pode repetir número — nesse caso, a ordem entre
+          eles fica a de sempre (Gemini, Groq, Kimi, OpenRouter, Ollama). "Habilitado" desliga o provedor
+          sem apagar a chave — útil se ele estiver com problema por ora e você não quiser ter que colar
+          a chave de novo depois. Ollama, por rodar local, continua exigindo estar instalado e aberto na
+          sua máquina.
         </p>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
           <select id="prio-gemini" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('gemini')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Gemini</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Gemini</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio...">${checkboxAtivo('gemini', GEMINI_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
           <select id="prio-groq" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('groq')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com...">${checkboxAtivo('groq', GROQ_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
           <select id="prio-kimi" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('kimi')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai..."></div>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai...">${checkboxAtivo('kimi', KIMI_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
           <select id="prio-openrouter" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys...">${checkboxAtivo('openrouter', OPENROUTER_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:16px;">
           <select id="prio-ollama" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
@@ -269,6 +286,7 @@ async function showView(v, subCaixa = 'entrada') {
             <label>Ollama (local, opcional)</label>
             <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
             <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
+            ${checkboxAtivo('ollama', OLLAMA_ATIVO)}
           </div>
         </div>
         <button class="btn btn-primary" onclick="salvarConfig()"><i class="ti ti-check"></i> Salvar</button>
@@ -633,6 +651,17 @@ function salvarConfig() {
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
   OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
   localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
+
+  GEMINI_ATIVO = !!document.getElementById('ativo-gemini')?.checked;
+  localStorage.setItem('sei_gemini_ativo', String(GEMINI_ATIVO));
+  GROQ_ATIVO = !!document.getElementById('ativo-groq')?.checked;
+  localStorage.setItem('sei_groq_ativo', String(GROQ_ATIVO));
+  KIMI_ATIVO = !!document.getElementById('ativo-kimi')?.checked;
+  localStorage.setItem('sei_kimi_ativo', String(KIMI_ATIVO));
+  OPENROUTER_ATIVO = !!document.getElementById('ativo-openrouter')?.checked;
+  localStorage.setItem('sei_openrouter_ativo', String(OPENROUTER_ATIVO));
+  OLLAMA_ATIVO = !!document.getElementById('ativo-ollama')?.checked;
+  localStorage.setItem('sei_ollama_ativo', String(OLLAMA_ATIVO));
 
   // Ordena pelo número escolhido em cada seletor — em caso de empate, o sort estável do
   // JS preserva a ordem de partida abaixo (a ordem de fábrica), então empate nunca é
@@ -1378,11 +1407,11 @@ const PROVEDOR_TIMEOUT_MS = 60000;
 // Metadados de cada provedor — usado tanto pra montar o painel visual quanto pro motor
 // de fallback. A ORDEM em que tenta é ORDEM_PROVEDORES_IDS (configurável), não esta lista.
 const PROVEDORES_INFO = {
-  gemini:     { nome: 'Gemini',     temChave: () => !!GEMINI_KEY,     invocar: invocarGeminiPremium },
-  groq:       { nome: 'Groq',       temChave: () => !!GROQ_KEY,       invocar: invocarGroq },
-  kimi:       { nome: 'Kimi',       temChave: () => !!KIMI_KEY,       invocar: invocarKimi },
-  openrouter: { nome: 'OpenRouter', temChave: () => !!OPENROUTER_KEY, invocar: invocarOpenRouter },
-  ollama:     { nome: 'Ollama',     temChave: () => true,             invocar: invocarOllama }
+  gemini:     { nome: 'Gemini',     temChave: () => !!GEMINI_KEY && GEMINI_ATIVO,         invocar: invocarGeminiPremium },
+  groq:       { nome: 'Groq',       temChave: () => !!GROQ_KEY && GROQ_ATIVO,             invocar: invocarGroq },
+  kimi:       { nome: 'Kimi',       temChave: () => !!KIMI_KEY && KIMI_ATIVO,             invocar: invocarKimi },
+  openrouter: { nome: 'OpenRouter', temChave: () => !!OPENROUTER_KEY && OPENROUTER_ATIVO, invocar: invocarOpenRouter },
+  ollama:     { nome: 'Ollama',     temChave: () => OLLAMA_ATIVO,                         invocar: invocarOllama }
 };
 
 function renderPainelProvedores(statusEl, estados, mensagem) {
@@ -1584,7 +1613,7 @@ async function invocarGroq(prompt, isChat, statusEl) {
     body: JSON.stringify(body), signal: controller.signal
   });
   clearTimeout(timer);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
   const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -1602,7 +1631,7 @@ async function invocarKimi(prompt, isChat, statusEl) {
     body: JSON.stringify(body), signal: controller.signal
   });
   clearTimeout(timer);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
   const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -1618,7 +1647,7 @@ async function invocarOpenRouter(prompt, isChat, statusEl) {
     body: JSON.stringify(body), signal: controller.signal
   });
   clearTimeout(timer);
-  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
   const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -2279,10 +2308,10 @@ function verificarIA() {
   const txt = document.getElementById('ai-status-txt');
   if (!dot || !txt) return;
   const provedoresNuvem = [];
-  if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresNuvem.push('Gemini');
-  if (GROQ_KEY && GROQ_KEY.trim()) provedoresNuvem.push('Groq');
-  if (KIMI_KEY && KIMI_KEY.trim()) provedoresNuvem.push('Kimi');
-  if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresNuvem.push('OpenRouter');
+  if (GEMINI_KEY && GEMINI_KEY.trim() && GEMINI_ATIVO) provedoresNuvem.push('Gemini');
+  if (GROQ_KEY && GROQ_KEY.trim() && GROQ_ATIVO) provedoresNuvem.push('Groq');
+  if (KIMI_KEY && KIMI_KEY.trim() && KIMI_ATIVO) provedoresNuvem.push('Kimi');
+  if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
   if (provedoresNuvem.length) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
