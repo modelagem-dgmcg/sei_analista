@@ -1,40 +1,960 @@
-<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#1a1f24">
-  <meta name="description" content="Bancada digital de análise de processos SEI.">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="SEI Analista">
-  <title>SEI Analista</title>
-  <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/mascote-analista.png" type="image/png">
-  <link rel="apple-touch-icon" href="icons/mascote-analista.png">
+/* ============================================================
+   SEI ANALISTA — Code.gs (backend Google Apps Script)
+   ============================================================
+   COMO USAR (passo a passo):
 
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
-  <link rel="stylesheet" href="style.css">
+   1) Crie (ou abra) uma planilha Google Sheets em branco.
+   2) Menu Extensões → Apps Script.
+   3) Apague o conteúdo padrão do arquivo "Code.gs" e cole TODO este arquivo.
+   4) Salve (ícone de disquete ou Ctrl+S).
+   5) Volte para a planilha (aba do navegador) e recarregue a página.
+      Vai aparecer um novo menu "SEI Analista" na barra de menus.
+   6) Clique em "SEI Analista → 1. Configurar planilha" — isso cria
+      todas as abas necessárias automaticamente. Só precisa fazer uma vez.
+   7) Clique em "SEI Analista → 2. Criar usuário" e cadastre você mesmo
+      (nome, e-mail/login, senha, gerência). Repita para cada colega.
+   8) Na Apps Script: Implantar → Nova implantação → tipo "App da Web".
+        - Executar como: Eu (sua conta)
+        - Quem pode acessar: qualquer pessoa com o link que puder no domínio
+          (ou "Qualquer pessoa" se quiser acesso fora do login institucional)
+      Clique em "Implantar" e AUTORIZE as permissões pedidas.
+   9) Copie a URL que termina em ".../exec" — essa é a URL da API que vai
+      ser configurada no front-end (SEI Analista, tela de Configurações).
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <!-- Biblioteca de Criptografia para rodar localmente sem erro -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
-</head>
-<body>
-  <div id="login-screen">
-    <div class="login-box">
-      <div class="login-header"><h1>SEI <span>Analista</span></h1></div>
-      <div class="form-group"><label style="color: #495057;">Login Institucional</label><input type="text" id="login-usuario" placeholder="nome.sobrenome"></div>
-      <div class="form-group"><label style="color: #495057;">Senha</label><input type="password" id="login-senha" placeholder="••••••••" onkeydown="if(event.key==='Enter') fazerLogin()"></div>
-      <button class="btn btn-primary" style="width: 100%; padding: 12px; font-size: 1rem; margin-top: 10px;" onclick="fazerLogin()">
-        <i class="ti ti-login-2"></i> Acessar Bancada
-      </button>
-      <div id="login-error" class="alert alert-danger hidden" style="margin-top: 15px; text-align: center;"></div>
-    </div>
-  </div>
+   Sempre que você EDITAR este código depois de já ter implantado, precisa
+   fazer "Gerenciar implantações → editar (lápis) → Nova versão → Implantar"
+   para as mudanças valerem na URL já publicada.
+   ============================================================ */
+
+// ==================== ESTRUTURA DA PLANILHA ====================
+
+const SHEETS = {
+  USUARIOS:        'Usuarios',
+  PROCESSOS:       'Processos',
+  DOCUMENTOS:      'Documentos',
+  CONTEUDO:        'ConteudoBlocos',
+  AUDITORIAS:      'Auditorias',
+  TRAMITACOES:     'Tramitacoes',
+  CONSULTAS:       'Consultas',
+  ACOMPANHAMENTOS: 'Acompanhamentos',
+  NOTAS:           'Notas',
+  ACHADOS_CONSULTAS: 'AchadosConsultas',
+  LOG:             'Log'
+};
+
+const CABECALHOS = {
+  Usuarios:        ['id','nome','email','senha_hash','gerencia','ativo','perfil'],
+  Processos:       ['id','numero_sei','titulo','unidade','oss','gerencia','status','responsavel_atual','criado_por','criado_em','atualizado_em','documento_final'],
+  Documentos:      ['id','processo_id','nome_arquivo','adicionado_por','adicionado_em'],
+  ConteudoBlocos:  ['id','documento_id','bloco_num','conteudo'],
+  Auditorias:      ['id','processo_id','tipo_checkpoint','data','executado_por','qtd_achados','achados_json','raw_ia'],
+  Tramitacoes:     ['id','processo_id','de_usuario','para_usuario','data','observacao'],
+  Consultas:       ['id','processo_id','pergunta','resposta','usuario','data'],
+  Acompanhamentos: ['id','processo_id','usuario','ativo'],
+  Notas:           ['id','processo_id','referencia','nota','usuario','data'],
+  AchadosConsultas: ['id','processo_id','achado_referencia','de_usuario','para_usuario','mensagem','resposta','data_envio','data_resposta'],
+  Log:             ['id','data','usuario','acao','processo_id','detalhes']
+};
+
+// Status possíveis de um processo — o front-end usa esses textos exatos
+const STATUS = {
+  AGUARDANDO_INICIAL: 'Aguardando Revisão Inicial',
+  EM_ANALISE:         'Em Análise',
+  AGUARDANDO_FINAL:   'Aguardando Revisão Final',
+  PRONTO_ASSINAR:     'Pronto para Assinar no SEI'
+};
+
+// Tamanho máximo de um bloco de texto por célula (limite prático do Sheets)
+const BLOCO_MAX_CHARS = 45000;
+
+// ==================== MENU DA PLANILHA ====================
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('SEI Analista')
+    .addItem('1. Configurar planilha (rodar uma vez)', 'configurarPlanilha')
+    .addItem('2. Criar usuário', 'criarUsuario')
+    .addItem('3. Trocar senha de um usuário', 'trocarSenhaUsuario')
+    .addToUi();
+}
+
+function configurarPlanilha() {
+  Object.keys(CABECALHOS).forEach(nome => getSheet(nome));
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ['Página1', 'Sheet1', 'Planilha1'].forEach(n => {
+    const sh = ss.getSheetByName(n);
+    if (sh && sh.getLastRow() === 0) ss.deleteSheet(sh);
+  });
+  SpreadsheetApp.getUi().alert(
+    'Planilha configurada com sucesso!\n\nAbas criadas: ' + Object.keys(CABECALHOS).join(', ') +
+    '\n\nPróximo passo: menu "SEI Analista → 2. Criar usuário" para cadastrar você e seus colegas.' +
+    '\n\nNovidade: processos agora têm um responsável atual e podem ser encaminhados entre usuários ' +
+    '(aba "Tramitacoes" guarda o histórico de quem mandou pra quem).'
+  );
+}
+
+function criarUsuario() {
+  const ui = SpreadsheetApp.getUi();
+  const nome = ui.prompt('Novo usuário', 'Nome completo:', ui.ButtonSet.OK_CANCEL);
+  if (nome.getSelectedButton() !== ui.Button.OK || !nome.getResponseText().trim()) return;
+
+  const email = ui.prompt('Novo usuário', 'E-mail ou login (precisa ser único):', ui.ButtonSet.OK_CANCEL);
+  if (email.getSelectedButton() !== ui.Button.OK || !email.getResponseText().trim()) return;
+
+  const emailValor = email.getResponseText().trim().toLowerCase();
+  if (lerLinhas(SHEETS.USUARIOS).some(u => String(u.email).toLowerCase() === emailValor)) {
+    ui.alert('Já existe um usuário com esse e-mail/login.');
+    return;
+  }
+
+  const senha = ui.prompt('Novo usuário', 'Senha inicial (o usuário pode pedir troca depois):', ui.ButtonSet.OK_CANCEL);
+  if (senha.getSelectedButton() !== ui.Button.OK || !senha.getResponseText().trim()) return;
+
+  const gerencia = ui.prompt('Novo usuário', 'Gerência/caixa (ex.: GGPCG, GAOCG, Diretoria...):', ui.ButtonSet.OK_CANCEL);
+  if (gerencia.getSelectedButton() !== ui.Button.OK) return;
+
+  const perfilResp = ui.prompt('Novo usuário', 'Perfil — digite "admin" para acesso ao SEI Analista ADM, ou deixe em branco para usuário comum:', ui.ButtonSet.OK_CANCEL);
+  if (perfilResp.getSelectedButton() !== ui.Button.OK) return;
+  const perfil = perfilResp.getResponseText().trim().toLowerCase() === 'admin' ? 'admin' : 'usuario';
+
+  const id = proximoId(SHEETS.USUARIOS);
+  inserirLinha(SHEETS.USUARIOS, {
+    id, nome: nome.getResponseText().trim(), email: emailValor,
+    senha_hash: sha256Hex(senha.getResponseText()), gerencia: gerencia.getResponseText().trim(), ativo: true, perfil
+  });
+  ui.alert('Usuário "' + nome.getResponseText().trim() + '" criado com sucesso!');
+}
+
+function trocarSenhaUsuario() {
+  const ui = SpreadsheetApp.getUi();
+  const email = ui.prompt('Trocar senha', 'E-mail/login do usuário:', ui.ButtonSet.OK_CANCEL);
+  if (email.getSelectedButton() !== ui.Button.OK) return;
+  const emailValor = email.getResponseText().trim().toLowerCase();
+  const usuarios = lerLinhas(SHEETS.USUARIOS);
+  const u = usuarios.find(x => String(x.email).toLowerCase() === emailValor);
+  if (!u) { ui.alert('Usuário não encontrado.'); return; }
+
+  const novaSenha = ui.prompt('Trocar senha', 'Nova senha para ' + u.nome + ':', ui.ButtonSet.OK_CANCEL);
+  if (novaSenha.getSelectedButton() !== ui.Button.OK || !novaSenha.getResponseText().trim()) return;
+
+  atualizarLinha(SHEETS.USUARIOS, u.id, { senha_hash: sha256Hex(novaSenha.getResponseText()) });
+  ui.alert('Senha atualizada.');
+}
+
+function sha256Hex(texto) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, texto, Utilities.Charset.UTF_8);
+  return bytes.map(b => (b < 0 ? b + 256 : b).toString(16).padStart(2, '0')).join('');
+}
+
+// ==================== HELPERS DE PLANILHA (banco de dados) ====================
+
+function getSheet(nome) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName(nome);
+  if (!sh) {
+    sh = ss.insertSheet(nome);
+    sh.appendRow(CABECALHOS[nome]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function lerLinhas(nomeAba) {
+  const sh = getSheet(nomeAba);
+  const dados = sh.getDataRange().getValues();
+  if (dados.length < 2) return [];
+  const cab = dados[0];
+  return dados.slice(1)
+    .filter(l => l[0] !== '' && l[0] !== null)
+    .map(l => {
+      const obj = {};
+      cab.forEach((c, i) => obj[c] = l[i]);
+      return obj;
+    });
+}
+
+function proximoId(nomeAba) {
+  const linhas = lerLinhas(nomeAba);
+  if (!linhas.length) return 1;
+  return Math.max(...linhas.map(l => Number(l.id) || 0)) + 1;
+}
+
+function inserirLinha(nomeAba, obj) {
+  const sh = getSheet(nomeAba);
+  const cab = CABECALHOS[nomeAba];
+  const linha = cab.map(c => (obj[c] !== undefined && obj[c] !== null) ? obj[c] : '');
+  sh.appendRow(linha);
+  return obj;
+}
+
+function atualizarLinha(nomeAba, id, patch) {
+  const sh = getSheet(nomeAba);
+  const dados = sh.getDataRange().getValues();
+  const cab = dados[0];
+  const idxId = cab.indexOf('id');
+  for (let i = 1; i < dados.length; i++) {
+    if (String(dados[i][idxId]) === String(id)) {
+      Object.keys(patch).forEach(k => {
+        const idxCol = cab.indexOf(k);
+        if (idxCol > -1) sh.getRange(i + 1, idxCol + 1).setValue(patch[k]);
+      });
+      return true;
+    }
+  }
+  return false;
+}
+
+function excluirLinha(nomeAba, id) {
+  const sh = getSheet(nomeAba);
+  const dados = sh.getDataRange().getValues();
+  const idxId = dados[0].indexOf('id');
+  for (let i = dados.length - 1; i >= 1; i--) {
+    if (String(dados[i][idxId]) === String(id)) { sh.deleteRow(i + 1); return true; }
+  }
+  return false;
+}
+
+// ==================== ROTEADOR HTTP ====================
+
+function doGet(e)  { return roteador(e); }
+function doPost(e) { return roteador(e); }
+
+const ROTAS = {
+  'auth/login':                  authLogin,
+  'usuarios/listar':             usuariosListar,
+  'processos/listar':            processosListar,
+  'processos/obter':             processosObter,
+  'processos/criar':             processosCriar,
+  'processos/atualizar-status':  processosAtualizarStatus,
+  'processos/encaminhar':        processosEncaminhar,
+  'processos/contagens':         processosContagens,
+  'processos/parar-acompanhamento': processosPararAcompanhamento,
+  'processos/remover':           processosRemover,
+  'tramitacoes/listar':          tramitacoesListar,
+  'consultas/salvar':            consultasSalvar,
+  'adm/estatisticas':             admEstatisticas,
+  'adm/achados-todos':            admAchadosTodos,
+  'notas/salvar':                 notasSalvar,
+  'notas/listar':                 notasListar,
+  'achados/encaminhar':           achadosEncaminhar,
+  'achados/listar':                achadosListar,
+  'achados/contar-pendentes':      achadosContarPendentes,
+  'achados/responder':            achadosResponder,
+  'consultas/listar':            consultasListar,
+  'documentos/listar':           documentosListar,
+  'documentos/adicionar':        documentosAdicionar,
+  'documentos/adicionar-completo': documentosAdicionarCompleto,
+  'documentos/remover':          documentosRemover,
+  'conteudo/salvar-bloco':       conteudoSalvarBloco,
+  'conteudo/listar':             conteudoListar,
+  'auditorias/salvar':           auditoriasSalvar,
+  'auditorias/listar':           auditoriasListar,
+  'normas/buscar-por-unidade':   normasBuscarPorUnidade,
+  'log/registrar':               logRegistrar
+};
+
+function roteador(e) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (err) {
+    return saida({ ok: false, erro: 'Sistema ocupado, tente novamente em instantes.' });
+  }
+  try {
+    const action = ((e.parameter && e.parameter.action) || '').trim();
+    let body = {};
+    if (e.postData && e.postData.contents) {
+      try { body = JSON.parse(e.postData.contents); } catch (err) { /* corpo vazio ou inválido */ }
+    }
+    const params = Object.assign({}, e.parameter, body);
+
+    const fn = ROTAS[action];
+    if (!fn) return saida({ ok: false, erro: 'Ação desconhecida: ' + action });
+
+    const resultado = fn(params) || {};
+    if (resultado.ok === false) return saida(resultado);
+    return saida(Object.assign({ ok: true }, resultado));
+  } catch (err) {
+    return saida({ ok: false, erro: String(err && err.message || err) });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function saida(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// ==================== AUTENTICAÇÃO ====================
+
+function authLogin(p) {
+  const emailValor = String(p.email || '').trim().toLowerCase();
+  const usuarios = lerLinhas(SHEETS.USUARIOS);
+  const u = usuarios.find(x =>
+    String(x.email).toLowerCase() === emailValor &&
+    x.senha_hash === p.senha_hash &&
+    String(x.ativo).toUpperCase() !== 'FALSE'
+  );
+  if (!u) return { ok: false, erro: 'Usuário ou senha inválidos.' };
+  return { usuario: { id: u.id, nome: u.nome, email: u.email, gerencia: u.gerencia, perfil: u.perfil || 'usuario' } };
+}
+
+// Lista usuários ativos para popular o seletor de "encaminhar para" — nunca inclui senha_hash
+function usuariosListar() {
+  const usuarios = lerLinhas(SHEETS.USUARIOS)
+    .filter(u => String(u.ativo).toUpperCase() !== 'FALSE')
+    .map(u => ({ id: u.id, nome: u.nome, email: u.email, gerencia: u.gerencia }));
+  return { usuarios };
+}
+
+// ==================== PROCESSOS ====================
+
+function processosListar(p) {
+  let lista = lerLinhas(SHEETS.PROCESSOS);
+  if (p.gerencia) lista = lista.filter(x => x.gerencia === p.gerencia);
+
+  if (p.caixa) {
+    const resp = String(p.responsavel || '').toLowerCase();
+    const acompanhadosIds = lerLinhas(SHEETS.ACOMPANHAMENTOS)
+      .filter(a => String(a.usuario).toLowerCase() === resp && String(a.ativo).toUpperCase() !== 'FALSE')
+      .map(a => String(a.processo_id));
+
+    if (p.caixa === 'entrada') {
+      lista = lista.filter(x => String(x.responsavel_atual).toLowerCase() === resp && x.status === STATUS.AGUARDANDO_INICIAL);
+    } else if (p.caixa === 'andamento') {
+      lista = lista.filter(x => String(x.responsavel_atual).toLowerCase() === resp &&
+        (x.status === STATUS.EM_ANALISE || x.status === STATUS.AGUARDANDO_FINAL || x.status === STATUS.PRONTO_ASSINAR));
+    } else if (p.caixa === 'encaminhados') {
+      lista = lista.filter(x => acompanhadosIds.includes(String(x.id)));
+    } else if (p.caixa === 'concluidos') {
+      lista = lista.filter(x => x.status === 'Concluído' &&
+        (String(x.responsavel_atual).toLowerCase() === resp || acompanhadosIds.includes(String(x.id))));
+    }
+  } else {
+    // Compatibilidade com chamadas antigas (sem "caixa") — ex.: Registro de Concluídos
+    if (p.responsavel) lista = lista.filter(x => String(x.responsavel_atual).toLowerCase() === String(p.responsavel).toLowerCase());
+    if (p.status)      lista = lista.filter(x => x.status === p.status);
+  }
+
+  if (p.busca) {
+    const termo = String(p.busca).toLowerCase();
+    lista = lista.filter(x => (String(x.numero_sei) + ' ' + String(x.titulo) + ' ' + String(x.unidade)).toLowerCase().includes(termo));
+  }
+
+  const docs = lerLinhas(SHEETS.DOCUMENTOS);
+  const auds = lerLinhas(SHEETS.AUDITORIAS);
+  const trams = lerLinhas(SHEETS.TRAMITACOES);
+
+  lista = lista.map(proc => {
+    const docsDoProc = docs.filter(d => String(d.processo_id) === String(proc.id));
+    const audsDoProc = auds.filter(a => String(a.processo_id) === String(proc.id))
+      .sort((a, b) => new Date(b.data) - new Date(a.data));
+    const ultima = audsDoProc[0];
+    const tramsDoProc = trams.filter(t => String(t.processo_id) === String(proc.id))
+      .sort((a, b) => new Date(b.data) - new Date(a.data));
+    const ultimaTram = tramsDoProc[0];
+    return Object.assign({}, proc, {
+      qtd_documentos: docsDoProc.length,
+      ultima_auditoria_qtd_achados: ultima ? ultima.qtd_achados : null,
+      ultima_auditoria_data: ultima ? ultima.data : null,
+      ultima_auditoria_checkpoint: ultima ? ultima.tipo_checkpoint : null,
+      ultima_tramitacao: ultimaTram ? { data: ultimaTram.data, para_usuario: ultimaTram.para_usuario } : null
+    });
+  });
+
+  lista.sort((a, b) => new Date(b.atualizado_em) - new Date(a.atualizado_em));
+  return { processos: lista };
+}
+
+function processosObter(p) {
+  const lista = lerLinhas(SHEETS.PROCESSOS);
+  const proc = lista.find(x => String(x.id) === String(p.id) || (p.numero_sei && x.numero_sei === p.numero_sei));
+  if (!proc) return { ok: false, erro: 'Processo não encontrado.' };
+  return { processo: proc };
+}
+
+function processosCriar(p) {
+  if (!p.titulo) return { ok: false, erro: 'Título é obrigatório.' };
+  const id = proximoId(SHEETS.PROCESSOS);
+  const agora = new Date().toISOString();
+  const obj = {
+    id,
+    numero_sei: p.numero_sei || '',
+    titulo: p.titulo,
+    unidade: p.unidade || '',
+    oss: p.oss || '',
+    gerencia: p.gerencia || '',
+    status: STATUS.AGUARDANDO_INICIAL,
+    responsavel_atual: p.responsavel_atual || p.criado_por || '',
+    criado_por: p.criado_por || '',
+    criado_em: agora,
+    atualizado_em: agora
+  };
+  inserirLinha(SHEETS.PROCESSOS, obj);
+  return { processo: obj };
+}
+
+function processosAtualizarStatus(p) {
+  if (!p.id || !p.status) return { ok: false, erro: 'id e status são obrigatórios.' };
+  const patch = { status: p.status, atualizado_em: new Date().toISOString() };
+  if (p.documento_final !== undefined) patch.documento_final = p.documento_final;
+  atualizarLinha(SHEETS.PROCESSOS, p.id, patch);
+  return {};
+}
+
+// Encaminha um processo para outra pessoa: troca o responsável e grava no histórico de tramitação.
+// Sempre para uma pessoa específica (email cadastrado em Usuarios) — nunca para uma gerência genérica.
+function processosEncaminhar(p) {
+  if (!p.processo_id || !p.para) return { ok: false, erro: 'processo_id e para (e-mail do destinatário) são obrigatórios.' };
+
+  const paraValor = String(p.para).trim().toLowerCase();
+  const destinatario = lerLinhas(SHEETS.USUARIOS).find(u => String(u.email).toLowerCase() === paraValor);
+  if (!destinatario) return { ok: false, erro: 'Destinatário não encontrado entre os usuários cadastrados.' };
+
+  const proc = lerLinhas(SHEETS.PROCESSOS).find(x => String(x.id) === String(p.processo_id));
+  if (!proc) return { ok: false, erro: 'Processo não encontrado.' };
+
+  const agora = new Date().toISOString();
+  atualizarLinha(SHEETS.PROCESSOS, p.processo_id, { responsavel_atual: destinatario.email, atualizado_em: agora });
+
+  const idTram = proximoId(SHEETS.TRAMITACOES);
+  const tramitacao = {
+    id: idTram,
+    processo_id: p.processo_id,
+    de_usuario: p.de || proc.responsavel_atual || '',
+    para_usuario: destinatario.email,
+    data: agora,
+    observacao: p.observacao || ''
+  };
+  inserirLinha(SHEETS.TRAMITACOES, tramitacao);
+
+  // Quem encaminha passa a "acompanhar" o processo por padrão (upsert: reativa se já existia)
+  const quemEncaminhou = p.de || proc.responsavel_atual || '';
+  if (quemEncaminhou) _upsertAcompanhamento(p.processo_id, quemEncaminhou, true);
+
+  return { tramitacao, responsavel_atual: destinatario.email };
+}
+
+// Cria ou reativa (nunca duplica) o registro de acompanhamento de um usuário num processo
+function _upsertAcompanhamento(processoId, usuario, ativo) {
+  const usuarioNorm = String(usuario).toLowerCase();
+  const sh = getSheet(SHEETS.ACOMPANHAMENTOS);
+  const dados = sh.getDataRange().getValues();
+  const cab = dados[0];
+  const idxProc = cab.indexOf('processo_id');
+  const idxUsu  = cab.indexOf('usuario');
+  const idxAtivo = cab.indexOf('ativo');
+
+  for (let i = 1; i < dados.length; i++) {
+    if (String(dados[i][idxProc]) === String(processoId) && String(dados[i][idxUsu]).toLowerCase() === usuarioNorm) {
+      sh.getRange(i + 1, idxAtivo + 1).setValue(ativo);
+      return;
+    }
+  }
+  inserirLinha(SHEETS.ACOMPANHAMENTOS, { id: proximoId(SHEETS.ACOMPANHAMENTOS), processo_id: processoId, usuario: usuarioNorm, ativo });
+}
+
+function processosPararAcompanhamento(p) {
+  if (!p.processo_id || !p.usuario) return { ok: false, erro: 'processo_id e usuario são obrigatórios.' };
+  _upsertAcompanhamento(p.processo_id, p.usuario, false);
+  return {};
+}
+
+// Conta quantos processos existem em cada caixa lógica, para os badges da sidebar
+function processosContagens(p) {
+  if (!p.responsavel) return { ok: false, erro: 'responsavel é obrigatório.' };
+  const resp = String(p.responsavel).toLowerCase();
+
+  const processos = lerLinhas(SHEETS.PROCESSOS);
+  const meus = processos.filter(x => String(x.responsavel_atual).toLowerCase() === resp);
+
+  const entrada = meus.filter(x => x.status === STATUS.AGUARDANDO_INICIAL).length;
+  const andamento = meus.filter(x => x.status === STATUS.EM_ANALISE || x.status === STATUS.AGUARDANDO_FINAL).length;
+
+  const acompanhamentos = lerLinhas(SHEETS.ACOMPANHAMENTOS)
+    .filter(a => String(a.usuario).toLowerCase() === resp && String(a.ativo).toUpperCase() !== 'FALSE');
+  const idsAcompanhados = new Set(acompanhamentos.map(a => String(a.processo_id)));
+  const encaminhados = processos.filter(x => idsAcompanhados.has(String(x.id))).length;
+
+  const concluidos = processos.filter(x =>
+    x.status === 'Concluído' && (String(x.responsavel_atual).toLowerCase() === resp || idsAcompanhados.has(String(x.id)))
+  ).length;
+
+  return { contagens: { entrada, andamento, encaminhados, concluidos } };
+}
+
+function tramitacoesListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const lista = lerLinhas(SHEETS.TRAMITACOES)
+    .filter(t => String(t.processo_id) === String(p.processo_id))
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
+  return { tramitacoes: lista };
+}
+
+// ==================== CONSULTAS (histórico do chat "Perguntas ao Processo") ====================
+
+function consultasSalvar(p) {
+  if (!p.processo_id || !p.pergunta) return { ok: false, erro: 'processo_id e pergunta são obrigatórios.' };
+  const id = proximoId(SHEETS.CONSULTAS);
+  const obj = {
+    id, processo_id: p.processo_id, pergunta: p.pergunta, resposta: p.resposta || '',
+    usuario: p.usuario || '', data: new Date().toISOString()
+  };
+  inserirLinha(SHEETS.CONSULTAS, obj);
+  return { consulta: obj };
+}
+
+function consultasListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const lista = lerLinhas(SHEETS.CONSULTAS)
+    .filter(c => String(c.processo_id) === String(p.processo_id))
+    .sort((a, b) => new Date(a.data) - new Date(b.data)); // ordem cronológica (conversa)
+  return { consultas: lista };
+}
+
+// Remove o processo e tudo que pertence a ele em cascata (documentos, blocos de
+// conteúdo, auditorias, tramitações) — evita deixar lixo órfão na planilha.
+function processosRemover(p) {
+  if (!p.id) return { ok: false, erro: 'id é obrigatório.' };
+
+  const docsDoProc = lerLinhas(SHEETS.DOCUMENTOS).filter(d => String(d.processo_id) === String(p.id));
+  docsDoProc.forEach(d => documentosRemover({ id: d.id })); // já remove os blocos de conteúdo de cada doc
+
+  [SHEETS.AUDITORIAS, SHEETS.TRAMITACOES, SHEETS.CONSULTAS, SHEETS.ACOMPANHAMENTOS, SHEETS.NOTAS, SHEETS.ACHADOS_CONSULTAS].forEach(nomeAba => {
+    const sh = getSheet(nomeAba);
+    const dados = sh.getDataRange().getValues();
+    const idxProcId = dados[0].indexOf('processo_id');
+    for (let i = dados.length - 1; i >= 1; i--) {
+      if (String(dados[i][idxProcId]) === String(p.id)) sh.deleteRow(i + 1);
+    }
+  });
+
+  excluirLinha(SHEETS.PROCESSOS, p.id);
+  return {};
+}
+
+// ==================== DOCUMENTOS ====================
+
+function documentosListar(p) {
+  const lista = lerLinhas(SHEETS.DOCUMENTOS).filter(d => String(d.processo_id) === String(p.processo_id));
+  return { documentos: lista };
+}
+
+function documentosAdicionar(p) {
+  if (!p.processo_id || !p.nome_arquivo) return { ok: false, erro: 'processo_id e nome_arquivo são obrigatórios.' };
+  const id = proximoId(SHEETS.DOCUMENTOS);
+  const obj = {
+    id,
+    processo_id: p.processo_id,
+    nome_arquivo: p.nome_arquivo,
+    adicionado_por: p.adicionado_por || '',
+    adicionado_em: new Date().toISOString()
+  };
+  inserirLinha(SHEETS.DOCUMENTOS, obj);
+  atualizarLinha(SHEETS.PROCESSOS, p.processo_id, { atualizado_em: new Date().toISOString() });
+  return { documento: obj };
+}
+
+// Combina "criar documento" + "salvar todos os blocos de texto" numa ÚNICA chamada de
+// rede — o gargalo do upload não é ler o arquivo (isso é local, instantâneo), é a
+// latência de ida-e-volta ao Apps Script; salvar 1 doc de 5 blocos antes disso custava
+// 6 chamadas de rede (1 criar + 5 blocos), agora custa 1.
+function documentosAdicionarCompleto(p) {
+  if (!p.processo_id || !p.nome_arquivo || p.texto === undefined) {
+    return { ok: false, erro: 'processo_id, nome_arquivo e texto são obrigatórios.' };
+  }
+  const idDoc = proximoId(SHEETS.DOCUMENTOS);
+  const doc = {
+    id: idDoc, processo_id: p.processo_id, nome_arquivo: p.nome_arquivo,
+    adicionado_por: p.adicionado_por || '', adicionado_em: new Date().toISOString()
+  };
+  inserirLinha(SHEETS.DOCUMENTOS, doc);
+
+  const texto = String(p.texto);
+  let idBloco = proximoId(SHEETS.CONTEUDO);
+  let blocoNum = 0;
+  for (let i = 0; i < texto.length; i += BLOCO_MAX_CHARS) {
+    inserirLinha(SHEETS.CONTEUDO, {
+      id: idBloco++, documento_id: idDoc, bloco_num: blocoNum++,
+      conteudo: texto.substring(i, i + BLOCO_MAX_CHARS)
+    });
+  }
+
+  atualizarLinha(SHEETS.PROCESSOS, p.processo_id, { atualizado_em: new Date().toISOString() });
+  return { documento: doc, blocos_salvos: blocoNum };
+}
+
+function documentosRemover(p) {
+  if (!p.id) return { ok: false, erro: 'id é obrigatório.' };
+  excluirLinha(SHEETS.DOCUMENTOS, p.id);
+  // remove também os blocos de conteúdo associados a esse documento
+  const sh = getSheet(SHEETS.CONTEUDO);
+  const dados = sh.getDataRange().getValues();
+  const idxDocId = dados[0].indexOf('documento_id');
+  for (let i = dados.length - 1; i >= 1; i--) {
+    if (String(dados[i][idxDocId]) === String(p.id)) sh.deleteRow(i + 1);
+  }
+  return {};
+}
+
+// ==================== CONTEÚDO (texto extraído, em blocos) ====================
+
+function conteudoSalvarBloco(p) {
+  if (!p.documento_id || p.conteudo === undefined) return { ok: false, erro: 'documento_id e conteudo são obrigatórios.' };
+  const conteudo = String(p.conteudo).substring(0, BLOCO_MAX_CHARS);
+  const id = proximoId(SHEETS.CONTEUDO);
+  inserirLinha(SHEETS.CONTEUDO, { id, documento_id: p.documento_id, bloco_num: p.bloco_num || 0, conteudo });
+  return {};
+}
+
+function conteudoListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const docsIds = lerLinhas(SHEETS.DOCUMENTOS)
+    .filter(d => String(d.processo_id) === String(p.processo_id))
+    .map(d => String(d.id));
+  const blocos = lerLinhas(SHEETS.CONTEUDO).filter(b => docsIds.includes(String(b.documento_id)));
+  return { blocos };
+}
+
+// ==================== AUDITORIAS ====================
+// tipo_checkpoint esperado: 'ENTRADA' (antes de começar a mexer) ou 'SAIDA' (antes de assinar no SEI)
+
+function auditoriasSalvar(p) {
+  if (!p.processo_id || p.achados_json === undefined) return { ok: false, erro: 'processo_id e achados_json são obrigatórios.' };
+  let achados = [];
+  try { achados = JSON.parse(p.achados_json); } catch (e) { /* mantém vazio se inválido */ }
+
+  const id = proximoId(SHEETS.AUDITORIAS);
+  const obj = {
+    id,
+    processo_id: p.processo_id,
+    tipo_checkpoint: p.tipo_checkpoint || 'GERAL',
+    data: new Date().toISOString(),
+    executado_por: p.executado_por || '',
+    qtd_achados: achados.length,
+    achados_json: p.achados_json,
+    raw_ia: p.raw_ia || ''
+  };
+  inserirLinha(SHEETS.AUDITORIAS, obj);
+
+  // Atualiza status do processo automaticamente conforme o checkpoint
+  const novoStatus = p.tipo_checkpoint === 'ENTRADA' ? STATUS.EM_ANALISE
+                    : p.tipo_checkpoint === 'SAIDA'   ? STATUS.PRONTO_ASSINAR
+                    : undefined;
+  const patch = { atualizado_em: new Date().toISOString() };
+  if (novoStatus) patch.status = novoStatus;
+  atualizarLinha(SHEETS.PROCESSOS, p.processo_id, patch);
+
+  return { auditoria: obj };
+}
+
+function auditoriasListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const lista = lerLinhas(SHEETS.AUDITORIAS)
+    .filter(a => String(a.processo_id) === String(p.processo_id))
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
+  return { auditorias: lista };
+}
+
+// ==================== LOG ====================
+
+function logRegistrar(p) {
+  const id = proximoId(SHEETS.LOG);
+  inserirLinha(SHEETS.LOG, {
+    id, data: new Date().toISOString(),
+    usuario: p.usuario || '', acao: p.acao || '',
+    processo_id: p.processo_id || '', detalhes: p.detalhes || ''
+  });
+  return {};
+}
+
+// ==================== SEI ANALISTA ADM ====================
+// Rotas de agregação — não filtram por responsável, veem TUDO. Por isso exigem que
+// quem chama seja explicitamente um usuário com perfil "admin" — verificado a cada
+// chamada (sem sessão/token, mesmo padrão stateless do resto do backend).
+function _exigirAdmin(p) {
+  const emailValor = String(p.admin_email || '').trim().toLowerCase();
+  if (!emailValor) return { ok: false, erro: 'admin_email é obrigatório.' };
+  const usuarios = lerLinhas(SHEETS.USUARIOS);
+  const u = usuarios.find(x => String(x.email).toLowerCase() === emailValor);
+  if (!u || u.perfil !== 'admin') return { ok: false, erro: 'Acesso restrito a administradores.' };
+  return { ok: true };
+}
+
+// Números agregados pra tela de resumo do ADM — não devolve os achados em si, só contagens.
+function admEstatisticas(p) {
+  const check = _exigirAdmin(p);
+  if (!check.ok) return check;
+
+  const processos = lerLinhas(SHEETS.PROCESSOS);
+  const auditorias = lerLinhas(SHEETS.AUDITORIAS);
+  const tramitacoes = lerLinhas(SHEETS.TRAMITACOES);
+
+  const processosPorStatus = {};
+  processos.forEach(x => { processosPorStatus[x.status] = (processosPorStatus[x.status] || 0) + 1; });
+
+  let totalAchados = 0;
+  const achadosPorTipo = {};
+  const achadosPorUnidadeMap = {};
+  auditorias.forEach(a => {
+    let achados = [];
+    try { achados = JSON.parse(a.achados_json || '[]'); } catch (e) { /* ignora entrada inválida */ }
+    if (!achados.length) return;
+    const proc = processos.find(x => String(x.id) === String(a.processo_id));
+    const unidade = proc ? proc.unidade : '(processo removido)';
+    achados.forEach(ac => {
+      totalAchados++;
+      achadosPorTipo[ac.tipo] = (achadosPorTipo[ac.tipo] || 0) + 1;
+      achadosPorUnidadeMap[unidade] = (achadosPorUnidadeMap[unidade] || 0) + 1;
+    });
+  });
+
+  const achadosPorUnidade = Object.keys(achadosPorUnidadeMap)
+    .map(u => ({ unidade: u, qtd: achadosPorUnidadeMap[u] }))
+    .sort((a, b) => b.qtd - a.qtd);
+
+  const devolucoes = tramitacoes.filter(t => String(t.observacao).toLowerCase() === 'devolvido').length;
+
+  return {
+    estatisticas: {
+      total_processos: processos.length,
+      processos_por_status: processosPorStatus,
+      total_achados: totalAchados,
+      achados_por_tipo: achadosPorTipo,
+      achados_por_unidade: achadosPorUnidade,
+      devolucoes
+    }
+  };
+}
+
+// Lista plana de TODOS os achados já encontrados, com o contexto do processo (unidade,
+// gerência, nº SEI) — serve tanto pra tela de detalhe do ADM quanto pra outros sistemas
+// (Predador de Auditoria, cruzamento de consultas) lerem esses dados prontos.
+function admAchadosTodos(p) {
+  const check = _exigirAdmin(p);
+  if (!check.ok) return check;
+
+  const processos = lerLinhas(SHEETS.PROCESSOS);
+  const auditorias = lerLinhas(SHEETS.AUDITORIAS);
+  const linhas = [];
+
+  auditorias.forEach(a => {
+    let achados = [];
+    try { achados = JSON.parse(a.achados_json || '[]'); } catch (e) { return; }
+    const proc = processos.find(x => String(x.id) === String(a.processo_id)) || {};
+    achados.forEach(ac => {
+      linhas.push({
+        processo_id: a.processo_id,
+        numero_sei: proc.numero_sei || '',
+        titulo: proc.titulo || '',
+        unidade: proc.unidade || '',
+        gerencia: proc.gerencia || '',
+        tipo_checkpoint: a.tipo_checkpoint,
+        data_auditoria: a.data,
+        tipo_achado: ac.tipo,
+        descricao: ac.descricao,
+        documentos: ac.documentos || '',
+        verificar: ac.verificar !== false
+      });
+    });
+  });
+
+  linhas.sort((x, y) => new Date(y.data_auditoria) - new Date(x.data_auditoria));
+  return { achados: linhas };
+}
+
+// ==================== NOTAS DO PROCESSO ====================
+// Nota livre do analista, escrita no Painel de Evidências enquanto trabalha —
+// pode estar ligada a uma evidência específica (referencia = "tag: título") ou ser
+// uma nota geral do processo (referencia vazia). Upsert por processo+referência:
+// editar a mesma nota várias vezes atualiza a linha, não duplica.
+function notasSalvar(p) {
+  if (!p.processo_id || p.nota === undefined) return { ok: false, erro: 'processo_id e nota são obrigatórios.' };
+  const referencia = p.referencia || '';
+
+  const sh = getSheet(SHEETS.NOTAS);
+  const dados = sh.getDataRange().getValues();
+  const cab = dados[0];
+  const idxProc = cab.indexOf('processo_id');
+  const idxRef  = cab.indexOf('referencia');
+  const idxNota = cab.indexOf('nota');
+  const idxData = cab.indexOf('data');
+
+  for (let i = 1; i < dados.length; i++) {
+    if (String(dados[i][idxProc]) === String(p.processo_id) && String(dados[i][idxRef]) === referencia) {
+      sh.getRange(i + 1, idxNota + 1).setValue(p.nota);
+      sh.getRange(i + 1, idxData + 1).setValue(new Date().toISOString());
+      return { atualizada: true };
+    }
+  }
+
+  const id = proximoId(SHEETS.NOTAS);
+  inserirLinha(SHEETS.NOTAS, {
+    id, processo_id: p.processo_id, referencia, nota: p.nota,
+    usuario: p.usuario || '', data: new Date().toISOString()
+  });
+  return { atualizada: false };
+}
+
+function notasListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const lista = lerLinhas(SHEETS.NOTAS)
+    .filter(n => String(n.processo_id) === String(p.processo_id) && String(n.nota || '').trim() !== '')
+    .sort((a, b) => new Date(b.data) - new Date(a.data));
+  return { notas: lista };
+}
+
+// ==================== ENCAMINHAR ACHADO ESPECÍFICO (não o processo inteiro) ====================
+// Diferente de processos/encaminhar: NÃO transfere responsavel_atual, é só uma consulta
+// pontual sobre um achado específico. Quem recebe só vê isso se abrir esse mesmo processo
+// (não há notificação/aviso — limite conhecido, aceito por ora).
+function achadosEncaminhar(p) {
+  if (!p.processo_id || !p.achado_referencia || !p.de_usuario || !p.para_usuario) {
+    return { ok: false, erro: 'processo_id, achado_referencia, de_usuario e para_usuario são obrigatórios.' };
+  }
+  const id = proximoId(SHEETS.ACHADOS_CONSULTAS);
+  const obj = {
+    id, processo_id: p.processo_id, achado_referencia: p.achado_referencia,
+    de_usuario: p.de_usuario, para_usuario: p.para_usuario, mensagem: p.mensagem || '',
+    resposta: '', data_envio: new Date().toISOString(), data_resposta: ''
+  };
+  inserirLinha(SHEETS.ACHADOS_CONSULTAS, obj);
+  return { consulta: obj };
+}
+
+function achadosListar(p) {
+  if (!p.processo_id) return { ok: false, erro: 'processo_id é obrigatório.' };
+  const lista = lerLinhas(SHEETS.ACHADOS_CONSULTAS)
+    .filter(a => String(a.processo_id) === String(p.processo_id))
+    .sort((a, b) => new Date(b.data_envio) - new Date(a.data_envio));
+  return { consultas: lista };
+}
+
+// Conta achados encaminhados esperando resposta desse usuário, em QUALQUER processo —
+// alimenta o aviso de chegada na sidebar, que não precisa saber em qual processo
+// específico caiu a pergunta antes de o usuário abrir.
+function achadosContarPendentes(p) {
+  if (!p.usuario) return { ok: false, erro: 'usuario é obrigatório.' };
+  const email = String(p.usuario).toLowerCase();
+  const pendentes = lerLinhas(SHEETS.ACHADOS_CONSULTAS)
+    .filter(a => String(a.para_usuario).toLowerCase() === email && !a.resposta);
+  return { pendentes: pendentes.length };
+}
+
+function achadosResponder(p) {
+  if (!p.id || p.resposta === undefined) return { ok: false, erro: 'id e resposta são obrigatórios.' };
+  atualizarLinha(SHEETS.ACHADOS_CONSULTAS, p.id, { resposta: p.resposta, data_resposta: new Date().toISOString() });
+  return {};
+}
+
+// ==================== REFERENCIA CONTRATUAL POR UNIDADE (Google Drive) ====================
+const PASTA_LEIS_DECRETOS_ID = '1DYcxUTdPl4KJ-NcLC1kPe5nXJmMBIB11';
+const MAX_ARQUIVOS_POR_UNIDADE = 3;
+
+function _normalizarTexto(txt) {
+  return String(txt || '').toUpperCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+
+function normasBuscarPorUnidade(p) {
+  if (!p.unidade) return { ok: false, erro: 'Parametro "unidade" e obrigatorio.' };
+
+  let pastaRaiz;
+  try { pastaRaiz = DriveApp.getFolderById(PASTA_LEIS_DECRETOS_ID); }
+  catch (e) { return { ok: false, erro: 'Nao foi possivel acessar a pasta de referencia no Drive: ' + e.message }; }
+
+  const alvoNormalizado = _normalizarTexto(p.unidade);
+  if (!alvoNormalizado) return { ok: true, encontrado: false, arquivos: [] };
+
+  const encontrados = [];
+  const subpastas = pastaRaiz.getFolders();
+  while (subpastas.hasNext()) {
+    const sub = subpastas.next();
+    const arquivos = sub.getFiles();
+    while (arquivos.hasNext()) {
+      const arq = arquivos.next();
+      if (_normalizarTexto(arq.getName()).includes(alvoNormalizado)) encontrados.push(arq);
+    }
+  }
+
+  if (!encontrados.length) return { ok: true, encontrado: false, arquivos: [] };
+
+  const resultado = encontrados.slice(0, MAX_ARQUIVOS_POR_UNIDADE).map(arq => {
+    let texto = '';
+    try { texto = _extrairTextoArquivoDrive(arq); }
+    catch (e) { texto = ''; }
+    return {
+      nome: arq.getName(),
+      valores: _extrairValoresMonetariosTexto(texto),
+      datas: _extrairDatasTexto(texto),
+      cep: _extrairCEPsTexto(texto)
+    };
+  });
+
+  return { ok: true, encontrado: true, arquivos: resultado };
+}
+
+function _extrairTextoArquivoDrive(arquivo) {
+  const mime = arquivo.getMimeType();
+  if (mime === MimeType.GOOGLE_DOCS) {
+    return _extrairTextoDocComGuias(arquivo.getId());
+  }
+  if (typeof Drive === 'undefined') {
+    throw new Error('Arquivo "' + arquivo.getName() + '" nao e Google Doc nativo, e o servico avancado "Drive API" nao esta habilitado neste projeto Apps Script.');
+  }
+  const copia = Drive.Files.copy({ title: '_tmp_extracao_' + Date.now() }, arquivo.getId(), { convert: true });
+  try {
+    return _extrairTextoDocComGuias(copia.id);
+  } finally {
+    DriveApp.getFileById(copia.id).setTrashed(true);
+  }
+}
+
+// Documentos Google podem ter várias GUIAS (abas) — nesses arquivos de referência,
+// cada aditivo/apostilamento/rerratificação é uma guia separada dentro do mesmo
+// arquivo. Sem percorrer todas, só o conteúdo da primeira guia (geralmente o
+// contrato original) seria lido — perdendo justamente os aditivos, que é onde
+// os valores tendem a mudar ao longo do tempo.
+function _extrairTextoDocComGuias(docId) {
+  const doc = DocumentApp.openById(docId);
+  const tabs = (typeof doc.getTabs === 'function') ? doc.getTabs() : null;
+
+  if (!tabs || !tabs.length) {
+    // Documento sem guias (formato antigo/simples) — cai no método direto
+    return doc.getBody().getText();
+  }
+
+  const partes = [];
+  function coletar(tab) {
+    try {
+      const docTab = tab.asDocumentTab();
+      partes.push('--- GUIA: ' + tab.getTitle() + ' ---\n' + docTab.getBody().getText());
+    } catch (e) { /* guia em formato não suportado (ex.: planilha embutida) — ignora só essa */ }
+    (tab.getChildTabs ? tab.getChildTabs() : []).forEach(coletar);
+  }
+  tabs.forEach(coletar);
+  return partes.join('\n\n');
+}
+
+function _extrairContextoTexto(texto, termo, raio) {
+  const idx = texto.indexOf(termo);
+  if (idx === -1) return '';
+  const ini = Math.max(0, idx - raio);
+  const fim = Math.min(texto.length, idx + termo.length + raio);
+  return texto.substring(ini, fim).replace(/\s+/g, ' ').trim();
+}
+function _extrairValoresMonetariosTexto(texto) {
+  const regex = /R\$\s?[\d.]+,\d{2}/g;
+  return [...new Set(texto.match(regex) || [])].slice(0, 40).map(v => ({ valor: v, contexto: _extrairContextoTexto(texto, v, 55) }));
+}
+function _extrairDatasTexto(texto) {
+  const regex = /\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g;
+  return [...new Set(texto.match(regex) || [])].slice(0, 40).map(v => ({ valor: v, contexto: _extrairContextoTexto(texto, v, 55) }));
+}
+function _extrairCEPsTexto(texto) {
+  const regex = /\b\d{2}\.?\d{3}-\d{3}\b/g;
+  return [...new Set(texto.match(regex) || [])].slice(0, 15).map(v => ({ valor: v, contexto: _extrairContextoTexto(texto, v, 45) }));
+}  </div>
 
   <div id="app" class="hidden">
     <aside id="sidebar">
