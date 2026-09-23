@@ -1,27 +1,11 @@
 // ============================================================
 // SEI ANALISTA v21.0 — app.js
-// Ajustes desta versão em relação à v20.6 (ver notas ao final do arquivo):
-//  - Processos e documentos agora vivem no backend (planilha compartilhada),
-//    não mais só no localStorage do navegador — necessário para o processo
-//    poder tramitar entre funcionários.
-//  - Login alinhado aos nomes de campo do backend (email/senha_hash).
-//  - sha256 não depende mais de biblioteca externa (usa Web Crypto do navegador).
-//  - Prompts de IA com trava contra invenção de achados, exigência de citar
-//    o par de valores divergentes, checagem de teto condicionada à presença
-//    do valor nos documentos, campo "verificar" por achado, e remoção do
-//    veredito "aprovado" da revisão final (a IA aponta, não aprova).
-//  - Nova função: encaminhar processo para outro usuário (tramitação).
 // ============================================================
 
 // ==================== REGISTRO DE AUTORIA ====================
 // © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
 // matrícula 18515045.
-//
-// Titularidade dos direitos econômicos: SES-PE (Lei nº 9.609/98, art. 4º — software
-// desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
-// Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
-// titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13px;");
 
@@ -31,15 +15,14 @@ let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
-// URL do Backend (Apps Script) — planilha compartilhada:
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let usuarioAtual = null;
-let processoAtual = null;      // { id, numero_sei, titulo, unidade, oss, gerencia, status, responsavel_atual, ... }
-let textoIntegralAtual = '';   // texto consolidado dos documentos do processo aberto (vem do backend, não do localStorage)
-let _ultimoTextoRevisadoHash = null; // hash do texto que passou pela Revisão Final — usado como aviso (não bloqueio) ao Finalizar
-let _ultimaTramitacaoRecebida = null; // { de_usuario, para_usuario, data, observacao } — usado pelo botão "Devolver"
-let _arquivoPrePreenchido = null; // { nome, texto } — cache do arquivo lido na tela "Importar Processo", pra não reprocessar ao criar
+let processoAtual = null;
+let textoIntegralAtual = '';
+let _ultimoTextoRevisadoHash = null;
+let _ultimaTramitacaoRecebida = null;
+let _arquivoPrePreenchido = null;
 let painelEvidenciasWin = null;
 window.memoriaEvidencias = {};
 window.achadosAtuais = [];
@@ -56,7 +39,6 @@ function injetarMarcaDagua() {
   document.getElementById('content').parentElement.appendChild(rodape);
 }
 
-// ==================== API (backend compartilhado) ====================
 const API_TIMEOUT_MS = 25000;
 async function api(action, body = null) {
   const url = API_URL + '?action=' + encodeURIComponent(action);
@@ -76,22 +58,18 @@ async function api(action, body = null) {
   }
 }
 
-// ==================== HASH DE SENHA (Web Crypto — sem dependência externa) ====================
 async function sha256(txt) {
   const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// ==================== LOGIN ====================
 async function fazerLogin() {
   try {
     const usuario = document.getElementById('login-usuario').value.trim();
     const senhaInput = document.getElementById('login-senha').value;
     if (!usuario || !senhaInput) { mostrarErroLogin('Preencha login e senha.'); return; }
-
     const hash = await sha256(senhaInput);
     const res = await api('auth/login', { email: usuario, senha_hash: hash });
-
     if (res.ok) {
       usuarioAtual = res.usuario;
       document.getElementById('login-screen').classList.add('hidden');
@@ -113,10 +91,8 @@ function mostrarErroLogin(msg) {
 
 function logout() { location.reload(); }
 
-// ==================== NAVEGAÇÃO ====================
 async function showView(v, subCaixa = 'entrada') {
   document.querySelectorAll('#sidebar nav a, #caixa-flutuante-encaminhados a').forEach(a => a.classList.remove('active'));
-
   if (v === 'dashboard') {
     caixaAtualAtiva = subCaixa;
     let navItem = document.getElementById('nav-' + subCaixa);
@@ -125,7 +101,6 @@ async function showView(v, subCaixa = 'entrada') {
     let navItem = document.getElementById('nav-' + v);
     if (navItem) navItem.classList.add('active');
   }
-
   const titulos = {
     dashboard_entrada: 'Caixa de Entrada',
     dashboard_andamento: 'Processos em Andamento',
@@ -136,10 +111,8 @@ async function showView(v, subCaixa = 'entrada') {
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
   if (pageTitle) pageTitle.textContent = titulos[tituloKey] || v;
-
   const content = document.getElementById('content');
   if (!content) return;
-
   if (v === 'dashboard') {
     await renderDashboard(subCaixa);
   } else if (v === 'novo') {
@@ -156,7 +129,6 @@ async function showView(v, subCaixa = 'entrada') {
         </div>
         <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
         <div id="np-status-preenchimento" style="margin-bottom:15px;"></div>
-
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Dica: Cole o nome do arquivo (ex: SEI_230...) no campo abaixo e o sistema limpa o número, se não usar o preenchimento automático.</p>
         <div class="form-group"><label>Número SEI *</label><input id="np-sei" placeholder="Ex: 230000..." oninput="formatarSEI(this)"></div>
         <div class="form-group"><label>Título / Objeto *</label><input id="np-titulo" placeholder="Ex: 1º Termo Aditivo"></div>
@@ -184,7 +156,6 @@ async function showView(v, subCaixa = 'entrada') {
   }
 }
 
-// ==================== SIDEBAR: BADGES + CAIXA FLUTUANTE DE ENCAMINHADOS ====================
 let caixaAtualAtiva = 'entrada';
 
 async function atualizarContagensSidebar() {
@@ -192,12 +163,10 @@ async function atualizarContagensSidebar() {
   const res = await api('processos/contagens', { responsavel: usuarioAtual.email });
   if (!res.ok) return;
   const c = res.contagens;
-
   const badgeEntrada = document.getElementById('badge-entrada');
   if (badgeEntrada) badgeEntrada.textContent = c.entrada > 0 ? c.entrada : '';
   const badgeAndamento = document.getElementById('badge-andamento');
   if (badgeAndamento) badgeAndamento.textContent = c.andamento > 0 ? c.andamento : '';
-
   let caixaFlutuante = document.getElementById('caixa-flutuante-encaminhados');
   if (!caixaFlutuante) {
     const navEl = document.querySelector('#sidebar nav');
@@ -222,12 +191,10 @@ async function atualizarContagensSidebar() {
   }
 }
 
-// ==================== DASHBOARD MULTI-CAIXAS ====================
 async function renderDashboard(caixa = 'entrada') {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando processos...';
   await atualizarContagensSidebar();
-
   const abasHtml = `
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; border-bottom:1px solid #dee2e6; padding-bottom:12px;">
       <button class="btn btn-sm ${caixa === 'entrada' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','entrada')"><i class="ti ti-inbox"></i> Caixa de Entrada</button>
@@ -235,16 +202,13 @@ async function renderDashboard(caixa = 'entrada') {
       <button class="btn btn-sm ${caixa === 'encaminhados' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','encaminhados')"><i class="ti ti-share"></i> Encaminhados</button>
       <button class="btn btn-sm ${caixa === 'concluidos' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','concluidos')"><i class="ti ti-archive"></i> Concluídos</button>
     </div>`;
-
   if (caixa === 'concluidos') {
     content.innerHTML = abasHtml + '<div id="area-finalizados"><span class="spinner"></span></div>';
     await renderFinalizados('', 'area-finalizados');
     return;
   }
-
   const res = await api('processos/listar', { responsavel: usuarioAtual.email, caixa });
   if (!res.ok) { content.innerHTML = abasHtml + `<div class="alert alert-danger">Erro ao carregar processos: ${escHtml(res.erro)}</div>`; return; }
-
   const lista = res.processos || [];
   let html = abasHtml + '<div class="cards-grid">';
   if (lista.length === 0) {
@@ -262,41 +226,35 @@ async function renderDashboard(caixa = 'entrada') {
           ? `<span class="badge-status" style="background:#f8d7da;color:#842029;">${qtdAlertas} alerta(s)</span>`
           : `<span class="badge-status" style="background:#d1e7dd;color:#0f5132;">sem alertas</span>`;
 
-      // Verifica se há perguntas pendentes de achados direcionadas a este usuário
       let badgePerguntaPendente = '';
       try {
         const resAchados = await api('achados/listar', { processo_id: p.id });
         const consultasAchados = resAchados.consultas || [];
-        const temPerguntaParaMim = consultasAchados.some(c => 
+        const temPerguntaParaMim = consultasAchados.some(c =>
           !c.resposta && String(c.para_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase()
         );
         if (temPerguntaParaMim) {
           badgePerguntaPendente = `<span class="badge-status" style="background:#fff3cd; color:#856404; border:1px solid #ffeeba;"><i class="ti ti-message-circle"></i> 💬 Pergunta pendente</span>`;
         }
-      } catch (e) {
-        // Ignora falha pontual de checagem de achado na listagem
-      }
+      } catch (e) { /* ignora falha pontual */ }
 
       let infoTramitacao = '';
       if (p.ultima_tramitacao) {
         infoTramitacao = `<div style="font-size:0.75rem; color:#0b509e; margin-top:4px;"><i class="ti ti-clock"></i> Tramitado para <strong>${escHtml(p.ultima_tramitacao.para_usuario)}</strong> em ${new Date(p.ultima_tramitacao.data).toLocaleString('pt-BR')}</div>`;
       }
-
       const botaoParar = caixa === 'encaminhados'
         ? `<div style="margin-top:10px; border-top:1px dashed #dee2e6; padding-top:8px;">
              <button class="btn btn-secondary btn-sm" style="width:100%; font-size:0.75rem;" onclick="pararAcompanhamento(event, ${p.id})"><i class="ti ti-eye-off"></i> Terminar Acompanhamento</button>
            </div>` : '';
-
       const podeExcluir = String(p.criado_por).toLowerCase() === usuarioAtual.email.toLowerCase();
       const botaoExcluir = podeExcluir
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
         : '';
-
       html += `
       <div class="process-card" style="position:relative;">
         <div onclick="abrirProcesso('${escAttr(p.numero_sei || p.id)}')" style="cursor:pointer;">
           <div style="display:flex;justify-content:space-between;margin-bottom:8px; align-items:center; padding-right: 25px; flex-wrap:wrap; gap:5px;">
-            <span class="sei-num">${escHtml(p.numero_sei || '(sem nº SEI)')}</span> 
+            <span class="sei-num">${escHtml(p.numero_sei || '(sem nº SEI)')}</span>
             <div style="display:flex; gap:4px; flex-wrap:wrap;">${badgePerguntaPendente} ${badgeAlertas}</div>
           </div>
           <div class="titulo" style="font-weight:600; font-size:0.95rem;">${escHtml(p.titulo)}</div>
@@ -329,17 +287,14 @@ async function deletarProcessoRemoto(e, id) {
   showView('dashboard', caixaAtualAtiva);
 }
 
-// ==================== REGISTRO DE CONCLUÍDOS ====================
 async function renderFinalizados(termoBusca, containerId) {
   containerId = containerId || 'content';
   const content = document.getElementById(containerId);
   content.innerHTML = '<span class="spinner"></span> Carregando registro...';
-
   const params = { caixa: 'concluidos', responsavel: usuarioAtual.email };
   if (termoBusca) params.busca = termoBusca;
   const res = await api('processos/listar', params);
   if (!res.ok) { content.innerHTML = `<div class="alert alert-danger">Erro ao carregar: ${escHtml(res.erro)}</div>`; return; }
-
   const lista = res.processos || [];
   let html = `
     <div style="margin-bottom:16px;">
@@ -349,7 +304,6 @@ async function renderFinalizados(termoBusca, containerId) {
         onkeypress="if(event.key==='Enter') renderFinalizados(this.value, '${containerId}')">
       <button class="btn btn-primary btn-sm" onclick="renderFinalizados(document.getElementById('busca-finalizados').value, '${containerId}')"><i class="ti ti-search"></i> Buscar</button>
     </div>`;
-
   if (!lista.length) {
     html += `<div style="color:var(--text-muted); font-style:italic;">${termoBusca ? 'Nenhum resultado para essa busca.' : 'Nenhum processo concluído ainda.'}</div>`;
   } else {
@@ -376,7 +330,6 @@ async function renderFinalizados(termoBusca, containerId) {
 async function abrirRegistroConcluido(id) {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando registro...';
-
   const [resProc, resAud, resCons, resNotas] = await Promise.all([
     api('processos/obter', { id }),
     api('auditorias/listar', { processo_id: id }),
@@ -384,12 +337,10 @@ async function abrirRegistroConcluido(id) {
     api('notas/listar', { processo_id: id })
   ]);
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">${escHtml(resProc.erro)}</div>`; return; }
-
   const proc = resProc.processo;
   const auditorias = resAud.auditorias || [];
   const consultas = resCons.consultas || [];
   const notas = resNotas.notas || [];
-
   const achadosHtml = auditorias.length ? auditorias.map(a => {
     let achados = [];
     try { achados = JSON.parse(a.achados_json || '[]'); } catch (e) { /* mantém vazio */ }
@@ -400,23 +351,19 @@ async function abrirRegistroConcluido(id) {
       ${achados.length ? achados.map(ac => `<div style="font-size:0.85rem; margin-bottom:4px;">• <strong>${escHtml(ac.tipo)}</strong>: ${escHtml(ac.descricao)}</div>`).join('') : '<div style="font-size:0.85rem; color:var(--text-muted);">Nenhum achado nesta checagem.</div>'}
     </div>`;
   }).join('') : '<p class="text-muted">Nenhuma checagem registrada para este processo.</p>';
-
   const consultasHtml = consultas.length ? consultas.map(c => `
     <div style="margin-bottom:12px;">
       <div style="font-size:0.85rem; font-weight:600;"><i class="ti ti-user"></i> ${escHtml(c.pergunta)}</div>
       <div style="font-size:0.85rem; color:#374151; margin-top:4px; padding-left:16px; border-left:2px solid #74c0fc;">${escHtml(c.resposta)}</div>
     </div>`).join('') : '<p class="text-muted">Nenhuma consulta registrada para este processo.</p>';
-
   const notasHtml = notas.length ? notas.map(n => `
     <div style="margin-bottom:12px; padding:10px 14px; background:#fffbeb; border-left:3px solid #f59f00; border-radius:4px;">
       ${n.referencia ? `<div style="font-size:0.75rem; font-weight:600; color:#7c5a00; margin-bottom:4px;"><i class="ti ti-pin"></i> ${escHtml(n.referencia)}</div>` : `<div style="font-size:0.75rem; font-weight:600; color:#7c5a00; margin-bottom:4px;"><i class="ti ti-note"></i> Nota geral do processo</div>`}
       <div style="font-size:0.85rem; color:#212529; white-space:pre-wrap;">${escHtml(n.nota)}</div>
       <div style="font-size:0.7rem; color:var(--text-muted); margin-top:6px;">${escHtml(n.usuario)} — ${new Date(n.data).toLocaleString('pt-BR')}</div>
     </div>`).join('') : '<p class="text-muted">Nenhuma anotação registrada para este processo.</p>';
-
   content.innerHTML = `
     <button class="btn btn-secondary btn-sm" onclick="showView('dashboard','concluidos')" style="margin-bottom:16px;"><i class="ti ti-arrow-left"></i> Voltar ao Registro</button>
-
     <div style="background:#fff;border-radius:8px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
       <h2 style="font-size:1.2rem;margin-bottom:5px;">${escHtml(proc.numero_sei || proc.id)}</h2>
       <p style="font-weight:600; font-size:1.05rem;">${escHtml(proc.titulo)}</p>
@@ -424,24 +371,20 @@ async function abrirRegistroConcluido(id) {
         Unidade: ${escHtml(proc.unidade)} | OSS: ${escHtml(proc.oss)} | Concluído em: ${proc.atualizado_em ? new Date(proc.atualizado_em).toLocaleString('pt-BR') : '—'}
       </div>
     </div>
-
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-file-text"></i> Documento Final</h3>
       ${proc.documento_final
         ? `<pre style="white-space:pre-wrap; font-family:inherit; font-size:0.88rem; color:#212529;">${escHtml(proc.documento_final)}</pre>`
         : '<p class="text-muted">Nenhum texto de parecer foi registrado ao finalizar este processo.</p>'}
     </div>
-
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-microscope"></i> Histórico de Checagens</h3>
       ${achadosHtml}
     </div>
-
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-message-circle"></i> Histórico de Consultas</h3>
       ${consultasHtml}
     </div>
-
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-note"></i> Notas do Processo</h3>
       ${notasHtml}
@@ -462,19 +405,14 @@ function salvarConfig() {
   if (!inputEl) return;
   GEMINI_KEY = inputEl.value.trim();
   localStorage.setItem('sei_gemini_key', GEMINI_KEY);
-
   GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
   localStorage.setItem('sei_groq_key', GROQ_KEY);
-
   OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
   localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
-
   OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
-
   OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
   localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
-
   alert('Configurações de IA salvas!');
   verificarIA();
 }
@@ -488,14 +426,12 @@ async function prePreencherDeArquivo(file) {
     const texto = await extrairTextoArquivo(file.name, buf);
     if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
     _arquivoPrePreenchido = { nome: file.name, texto };
-
     const numsProcesso = extrairNumerosProcesso(texto);
     if (numsProcesso.length) {
       const campoSei = document.getElementById('np-sei');
       campoSei.value = numsProcesso[0].valor;
       _marcarComoSugerido(campoSei);
     }
-
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
     const amostra = texto.substring(0, 6000);
     const prompt = `Leia o início de um documento de contrato/aditivo de gestão em saúde pública e extraia,
@@ -509,7 +445,6 @@ Retorne EXCLUSIVAMENTE um JSON: {"titulo": "", "unidade": "", "oss": ""}
 
 TEXTO:
 ${amostra}`;
-
     try {
       const jsonStr = await invocarIAComFallback(prompt, false, null);
       const sugestao = JSON.parse(jsonStr);
@@ -519,7 +454,6 @@ ${amostra}`;
     } catch (e) {
       console.warn('Sugestão de título/unidade/OSS via IA falhou:', e.message);
     }
-
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
       <i class="ti ti-check"></i> ${escHtml(file.name)} lido. Confira os campos destacados abaixo antes de salvar.
     </div>`;
@@ -542,23 +476,18 @@ async function salvarNovoProcesso() {
   const unidade = document.getElementById('np-unidade').value.trim() || 'HRA';
   const oss = document.getElementById('np-oss').value.trim() || 'ISG';
   const gerencia = document.getElementById('np-gerencia').value.trim();
-
   if (!titulo) return alert('Preencha ao menos o Título/Objeto.');
-
   const btn = document.getElementById('btn-criar-processo');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Criando...'; }
-
   const res = await api('processos/criar', {
     numero_sei: sei, titulo, unidade, oss, gerencia,
     criado_por: usuarioAtual.email
   });
-
   if (!res.ok) {
     alert('Erro ao criar processo: ' + res.erro);
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Criar Processo na Bancada'; }
     return;
   }
-
   if (_arquivoPrePreenchido) {
     if (btn) btn.innerHTML = '<span class="spinner"></span> Anexando documento já lido...';
     processoAtual = res.processo;
@@ -569,11 +498,9 @@ async function salvarNovoProcesso() {
     }
     _arquivoPrePreenchido = null;
   }
-
   abrirProcesso(res.processo.numero_sei || String(res.processo.id));
 }
 
-// ==================== PAINEL DE EVIDÊNCIAS (MODO TELA DUPLA) ====================
 async function salvarNotaEvidencia(referencia, nota) {
   if (!processoAtual) return;
   try {
@@ -644,14 +571,12 @@ async function fixarEvidenciaDaMemoria(id) {
   if (container) {
     const referencia = `${dados.tag}: ${dados.titulo}`;
     const referenciaAttr = escAttr(referencia);
-
     let notaExistente = '';
     try {
       const resNotas = await api('notas/listar', { processo_id: processoAtual.id });
       const encontrada = (resNotas.notas || []).find(n => n.referencia === referencia);
       if (encontrada) notaExistente = encontrada.nota;
     } catch (e) { console.warn('Falha ao buscar nota existente:', e.message); }
-
     let htmlDoc = dados.doc ? `<div class="evidencia-doc" onclick="copiarDocID('${dados.doc}')" title="Clique para copiar">📄 Origem: ${dados.doc}</div>` : '';
     const html = `
         <div class="evidencia-card" id="ev-${id}">
@@ -671,17 +596,14 @@ async function fixarEvidenciaDaMemoria(id) {
   }
 }
 
-// ==================== CONSTRUTOR DA TELA DE PROCESSO ====================
 async function abrirProcesso(identificador) {
   const content = document.getElementById('content');
   if (!content) return;
   content.innerHTML = '<span class="spinner"></span> Carregando processo...';
-
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
   _ultimoTextoRevisadoHash = null;
-
   const [resDocs, resConteudo, resTram] = await Promise.all([
     api('documentos/listar', { processo_id: processoAtual.id }),
     api('conteudo/listar', { processo_id: processoAtual.id }),
@@ -691,24 +613,20 @@ async function abrirProcesso(identificador) {
   const blocos = resConteudo.blocos || [];
   const tramitacoes = resTram.tramitacoes || [];
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
-
   textoIntegralAtual = docs.map(d => {
     const textoDoc = blocos.filter(b => String(b.documento_id) === String(d.id))
       .sort((a, b) => a.bloco_num - b.bloco_num)
       .map(b => b.conteudo || '').join('');
     return `\n\n--- DOC: ${d.nome_arquivo} ---\n` + textoDoc;
   }).join('');
-
   let docsHtml = '<span style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum documento anexado ainda.</span>';
   if (docs.length > 0) {
     docsHtml = '<ul style="margin:0; padding-left:20px; font-size:0.85rem; color:#495057; max-height: 120px; overflow-y: auto;">';
     docs.forEach(d => { docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}</li>`; });
     docsHtml += '</ul>';
   }
-
   const p = processoAtual;
   const sei = p.numero_sei || String(p.id);
-
   let html = `
     <div id="banner-conferindo" class="hidden" style="position:fixed; top:76px; right:24px; z-index:500; background:var(--alert-bordeaux-light, #f8d7da); border:1px solid var(--alert-bordeaux, #8e1628); border-radius:var(--border-radius, 6px); padding:12px 18px; max-width:280px; box-shadow:0 4px 14px rgba(0,0,0,0.12);">
       <div style="display:flex; align-items:center; gap:8px;">
@@ -718,7 +636,6 @@ async function abrirProcesso(identificador) {
       <div id="banner-conferindo-detalhe" style="font-size:0.75rem; color:#6b1521; margin-top:4px; margin-left:17px;"></div>
       <div style="font-size:0.72rem; color:#6b1521; margin-top:2px; margin-left:17px;">Tempo decorrido: <span id="banner-conferindo-timer">0s</span></div>
     </div>
-
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
         <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -728,7 +645,6 @@ async function abrirProcesso(identificador) {
           <button class="btn btn-sm" onclick="abrirPainelEvidencias()" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"><i class="ti ti-columns"></i> Abrir Modo Tela Dupla</button>
         </div>
     </div>
-
     <div style="background:#fff;border-radius:8px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid var(--action-primary);">
       <h2 style="font-size:1.2rem;color:var(--text-dark); margin-bottom:5px;">${escHtml(sei)}</h2>
       <p style="font-weight:600; font-size:1.05rem;">${escHtml(p.titulo)}</p>
@@ -758,7 +674,7 @@ async function abrirProcesso(identificador) {
       </label>
       <div id="status-fonte-historico" style="margin-top:4px; font-size:0.78rem;"></div>
       <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-busca-externa"> "Buscar normas e decisões de tribunais na web (SES-PE, TCE, TCU)" — Pesquisa automática na internet por leis e jurisprudências. Recurso experimental e mais lento; o resultado pode estar desatualizado ou vir de fontes não oficiais, exigindo confirmação rigorosa antes de ser citado em um parecer.
+        <input type="checkbox" id="chk-legislacao-jurisprudencia"> "Buscar normas e decisões de tribunais na web (SES-PE, TCE, TCU)" — Pesquisa automática na internet por leis e jurisprudências. Recurso experimental e mais lento; o resultado pode estar desatualizado ou vir de fontes não oficiais, exigindo confirmação rigorosa antes de ser citado em um parecer.
       </label>
       <div id="ia-status" style="margin-top:15px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
@@ -790,7 +706,6 @@ async function abrirProcesso(identificador) {
     </div>
   `;
   content.innerHTML = html;
-
   api('consultas/listar', { processo_id: processoAtual.id }).then(resConsultas => {
     const consultas = resConsultas.consultas || [];
     if (!consultas.length) return;
@@ -806,14 +721,12 @@ async function abrirProcesso(identificador) {
       </div>`).join('');
     historyEl.scrollTop = historyEl.scrollHeight;
   }).catch(e => console.warn('Falha ao carregar histórico de consultas:', e.message));
-
   api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
     const auditorias = resAud.auditorias || [];
     const ultima = auditorias.find(a => a.tipo_checkpoint === 'GERAL' || a.tipo_checkpoint === 'ENTRADA');
     if (!ultima) return;
     let achados = [];
     try { achados = JSON.parse(ultima.achados_json || '[]'); } catch (e) { /* vazio */ }
-
     window.achadosAtuais = achados;
     const contadorEl = document.getElementById('contador-checagem');
     if (contadorEl) {
@@ -827,15 +740,12 @@ async function abrirProcesso(identificador) {
   }).catch(e => console.warn('Falha ao carregar última checagem:', e.message));
 }
 
-// ==================== ENCAMINHAR PROCESSO ====================
 async function modalEncaminhar() {
   criarModal(`<span class="spinner"></span> Carregando lista de usuários...`);
   const res = await api('usuarios/listar');
   if (!res.ok) { criarModal(`<div class="alert alert-danger">Erro ao carregar usuários: ${escHtml(res.erro)}</div>`); return; }
-
   const usuarios = (res.usuarios || []).filter(u => u.email !== usuarioAtual.email);
   if (!usuarios.length) { criarModal(`<div class="alert alert-warning">Não há outro usuário cadastrado para encaminhar.</div>`); return; }
-
   const opcoes = usuarios.map(u => `<option value="${escAttr(u.email)}">${escHtml(u.nome)} (${escHtml(u.gerencia)})</option>`).join('');
   criarModal(`
     <h2 style="margin-bottom:15px; font-size:1.2rem;">Encaminhar Processo</h2>
@@ -860,13 +770,10 @@ async function confirmarEncaminhar() {
   const observacao = document.getElementById('enc-observacao').value.trim();
   const statusEl = document.getElementById('enc-status');
   statusEl.innerHTML = '<span class="spinner"></span> Encaminhando...';
-
   const res = await api('processos/encaminhar', {
     processo_id: processoAtual.id, de: usuarioAtual.email, para: destinatario, observacao
   });
-
   if (!res.ok) { statusEl.innerHTML = `<div class="alert alert-danger">${escHtml(res.erro)}</div>`; return; }
-
   await api('log/registrar', { usuario: usuarioAtual.email, acao: 'ENCAMINHAR', processo_id: processoAtual.id, detalhes: 'Para: ' + destinatario });
   fecharModal();
   showView('dashboard', 'encaminhados');
@@ -876,12 +783,10 @@ async function devolverProcesso() {
   if (!_ultimaTramitacaoRecebida) return;
   const paraQuem = _ultimaTramitacaoRecebida.de_usuario;
   if (!confirm(`Devolver este processo para ${paraQuem}?`)) return;
-
   const res = await api('processos/encaminhar', {
     processo_id: processoAtual.id, de: usuarioAtual.email, para: paraQuem, observacao: 'Devolvido'
   });
   if (!res.ok) { alert('Erro ao devolver: ' + res.erro); return; }
-
   await api('log/registrar', { usuario: usuarioAtual.email, acao: 'DEVOLVER', processo_id: processoAtual.id, detalhes: 'Para: ' + paraQuem });
   showView('dashboard', 'entrada');
 }
@@ -890,7 +795,6 @@ async function finalizarProcesso() {
   const textoAtual = (document.getElementById('editor-final')?.value || '').trim();
   const hashAtual = textoAtual ? await sha256(textoAtual) : null;
   const revisadoEIgual = _ultimoTextoRevisadoHash && hashAtual && hashAtual === _ultimoTextoRevisadoHash;
-
   let mensagem;
   if (!textoAtual) {
     mensagem = '⚠️ Nenhum parecer foi colado na caixa de Revisão Final.\n\nFinalizar mesmo assim?';
@@ -899,12 +803,9 @@ async function finalizarProcesso() {
   } else {
     mensagem = 'Marcar este processo como concluído?';
   }
-
   if (!confirm(mensagem)) return;
-
   const res = await api('processos/atualizar-status', { id: processoAtual.id, status: 'Concluído', documento_final: textoAtual });
   if (!res.ok) { alert('Erro ao finalizar: ' + res.erro); return; }
-
   await api('log/registrar', {
     usuario: usuarioAtual.email, acao: 'FINALIZAR', processo_id: processoAtual.id,
     detalhes: revisadoEIgual ? 'Revisão final confirmada' : 'Finalizado sem revisão final confirmada'
@@ -912,7 +813,6 @@ async function finalizarProcesso() {
   showView('dashboard', 'concluidos');
 }
 
-// ==================== UPLOAD ====================
 function modalUploadZIP() {
   criarModal(`
     <h2 style="margin-bottom:15px; font-size:1.2rem;">Importar Arquivos</h2>
@@ -943,23 +843,19 @@ const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', 
 async function extrairTextoArquivo(nomeArquivo, buf) {
   const nome = nomeArquivo.toLowerCase();
   if (nome.endsWith('.pdf')) return extrairTextoPDF(buf);
-
   if (nome.endsWith('.docx') || nome.endsWith('.doc')) {
     if (typeof mammoth === 'undefined') throw new Error('Biblioteca de leitura de Word (mammoth) não carregada no index.html.');
     const resultado = await mammoth.extractRawText({ arrayBuffer: buf });
     return resultado.value || '';
   }
-
   if (nome.endsWith('.xlsx') || nome.endsWith('.xls')) {
     if (typeof XLSX === 'undefined') throw new Error('Biblioteca de leitura de Excel (SheetJS/XLSX) não carregada no index.html.');
     const wb = XLSX.read(buf, { type: 'array' });
     return wb.SheetNames.map(nomeAba => `--- Planilha: ${nomeAba} ---\n` + XLSX.utils.sheet_to_csv(wb.Sheets[nomeAba])).join('\n\n');
   }
-
   if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
     return new TextDecoder('utf-8', { fatal: false }).decode(buf);
   }
-
   if (nome.endsWith('.pptx')) {
     if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada — necessária pra abrir .pptx.');
     const zip = await JSZip.loadAsync(buf);
@@ -975,11 +871,9 @@ async function extrairTextoArquivo(nomeArquivo, buf) {
     }
     return textoCompleto;
   }
-
   if (nome.endsWith('.ppt')) {
     throw new Error('Formato antigo do PowerPoint (.ppt) não tem suporte — salve como .pptx.');
   }
-
   throw new Error('Tipo de arquivo não suportado.');
 }
 
@@ -991,13 +885,10 @@ async function processarUploadZIP(files) {
   const status = document.getElementById('up-status');
   const listaArquivos = Array.from(files || []);
   if (!listaArquivos.length) return;
-
   const avisos = [];
   let importados = 0;
-
   for (const file of listaArquivos) {
     const nomeLower = file.name.toLowerCase();
-
     if (nomeLower.endsWith('.zip')) {
       status.innerHTML = `<span class="spinner"></span> Mapeando ${escHtml(file.name)}...`;
       try {
@@ -1006,7 +897,6 @@ async function processarUploadZIP(files) {
         const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
         const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
         const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
-
         for (const filename of arquivosSuportados) {
           status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(filename.substring(0, 30))}...`;
           try {
@@ -1020,7 +910,6 @@ async function processarUploadZIP(files) {
       } catch (e) {
         avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
       }
-
     } else if (EXTENSOES_SUPORTADAS.some(ext => nomeLower.endsWith(ext))) {
       status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
       try {
@@ -1032,12 +921,10 @@ async function processarUploadZIP(files) {
       } catch (e) {
         avisos.push(`${file.name}: ${e.message}`);
       }
-
     } else {
       avisos.push(`${file.name}: tipo não suportado — NÃO importado`);
     }
   }
-
   status.innerHTML = avisos.length
     ? `<div class="alert alert-warning"><strong>${importados} importado(s), ${avisos.length} aviso(s):</strong><br>${avisos.map(escHtml).join('<br>')}</div>`
     : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) importado(s) com sucesso!</div>`;
@@ -1050,7 +937,10 @@ async function extrairTextoPDF(buf) {
   let txt = '';
   for (let i = 1; i <= pdf.numPages; i++) {
     const content = await (await pdf.getPage(i)).getTextContent();
-    txt += _reconstruirLinhasPDF(content.items) + '\n';
+    // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
+    // documentos) de propósito, pra dividirPorDocumento() continuar funcionando sem confundir
+    // "página" com "documento". Serve só pra localizar depois onde um dado mascarado apareceu.
+    txt += `\n--- PÁGINA ${i} ---\n` + _reconstruirLinhasPDF(content.items) + '\n';
   }
   return txt;
 }
@@ -1078,14 +968,11 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
   const NOME_MODELO = 'gemini-3.6-flash';
   let genConfig = { temperature: 0.1 };
   if (!isChat) genConfig.responseMimeType = "application/json";
-
   const MAX_TENTATIVAS = 3;
   const ESPERAS_MS = [2000, 5000, 10000];
-
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa++) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
     let resposta;
     try {
       resposta = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${NOME_MODELO}:generateContent?key=${GEMINI_KEY}`, {
@@ -1100,16 +987,13 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
       throw new Error('Falha de rede ao chamar o Gemini: ' + e.message);
     }
     clearTimeout(timer);
-
     if ((resposta.status === 503 || resposta.status === 429) && tentativa < MAX_TENTATIVAS) {
       const espera = ESPERAS_MS[tentativa - 1];
       if (statusEl) statusEl.innerHTML = `<span class="spinner"></span> Google sobrecarregado — tentando de novo em ${espera / 1000}s...`;
       await new Promise(r => setTimeout(r, espera));
       continue;
     }
-
     if (!resposta.ok) throw new Error(`Erro na API do Google (HTTP ${resposta.status}):\n${await resposta.text()}`);
-
     const resJson = await resposta.json();
     const candidato = resJson.candidates?.[0];
     if (!candidato || !candidato.content?.parts?.length) {
@@ -1139,7 +1023,6 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
     pulado:    { bg: '#f8f9fa', cor: '#adb5bd' }
   };
   const icones = { pendente: 'ti-minus', ok: 'ti-check', falhou: 'ti-x', pulado: 'ti-slash' };
-
   const pills = ORDEM_PROVEDORES.map(p => {
     const estado = estados[p.id] || 'pendente';
     const c = cores[estado];
@@ -1148,23 +1031,37 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
       : `<i class="ti ${icones[estado]}"></i>`;
     return `<span style="display:inline-flex; align-items:center; gap:5px; background:${c.bg}; color:${c.cor}; padding:4px 10px; border-radius:20px; font-size:0.78rem; font-weight:600;">${iconeHtml} ${p.nome}</span>`;
   }).join('');
-
   statusEl.innerHTML = `
     <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">${pills}</div>
     ${mensagem ? `<div style="font-size:0.82rem; color:var(--text-muted);">${escHtml(mensagem)}</div>` : ''}`;
 }
 
+// Acha, dentro do texto ANTES de um dado ponto, o último "--- DOC: nome ---" e o último
+// "--- PÁGINA N ---" que apareceram — é assim que sabemos de qual documento/página um
+// dado mascarado veio, sem precisar mudar a estrutura do texto que já existia.
+function _localizarOrigem(textoAntes) {
+  const docMatches = [...textoAntes.matchAll(/--- DOC: (.+?) ---/g)];
+  const pagMatches = [...textoAntes.matchAll(/--- PÁGINA (\d+) ---/g)];
+  return {
+    doc: docMatches.length ? docMatches[docMatches.length - 1][1].trim() : null,
+    pagina: pagMatches.length ? pagMatches[pagMatches.length - 1][1] : null
+  };
+}
+
+// Duas camadas: 1) bloco de qualificação (nome+CPF+RG juntos, achado por frase-âncora
+// de contrato); 2) regex de formato conhecido pro que sobrar fora dos blocos.
+// "detalhes" (novo) guarda, pra cada item mascarado, tipo + de onde veio — é o que
+// alimenta o painel visual "O que foi mascarado" mostrado depois da Checagem/Revisão.
 function mascararBlocosQualificacao(texto) {
   const mapa = new Map();
+  const detalhes = [];
   let contador = 0;
   const LIMITE_CAPTURA = 220;
-
   const ancoras = [
     /neste\s+ato\s+representad[oa]\s+por/gi,
     /representad[oa]\s+neste\s+ato\s+por/gi,
     /por\s+seu[a]?\s+representante\s+legal[,:]?/gi
   ];
-
   let textoComBlocosMascarados = texto;
   ancoras.forEach(ancora => {
     textoComBlocosMascarados = textoComBlocosMascarados.replace(ancora, (match, offset, textoCompleto) => {
@@ -1174,11 +1071,12 @@ function mascararBlocosQualificacao(texto) {
       const trechoCapturado = pontoFinal >= 0 ? resto.substring(0, pontoFinal) : resto;
       contador++;
       const marcador = `[QUALIFICACAO-${contador}]`;
+      const origem = _localizarOrigem(textoCompleto.substring(0, offset));
       mapa.set(marcador, match + trechoCapturado);
+      detalhes.push({ tipo: 'QUALIFICACAO', marcador, doc: origem.doc, pagina: origem.pagina });
       return marcador;
     });
   });
-
   for (const [marcador, textoOriginalCompleto] of mapa) {
     const matchAncora = textoOriginalCompleto.match(/^(neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal[,:]?)/i);
     if (!matchAncora) continue;
@@ -1189,37 +1087,43 @@ function mascararBlocosQualificacao(texto) {
     }
     mapa.set(marcador, trechoCapturado.replace(/^,?\s*/, '').trim() || ancoraOriginal.trim());
   }
-
-  return { textoComBlocosMascarados, mapaBlocos: mapa };
+  return { textoComBlocosMascarados, mapaBlocos: mapa, detalhesBlocos: detalhes };
 }
 
 function mascararDadosSensiveis(texto) {
   const mapa = new Map();
+  const detalhes = [];
   const contador = { CPF: 0, RG: 0, EMAIL: 0, TELEFONE: 0, BANCARIO: 0 };
-
-  const { textoComBlocosMascarados, mapaBlocos } = mascararBlocosQualificacao(texto);
+  const { textoComBlocosMascarados, mapaBlocos, detalhesBlocos } = mascararBlocosQualificacao(texto);
   let textoMascarado = textoComBlocosMascarados;
   for (const [marcador, original] of mapaBlocos) mapa.set(marcador, original);
+  detalhes.push(...detalhesBlocos);
 
   function substituir(regex, tipo) {
     const marcadorPorValor = new Map();
-    textoMascarado = textoMascarado.replace(regex, (match) => {
+    textoMascarado = textoMascarado.replace(regex, (match, ...args) => {
+      // Os últimos 2 argumentos do replace são sempre (offset, textoCompleto) —
+      // pega-os pela posição a partir do fim, já que args também inclui grupos de captura.
+      const offset = args[args.length - 2];
+      const textoCompleto = args[args.length - 1];
       if (marcadorPorValor.has(match)) return marcadorPorValor.get(match);
       contador[tipo]++;
       const marcador = `[${tipo}-${contador[tipo]}]`;
+      const origem = _localizarOrigem(textoCompleto.substring(0, offset));
       marcadorPorValor.set(match, marcador);
       mapa.set(marcador, match);
+      detalhes.push({ tipo, marcador, doc: origem.doc, pagina: origem.pagina });
       return marcador;
     });
   }
-
+  // Ordem importa: CPF (com pontuação) primeiro, pra não ser "roubado" pela regex
+  // mais genérica de telefone antes de ter a chance de casar.
   substituir(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, 'CPF');
   substituir(/\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g, 'RG');
   substituir(/[\w.+-]+@[\w-]+\.[\w.-]+/g, 'EMAIL');
   substituir(/\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g, 'TELEFONE');
   substituir(/\b(?:ag[êe]ncia|conta corrente|c\/c)\s*:?\s*\d{3,10}-?\d?\b/gi, 'BANCARIO');
-
-  return { textoMascarado, mapa, totalMascarado: mapa.size };
+  return { textoMascarado, mapa, totalMascarado: mapa.size, detalhes };
 }
 
 function desmascararTexto(texto, mapa) {
@@ -1229,15 +1133,38 @@ function desmascararTexto(texto, mapa) {
   return resultado;
 }
 
+// Monta o HTML do painel "O que foi mascarado" — chamado depois de qualquer chamada de
+// IA que tenha mascarado algo, pra nunca deixar isso invisível pro analista.
+function renderPainelMascaramento(detalhes) {
+  if (!detalhes || !detalhes.length) return '';
+  const rotulos = { CPF: 'CPF', RG: 'RG', EMAIL: 'E-mail', TELEFONE: 'Telefone', BANCARIO: 'Dado bancário', QUALIFICACAO: 'Bloco de qualificação (nome+documento)' };
+  const linhas = detalhes.map(d => {
+    const origemTxt = [d.doc ? `doc. <strong>${escHtml(d.doc)}</strong>` : null, d.pagina ? `página ${escHtml(d.pagina)}` : null]
+      .filter(Boolean).join(', ') || 'origem não identificada';
+    return `<li style="margin-bottom:3px;"><span style="font-weight:600;">${escHtml(rotulos[d.tipo] || d.tipo)}</span> — ${origemTxt}</li>`;
+  }).join('');
+  return `
+    <details style="margin-top:10px; background:#fff9db; border:1px solid #f5c518; border-radius:6px; padding:10px 14px;">
+      <summary style="cursor:pointer; font-size:0.82rem; font-weight:600; color:#7c5a00;">
+        <i class="ti ti-eye-off"></i> ${detalhes.length} dado(s) pessoal(is) mascarado(s) antes de enviar à nuvem — ver o quê e onde
+      </summary>
+      <ul style="margin:8px 0 0 18px; font-size:0.8rem; color:#5c4600; padding:0;">${linhas}</ul>
+    </details>`;
+}
+
+
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
   const estados = { gemini: 'pendente', groq: 'pendente', openrouter: 'pendente', ollama: 'pendente' };
   if (!GEMINI_KEY) estados.gemini = 'pulado';
   if (!GROQ_KEY) estados.groq = 'pulado';
   if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
-
-  const { textoMascarado: promptMascarado, mapa, totalMascarado } = mascararDadosSensiveis(prompt);
-
+  const { textoMascarado: promptMascarado, mapa, totalMascarado, detalhes } = mascararDadosSensiveis(prompt);
+  // Exposto globalmente pra quem chamou (rodarRaioX, rodarRevisaoFinal) poder montar o
+  // painel "o que foi mascarado" depois que a chamada terminar — o Ollama (local) não
+  // mascara nada, mas se ele for usado DEPOIS de uma tentativa em nuvem que já mascarou,
+  // esse registro do que teria sido mascarado continua valendo (foi calculado antes).
+  window._ultimoMascaramentoDetalhes = detalhes;
   if (GEMINI_KEY) {
     estados.gemini = 'tentando';
     renderPainelProvedores(statusEl, estados, 'Chamando Gemini...');
@@ -1251,7 +1178,6 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       erros.push('Gemini: ' + e.message);
     }
   }
-
   if (GROQ_KEY) {
     estados.groq = 'tentando';
     renderPainelProvedores(statusEl, estados, 'Chamando Groq...');
@@ -1265,7 +1191,6 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       erros.push('Groq: ' + e.message);
     }
   }
-
   if (OPENROUTER_KEY) {
     estados.openrouter = 'tentando';
     renderPainelProvedores(statusEl, estados, 'Chamando OpenRouter...');
@@ -1279,7 +1204,6 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
       erros.push('OpenRouter: ' + e.message);
     }
   }
-
   estados.ollama = 'tentando';
   renderPainelProvedores(statusEl, estados, 'Chamando Ollama local...');
   try {
@@ -1291,7 +1215,6 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     estados.ollama = 'falhou';
     erros.push('Ollama: ' + e.message);
   }
-
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
 
@@ -1369,8 +1292,58 @@ async function buscarJurisprudencia(p) {
   return { texto, fontes };
 }
 
+// Acha, dentro do texto de um achado (título/explicação/evidência), qualquer coisa que
+// pareça dado pessoal — reaproveita os mesmos padrões do mascaramento, mas aqui é só
+// DETECÇÃO (não mascara nada): o objetivo é avisar antes do dado sair da ferramenta
+// dentro de um arquivo exportado, não impedir que o analista veja o valor real.
+function _escanearDadosPessoais(texto) {
+  const achados = [];
+  const testes = [
+    { tipo: 'CPF', regex: /\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g },
+    { tipo: 'RG', regex: /\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g },
+    { tipo: 'E-mail', regex: /[\w.+-]+@[\w-]+\.[\w.-]+/g },
+    { tipo: 'Telefone', regex: /\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g },
+    { tipo: 'Nome (bloco de qualificação)', regex: /neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal/gi }
+  ];
+  testes.forEach(({ tipo, regex }) => { if (regex.test(texto)) achados.push(tipo); });
+  return achados;
+}
+
 function exportarRelatorioAchados() {
   if (!window.achadosAtuais || window.achadosAtuais.length === 0) return alert('Nenhum achado para exportar.');
+
+  // Varre título+explicação+evidência de cada achado — é o que efetivamente vai pro
+  // arquivo .doc que sai da ferramenta (e-mail, pen-drive, etc.), então é aqui que o
+  // aviso importa, não na tela de trabalho.
+  const avisos = [];
+  window.achadosAtuais.forEach((c, idx) => {
+    const textoJunto = [c.titulo, c.explicacao, c.evidencia].filter(Boolean).join(' — ');
+    const tipos = _escanearDadosPessoais(textoJunto);
+    tipos.forEach(tipo => avisos.push({ tipo, achadoNum: idx + 1, titulo: c.titulo, doc: c.doc_origem || 'não identificado' }));
+  });
+
+  const painel = document.getElementById('painel-cards');
+  if (avisos.length && painel) {
+    const linhas = avisos.map(a => `<li style="margin-bottom:3px;"><strong>${escHtml(a.tipo)}</strong> — achado ${a.achadoNum} ("${escHtml(a.titulo)}"), doc. ${escHtml(a.doc)}</li>`).join('');
+    const idAviso = 'aviso-export-' + Date.now();
+    const avisoHtml = `
+      <div id="${idAviso}" style="background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; padding:12px 16px; margin-bottom:15px;">
+        <div style="font-weight:600; color:#856404; font-size:0.88rem; margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> Este relatório vai sair da ferramenta com dado pessoal identificável:</div>
+        <ul style="margin:0 0 10px 18px; font-size:0.82rem; color:#5c4600; padding:0;">${linhas}</ul>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${idAviso}').remove()">Cancelar</button>
+          <button class="btn btn-warning btn-sm" onclick="document.getElementById('${idAviso}').remove(); _gerarArquivoRelatorioAchados();">Exportar mesmo assim</button>
+        </div>
+      </div>`;
+    painel.insertAdjacentHTML('afterbegin', avisoHtml);
+    document.getElementById(idAviso).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    return;
+  }
+
+  _gerarArquivoRelatorioAchados();
+}
+
+function _gerarArquivoRelatorioAchados() {
   const sei = processoAtual.numero_sei || String(processoAtual.id);
   let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
   window.achadosAtuais.forEach((c, index) => {
@@ -1421,18 +1394,86 @@ async function rodarRaioX() {
   }
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
-    const prompt = `Audite os documentos da unidade ${p.unidade} e OSS ${p.oss}:\n${dadosExtraidos}\nRetorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "doc_origem": "doc", "verificar": true}]}`;
+
+    // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
+    // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
+    let historicoUnidadeBloco = '';
+    const historicoUnidadeAtivo = document.getElementById('chk-historico-unidade')?.checked;
+    const statusFonteEl = document.getElementById('status-fonte-historico');
+    if (statusFonteEl) statusFonteEl.innerHTML = '';
+    if (!historicoUnidadeAtivo) {
+      if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Cruzamento com o histórico da unidade desligado nesta checagem.</span>`;
+    } else if (!p.unidade) {
+      if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Processo sem "unidade" definida — não há como buscar.</span>`;
+    } else {
+      st.innerHTML = `<span class="spinner"></span> Comparando com contratos antigos de "${escHtml(p.unidade)}"...`;
+      try {
+        const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade });
+        if (resHist.ok && resHist.encontrado) {
+          const nomes = resHist.arquivos.map(a => a.nome).join(', ');
+          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Encontrado: <strong>${escHtml(nomes)}</strong></span>`;
+          historicoUnidadeBloco = '\n\nHISTÓRICO CONTRATUAL DA UNIDADE (contratos/aditivos anteriores dessa mesma unidade —\n' +
+            'o casamento do arquivo é por nome, então pode confundir unidades parecidas; trate como forte\n' +
+            'indício, não certeza):\n' +
+            resHist.arquivos.map(a => {
+              let bloco = `\n--- ${a.nome} ---\n`;
+              if (a.valores?.length) bloco += 'VALORES:\n' + a.valores.map(v => `  • ${v.valor}`).join('\n') + '\n';
+              if (a.datas?.length) bloco += 'DATAS:\n' + a.datas.map(v => `  • ${v.valor}`).join('\n') + '\n';
+              if (a.cep?.length) bloco += 'CEP:\n' + a.cep.map(v => `  • ${v.valor}`).join('\n') + '\n';
+              return bloco;
+            }).join('\n');
+        } else if (resHist.ok && !resHist.encontrado) {
+          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-x"></i> Nenhum arquivo encontrado para "${escHtml(p.unidade)}"</span>`;
+        } else {
+          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar: ${escHtml(resHist.erro || 'erro desconhecido')}</span>`;
+        }
+      } catch (e) {
+        if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar: ${escHtml(e.message)}</span>`;
+      }
+    }
+
+    // Checkbox 2 — legislação + jurisprudência unificadas. Desligado por padrão
+    // (é busca automática na web, mais lenta, e todo achado baseado nela sai "verificar").
+    let externasBloco = '';
+    const legislacaoJurisprudenciaAtiva = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
+    if (legislacaoJurisprudenciaAtiva) {
+      st.innerHTML = `<span class="spinner"></span> Buscando normas e decisões de tribunais na web...`;
+      try {
+        const [resNormas, resJuris] = await Promise.all([buscarNormasExternas(p), buscarJurisprudencia(p)]);
+        externasBloco = `
+
+NORMAS EXTERNAS ENCONTRADAS NA BUSCA WEB (⚠️ busca automática — pode estar desatualizada ou não
+oficial; CONFIRME antes de citar em parecer):
+${resNormas.texto}
+
+JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ mesmo aviso acima):
+${resJuris.texto}`;
+      } catch (e) {
+        externasBloco = `\n\n(Busca de normas/jurisprudência falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
+      }
+    }
+
+    st.innerHTML = `<span class="spinner"></span> Analisando documentos...`;
+    const prompt = `Audite os documentos da unidade ${p.unidade} e OSS ${p.oss}:\n${dadosExtraidos}${historicoUnidadeBloco}${externasBloco}
+Se algum achado se basear no histórico da unidade ou na busca de normas/jurisprudência, marque
+"baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false) para ele.
+Retorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const jsonObj = JSON.parse(jsonStr);
-    window.achadosAtuais = jsonObj.cards || [];
+    window.achadosAtuais = (jsonObj.cards || []).map(c => {
+      // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
+      if (c.baseado_em_fonte_externa) c.verificar = true;
+      return c;
+    });
     contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
-    st.innerHTML = '';
+    st.innerHTML = renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
   }
 }
+
 
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
@@ -1530,7 +1571,7 @@ async function rodarRevisaoFinal() {
     const prompt = `Revise o parecer com base nos documentos:\n${textoIntegralAtual}\nParecer:\n${txt}\nRetorne JSON: {"criticas": [], "sugestao_linguagem_simples": ""}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const rev = JSON.parse(jsonStr);
-    st.innerHTML = `<div class="alert alert-warning">${(rev.criticas || []).join('<br/>')}</div>`;
+    st.innerHTML = `<div class="alert alert-warning">${(rev.criticas || []).join('<br/>')}</div>` + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
     _ultimoTextoRevisadoHash = await sha256(txt);
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
