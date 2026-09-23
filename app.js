@@ -1653,16 +1653,30 @@ async function invocarGroq(prompt, isChat, statusEl) {
 
 // Kimi (Moonshot AI) — mesmo padrão compatível com a API da OpenAI que Groq/OpenRouter
 // já usam. Endpoint e modelo confirmados na documentação oficial da Moonshot.
+// Tempo de espera próprio pra Kimi — bem maior que os outros. Ela é um modelo "de
+// raciocínio" (pensa antes de responder) e, com processo grande (documento com muitos
+// tokens), isso pode levar minutos — confirmado na prática: um teste real gastou tempo
+// suficiente pra estourar os 60s padrão, mesmo a Kimi tendo respondido (o pedido aparece
+// cobrado no painel da Moonshot), só que depois do nosso limite já ter cortado a conexão.
+const KIMI_TIMEOUT_MS = 240000;
+
 async function invocarKimi(prompt, isChat, statusEl) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), KIMI_TIMEOUT_MS);
   const body = { model: 'kimi-k2.6', messages: [{ role: 'user', content: prompt }] };
   if (!isChat) body.response_format = { type: 'json_object' };
-  const resp = await fetch('https://api.moonshot.ai/v1/chat/completions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + KIMI_KEY },
-    body: JSON.stringify(body), signal: controller.signal
-  });
-  clearTimeout(timer);
+  let resp;
+  try {
+    resp = await fetch('https://api.moonshot.ai/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + KIMI_KEY },
+      body: JSON.stringify(body), signal: controller.signal
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error(`A Kimi não respondeu em ${KIMI_TIMEOUT_MS / 1000}s — com documento grande, o modelo de raciocínio dela pode levar mais tempo. Tente de novo.`);
+    throw new Error('Falha de rede ao chamar a Kimi: ' + e.message);
+  } finally {
+    clearTimeout(timer);
+  }
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
   const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
