@@ -42,49 +42,58 @@ function injetarMarcaDagua() {
 }
 
 // ==================== "O QUE É ISSO?" NA TELA DE LOGIN ====================
-// Texto pensado por situação do dia a dia (não por lista de função), em linguagem
-// simples (Lei da Linguagem Simples na administração pública) — decantado ao longo
-// de várias rodadas de revisão, não é o primeiro rascunho.
+// Texto final, decantado ao longo de várias rodadas de revisão — prosa corrida, sem
+// lista com negrito (evita o padrão de texto gerado por IA), em linguagem simples.
 const TEXTO_SOBRE_FERRAMENTA = `
   <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
   <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
-    Ferramenta da DGMCG/GGPCG para apoiar a análise de processos de Contrato de Gestão
-    com Organizações Sociais de Saúde (OSS) na SES-PE.
+    Ferramenta da DGMCG e da GGPCG para apoiar a análise de processos de Contrato de Gestão
+    com Organizações Sociais de Saúde na SES-PE.
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:10px;">O que ele faz por você</h3>
-  <ul style="font-size:0.87rem; line-height:1.6; padding-left:18px; margin-bottom:18px;">
-    <li style="margin-bottom:10px;"><strong>Antes de qualquer assinatura</strong> — confere o processo inteiro:
-      valor, data, cálculo e indicador de meta contratual, texto duplicado ou copiado do lugar errado.
-      Se a soma de uma tabela não bater com o total citado no texto, ou um número mudar de um documento
-      pro outro, ele mostra o trecho exato e o que parece ser o certo.</li>
-    <li style="margin-bottom:10px;"><strong>Quando você não tem certeza se existe uma norma ou decisão de
-      Tribunal sobre aquilo</strong> — ele busca e mostra a fonte, em nível estadual e federal.</li>
-    <li style="margin-bottom:10px;"><strong>Quando você precisa confirmar um dado sem reler o processo
-      inteiro</strong> — você pergunta, ele responde e diz de qual documento tirou.</li>
-    <li style="margin-bottom:10px;"><strong>Antes de mandar um parecer, nota técnica ou ofício pra
-      frente</strong> — ele revisa junto com você: mérito, gramática, linguagem simples.</li>
-    <li><strong>Quando você quer a opinião de um colega antes de decidir</strong> — encaminha o achado
-      específico ou o processo inteiro, sem sair da ferramenta.</li>
-  </ul>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Antes de assinar qualquer documento, ele confere o processo inteiro. Verifica valores,
+    datas, cálculos e indicadores de metas contratuais, além de identificar textos
+    duplicados ou copiados incorretamente. Se a soma de uma tabela não bater com o total
+    citado, ou se um número divergir entre os documentos, ele aponta o trecho exato e a
+    provável correção.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Se você precisar consultar normas ou decisões de tribunais, o sistema busca e apresenta
+    as fontes estaduais e federais aplicáveis.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Precisa localizar um dado sem precisar reler o processo inteiro? Basta fazer a pergunta
+    e o sistema traz a resposta exata, indicando o documento de origem.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Antes de enviar um parecer, nota técnica ou ofício, ele revisa o conteúdo junto com você,
+    avaliando mérito, gramática e clareza textual.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Caso queira debater um ponto com um colega antes de decidir, é possível encaminhar o
+    achado específico ou o processo inteiro diretamente pela ferramenta.
+  </p>
 
   <h3 style="font-size:1rem; margin-bottom:8px;">O que ele não faz</h3>
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
-    Não decide nem aprova nada. Todo apontamento é uma sugestão pra você conferir — a palavra final
-    é sempre do analista.
+    Ele não toma decisões e nem substitui o servidor. Cada apontamento é uma sugestão
+    técnica para sua conferência. A palavra final e a aprovação são sempre do analista.
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:8px;">Sobre os dados</h3>
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
-    Antes de qualquer trecho de documento ser enviado para os serviços de inteligência artificial,
-    dado pessoal (CPF, RG, e-mail, nome dentro da qualificação de contrato) é ocultado automaticamente,
-    conforme a LGPD — e fica sempre visível pra você o que foi ocultado e de onde veio.
+    Antes de qualquer texto ser enviado para análise externa, os dados pessoais e as
+    informações sensíveis são ocultados automaticamente, conforme a LGPD. O sistema sempre
+    mostra de forma transparente o que foi protegido e em qual documento estava o registro.
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:8px;">Desenvolvido por</h3>
   <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.6;">
-    SES-PE — DGMCG/GGPCG. Ferramenta criada por Antonio Cleuton Eufrasio Vieira, Analista Administrativo,
-    para uso da equipe da Gerência de Gestão de Processos dos Contratos de Gestão.
+    Secretaria de Estado de Saúde de Pernambuco, por meio da DGMCG e da GGPCG. Ferramenta
+    criada por Antonio Cleuton Eufrasio Vieira, Analista Administrativo, para uso exclusivo
+    da equipe da Gerência de Gestão de Processos dos Contratos de Gestão.
   </p>
 `;
 
