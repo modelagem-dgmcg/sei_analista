@@ -96,16 +96,14 @@ function abrirSobreFerramenta() {
 // mesmo padrão já usado pra rodapé/marca d'água.
 function injetarBotaoSobre() {
   const loginBox = document.querySelector('#login-screen .login-box');
-  if (!loginBox || document.getElementById('btn-sobre-ferramenta')) return;
-  const btn = document.createElement('button');
-  btn.id = 'btn-sobre-ferramenta';
-  btn.type = 'button';
-  btn.title = 'O que é essa ferramenta?';
-  btn.innerHTML = '?';
-  btn.style = "position:absolute; top:14px; right:14px; width:26px; height:26px; border-radius:50%; border:1px solid #ced4da; background:#f8f9fa; color:#495057; font-size:0.85rem; font-weight:700; cursor:pointer; line-height:1;";
-  btn.onclick = abrirSobreFerramenta;
-  loginBox.style.position = loginBox.style.position || 'relative';
-  loginBox.appendChild(btn);
+  if (!loginBox || document.getElementById('link-sobre-ferramenta')) return;
+  const link = document.createElement('a');
+  link.id = 'link-sobre-ferramenta';
+  link.href = '#';
+  link.innerHTML = '<i class="ti ti-info-circle"></i> O que é o SEI Analista?';
+  link.style = "display:block; text-align:center; margin-top:18px; font-size:0.85rem; color:#495057; text-decoration:underline; cursor:pointer;";
+  link.onclick = (e) => { e.preventDefault(); abrirSobreFerramenta(); };
+  loginBox.appendChild(link);
 }
 
 const API_TIMEOUT_MS = 25000;
@@ -195,9 +193,9 @@ async function showView(v, subCaixa = 'entrada') {
              onclick="document.getElementById('np-arquivo').click()" style="margin-bottom:20px; padding:24px;">
           <i class="ti ti-wand" style="font-size:1.8rem; color:var(--action-primary); margin-bottom:6px;"></i><br>
           <strong style="font-size:0.9rem;">Solte um documento aqui pra preencher os campos automaticamente</strong><br>
-          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md ou .pptx. Confira tudo antes de salvar; a IA sugere, não afirma.</span>
+          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md, .pptx, .png, .jpg ou .zip. Foto de documento/página escaneada é lida por OCR (mais lento). Confira tudo antes de salvar; a IA sugere, não afirma.</span>
         </div>
-        <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
+        <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt,.png,.jpg,.jpeg,.zip" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
         <div id="np-status-preenchimento" style="margin-bottom:15px;"></div>
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Dica: Cole o nome do arquivo (ex: SEI_230...) no campo abaixo e o sistema limpa o número, se não usar o preenchimento automático.</p>
         <div class="form-group"><label>Número SEI *</label><input id="np-sei" placeholder="Ex: 230000..." oninput="formatarSEI(this)"></div>
@@ -590,19 +588,42 @@ async function prePreencherDeArquivo(file) {
   const status = document.getElementById('np-status-preenchimento');
   status.innerHTML = '<span class="spinner"></span> Lendo o documento...';
   try {
-    const buf = await file.arrayBuffer();
-    const texto = await extrairTextoArquivo(file.name, buf);
-    if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
-    _arquivoPrePreenchido = { nome: file.name, texto };
-    const numsProcesso = extrairNumerosProcesso(texto);
-    if (numsProcesso.length) {
-      const campoSei = document.getElementById('np-sei');
-      campoSei.value = numsProcesso[0].valor;
-      _marcarComoSugerido(campoSei);
+    let arquivosLidos; // sempre uma lista — [{nome, texto}] — mesmo pra 1 arquivo só, evita caso especial
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      const { arquivos, avisos } = await abrirZipEExtrairArquivos(file, (nome) => {
+        status.innerHTML = `<span class="spinner"></span> Lendo ${escHtml(nome.substring(0, 40))}...`;
+      });
+      if (!arquivos.length) throw new Error('Nenhum arquivo legível dentro do ZIP.' + (avisos.length ? ' (' + avisos[0] + ')' : ''));
+      arquivosLidos = arquivos;
+    } else {
+      const buf = await file.arrayBuffer();
+      const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
+      if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
+      arquivosLidos = [{ nome: file.name, texto, sensiveis: detectarSensiveisDoArquivo(texto, file.name) }];
     }
+    _arquivoPrePreenchido = arquivosLidos;
+
+    // Nº do processo: procura em todos os arquivos lidos, usa o primeiro que achar
+    for (const a of arquivosLidos) {
+      const nums = extrairNumerosProcesso(a.texto);
+      if (nums.length) {
+        const campoSei = document.getElementById('np-sei');
+        campoSei.value = nums[0].valor;
+        _marcarComoSugerido(campoSei);
+        break;
+      }
+    }
+
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
-    const amostra = texto.substring(0, 6000);
-    const prompt = `Leia o início de um documento de contrato/aditivo de gestão em saúde pública e extraia,
+    // Amostra pra IA: concatena o início de cada arquivo, até um limite total —
+    // suficiente pra achar título/unidade/OSS sem mandar o processo inteiro nessa etapa.
+    const LIMITE_AMOSTRA_TOTAL = 8000;
+    let amostra = '';
+    for (const a of arquivosLidos) {
+      if (amostra.length >= LIMITE_AMOSTRA_TOTAL) break;
+      amostra += `\n--- ${a.nome} ---\n` + a.texto.substring(0, LIMITE_AMOSTRA_TOTAL - amostra.length);
+    }
+    const prompt = `Leia o início de um ou mais documentos de contrato/aditivo de gestão em saúde pública e extraia,
 SOMENTE se estiverem claramente explícitos no texto:
 - "titulo": um título curto pro tipo de documento (ex: "1º Termo Aditivo", "Contrato de Gestão")
 - "unidade": nome da unidade de saúde envolvida (ex: "UPA Curado", "Hospital Regional de Araripina")
@@ -622,8 +643,9 @@ ${amostra}`;
     } catch (e) {
       console.warn('Sugestão de título/unidade/OSS via IA falhou:', e.message);
     }
+    const nomesLidos = arquivosLidos.map(a => a.nome).join(', ');
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
-      <i class="ti ti-check"></i> ${escHtml(file.name)} lido. Confira os campos destacados abaixo antes de salvar.
+      <i class="ti ti-check"></i> ${arquivosLidos.length > 1 ? `${arquivosLidos.length} arquivos lidos (${escHtml(nomesLidos)})` : escHtml(nomesLidos)}. Confira os campos destacados abaixo antes de salvar.
     </div>`;
   } catch (e) {
     _arquivoPrePreenchido = null;
@@ -656,13 +678,16 @@ async function salvarNovoProcesso() {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Criar Processo na Bancada'; }
     return;
   }
-  if (_arquivoPrePreenchido) {
-    if (btn) btn.innerHTML = '<span class="spinner"></span> Anexando documento já lido...';
+  if (_arquivoPrePreenchido && _arquivoPrePreenchido.length) {
     processoAtual = res.processo;
-    try {
-      await salvarDocumentoNoBackend(_arquivoPrePreenchido.nome, _arquivoPrePreenchido.texto);
-    } catch (e) {
-      console.warn('Processo criado, mas falhou ao anexar o documento pré-lido:', e.message);
+    for (let i = 0; i < _arquivoPrePreenchido.length; i++) {
+      const a = _arquivoPrePreenchido[i];
+      if (btn) btn.innerHTML = `<span class="spinner"></span> Anexando documento já lido (${i + 1}/${_arquivoPrePreenchido.length})...`;
+      try {
+        await salvarDocumentoNoBackend(a.nome, a.texto, a.sensiveis);
+      } catch (e) {
+        console.warn(`Processo criado, mas falhou ao anexar "${a.nome}":`, e.message);
+      }
     }
     _arquivoPrePreenchido = null;
   }
@@ -790,7 +815,18 @@ async function abrirProcesso(identificador) {
   let docsHtml = '<span style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum documento anexado ainda.</span>';
   if (docs.length > 0) {
     docsHtml = '<ul style="margin:0; padding-left:20px; font-size:0.85rem; color:#495057; max-height: 120px; overflow-y: auto;">';
-    docs.forEach(d => { docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}</li>`; });
+    docs.forEach(d => {
+      let resumoTxt = '';
+      if (d.resumo_sensiveis) {
+        try {
+          const lista = JSON.parse(d.resumo_sensiveis);
+          resumoTxt = lista.length
+            ? ` <span style="color:#b45309; font-size:0.72rem;">(${lista.length} dado(s) sensível(is) coberto(s))</span>`
+            : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
+        } catch (e) { /* resumo antigo ou inválido — só não mostra */ }
+      }
+      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${resumoTxt}</li>`;
+    });
     docsHtml += '</ul>';
   }
   const p = processoAtual;
@@ -864,8 +900,8 @@ async function abrirProcesso(identificador) {
     <!-- 3. PAINEL DE REVISÃO E LINGUAGEM SIMPLES -->
     <div style="background:#f8f9fa; border:1px dashed #adb5bd; padding:20px; border-radius:8px; margin-bottom:30px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Revisão e Auditoria de Parecer</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole sua minuta ou parecer abaixo. A IA cruza seu texto com os documentos originais do processo para apontar melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
-      <textarea id="editor-final" placeholder="Cole o seu parecer do Word ou do SEI aqui para ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole seu parecer, nota técnica, ofício ou qualquer minuta abaixo. A IA cruza seu texto com os documentos originais do processo para apontar melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
+      <textarea id="editor-final" placeholder="Cole aqui o texto que você escreveu, pra ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
       <div style="display: flex; align-items: center; gap: 15px;">
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
@@ -991,26 +1027,38 @@ function modalUploadZIP() {
          onclick="document.getElementById('file-up').click()">
       <i class="ti ti-cloud-download" style="font-size:2.5rem; margin-bottom:10px; color:var(--action-primary);"></i><br>
       <strong>Arraste um ou mais arquivos aqui</strong><br>
-      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD ou PPTX — pode soltar vários juntos, sem precisar zipar antes</span>
+      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD, PPTX, PNG ou JPG — pode soltar vários juntos, sem precisar zipar antes. Foto de documento/página escaneada é lida por OCR (mais lento).</span>
     </div>
     <input type="file" id="file-up" multiple style="display:none" onchange="processarUploadZIP(this.files)">
     <div id="up-status" style="margin-top:15px;"></div>
+    <div id="up-progresso-lista" style="margin-top:10px; font-size:0.8rem;"></div>
   `);
 }
 
-const BLOCO_MAX_CHARS = 45000;
-async function salvarDocumentoNoBackend(nomeArquivo, texto) {
+async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis) {
   const res = await api('documentos/adicionar-completo', {
-    processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email
+    processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email,
+    resumo_sensiveis: sensiveis && sensiveis.length ? JSON.stringify(sensiveis) : ''
   });
   if (!res.ok) throw new Error('Falha ao salvar documento: ' + res.erro);
 }
 
-const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt'];
+const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt', '.png', '.jpg', '.jpeg'];
 
-async function extrairTextoArquivo(nomeArquivo, buf) {
+// ==================== OCR (leitura de imagem/PDF escaneado) ====================
+// Usa Tesseract.js — roda no navegador, sem precisar de servidor. É lento (alguns
+// segundos por página), então só entra como PLANO B: pra imagem solta (.png/.jpg), é
+// o único jeito de ler; pra página de PDF, só roda quando a extração normal de texto
+// não encontrou quase nada (indício de página escaneada/foto, não texto real).
+async function ocrImagem(fonte) {
+  if (typeof Tesseract === 'undefined') throw new Error('Biblioteca de OCR (Tesseract.js) não carregada no index.html — necessária pra ler imagem ou PDF escaneado.');
+  const resultado = await Tesseract.recognize(fonte, 'por');
+  return (resultado?.data?.text) || '';
+}
+
+async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
   const nome = nomeArquivo.toLowerCase();
-  if (nome.endsWith('.pdf')) return extrairTextoPDF(buf);
+  if (nome.endsWith('.pdf')) return extrairTextoPDF(buf, onProgresso);
   if (nome.endsWith('.docx') || nome.endsWith('.doc')) {
     if (typeof mammoth === 'undefined') throw new Error('Biblioteca de leitura de Word (mammoth) não carregada no index.html.');
     const resultado = await mammoth.extractRawText({ arrayBuffer: buf });
@@ -1023,6 +1071,16 @@ async function extrairTextoArquivo(nomeArquivo, buf) {
   }
   if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
     return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  }
+  // Imagem solta (foto de documento, print de tela) — só dá pra ler via OCR, não tem
+  // texto embutido nenhum pra extrair.
+  if (nome.endsWith('.png') || nome.endsWith('.jpg') || nome.endsWith('.jpeg')) {
+    if (onProgresso) onProgresso('Lendo imagem via OCR (pode levar alguns segundos)...');
+    const mime = nome.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const blob = new Blob([buf], { type: mime });
+    const texto = await ocrImagem(blob);
+    if (!texto.trim().length) throw new Error('OCR não encontrou nenhum texto legível nessa imagem.');
+    return texto;
   }
   if (nome.endsWith('.pptx')) {
     if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada — necessária pra abrir .pptx.');
@@ -1049,8 +1107,48 @@ function _decodeXmlEntities(s) {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
+// Abre um .zip e extrai texto de cada arquivo suportado dentro dele — reutilizada tanto
+// no upload de arquivos dentro de um processo já criado quanto no pré-preenchimento da
+// tela "Importar Processo" (antes, só o primeiro sabia abrir ZIP; os dois divergiam e foi
+// exatamente isso que quebrou ao soltar um ZIP na tela de importar processo).
+async function abrirZipEExtrairArquivos(file, onProgresso) {
+  const resultado = { arquivos: [], avisos: [] };
+  const zip = new JSZip();
+  const contents = await zip.loadAsync(file);
+  const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
+  const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
+  const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
+
+  for (const filename of arquivosSuportados) {
+    if (onProgresso) onProgresso(filename);
+    try {
+      const buf = await contents.files[filename].async('arraybuffer');
+      const texto = await extrairTextoArquivo(filename, buf, (msg) => { if (onProgresso) onProgresso(`${filename} — ${msg}`); });
+      if (texto.trim().length > 20) {
+        const sensiveis = detectarSensiveisDoArquivo(texto, filename);
+        resultado.arquivos.push({ nome: filename, texto, sensiveis });
+      } else {
+        resultado.avisos.push(`${filename}: nenhum texto extraído — NÃO importado`);
+      }
+    } catch (e) { resultado.avisos.push(`${filename}: ${e.message}`); }
+  }
+  arquivosIgnorados.forEach(f => resultado.avisos.push(`${f}: tipo não suportado — NÃO importado`));
+  return resultado;
+}
+
+// Uma linha da lista progressiva de importação — mostra o que já foi coberto nesse
+// arquivo específico, sem esperar o restante do lote terminar.
+function _linhaProgressoArquivo(nome, sensiveis) {
+  const resumo = sensiveis && sensiveis.length
+    ? `${sensiveis.length} dado(s) sensível(is): ` + sensiveis.map(s => `${s.tipo}${s.pagina ? ' pág.' + s.pagina : ''}`).join(', ')
+    : 'nenhum dado sensível detectado';
+  return `<div style="margin-bottom:3px;">☑ <strong>${escHtml(nome)}</strong> — concluído (${escHtml(resumo)})</div>`;
+}
+
 async function processarUploadZIP(files) {
   const status = document.getElementById('up-status');
+  const listaProgresso = document.getElementById('up-progresso-lista');
+  if (listaProgresso) listaProgresso.innerHTML = '';
   const listaArquivos = Array.from(files || []);
   if (!listaArquivos.length) return;
   const avisos = [];
@@ -1060,21 +1158,17 @@ async function processarUploadZIP(files) {
     if (nomeLower.endsWith('.zip')) {
       status.innerHTML = `<span class="spinner"></span> Mapeando ${escHtml(file.name)}...`;
       try {
-        const zip = new JSZip();
-        const contents = await zip.loadAsync(file);
-        const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
-        const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
-        const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
-        for (const filename of arquivosSuportados) {
-          status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(filename.substring(0, 30))}...`;
+        const { arquivos, avisos: avisosZip } = await abrirZipEExtrairArquivos(file, (nome) => {
+          status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(nome.substring(0, 70))}...`;
+        });
+        for (const a of arquivos) {
           try {
-            const buf = await contents.files[filename].async('arraybuffer');
-            const texto = await extrairTextoArquivo(filename, buf);
-            if (texto.trim().length > 20) { await salvarDocumentoNoBackend(filename, texto); importados++; }
-            else avisos.push(`${filename}: nenhum texto extraído — NÃO importado`);
-          } catch (e) { avisos.push(`${filename}: ${e.message}`); }
+            await salvarDocumentoNoBackend(a.nome, a.texto, a.sensiveis);
+            importados++;
+            if (listaProgresso) listaProgresso.insertAdjacentHTML('beforeend', _linhaProgressoArquivo(a.nome, a.sensiveis));
+          } catch (e) { avisos.push(`${a.nome}: ${e.message}`); }
         }
-        arquivosIgnorados.forEach(f => avisos.push(`${f}: tipo não suportado — NÃO importado`));
+        avisos.push(...avisosZip);
       } catch (e) {
         avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
       }
@@ -1082,10 +1176,12 @@ async function processarUploadZIP(files) {
       status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
       try {
         const buf = await file.arrayBuffer();
-        const texto = await extrairTextoArquivo(file.name, buf);
+        const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
         if (!texto.trim().length) throw new Error('nenhum texto extraído');
-        await salvarDocumentoNoBackend(file.name, texto);
+        const sensiveis = detectarSensiveisDoArquivo(texto, file.name);
+        await salvarDocumentoNoBackend(file.name, texto, sensiveis);
         importados++;
+        if (listaProgresso) listaProgresso.insertAdjacentHTML('beforeend', _linhaProgressoArquivo(file.name, sensiveis));
       } catch (e) {
         avisos.push(`${file.name}: ${e.message}`);
       }
@@ -1099,16 +1195,37 @@ async function processarUploadZIP(files) {
   setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, avisos.length ? 4500 : 1800);
 }
 
-async function extrairTextoPDF(buf) {
+async function extrairTextoPDF(buf, onProgresso) {
   if (typeof pdfjsLib === 'undefined') return '';
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
   let txt = '';
   for (let i = 1; i <= pdf.numPages; i++) {
-    const content = await (await pdf.getPage(i)).getTextContent();
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    let textoPagina = _reconstruirLinhasPDF(content.items);
+
+    // Página sem texto extraível de verdade — indício forte de página escaneada/foto,
+    // não texto real. Tenta OCR como plano B (mais lento, por isso só entra aqui).
+    if (textoPagina.trim().length < 15) {
+      try {
+        if (onProgresso) onProgresso(`Página ${i}/${pdf.numPages} sem texto — lendo via OCR (pode ser lento)...`);
+        const viewport = page.getViewport({ scale: 2 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d');
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        const textoOcr = await ocrImagem(canvas);
+        if (textoOcr.trim().length > textoPagina.trim().length) textoPagina = textoOcr;
+      } catch (e) {
+        console.warn(`OCR falhou na página ${i}:`, e.message);
+      }
+    }
+
     // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
     // documentos) de propósito, pra dividirPorDocumento() continuar funcionando sem confundir
-    // "página" com "documento". Serve só pra localizar depois onde um dado mascarado apareceu.
-    txt += `\n--- PÁGINA ${i} ---\n` + _reconstruirLinhasPDF(content.items) + '\n';
+    // "página" com "documento". Serve pra localizar onde um dado mascarado apareceu.
+    txt += `\n--- PÁGINA ${i} ---\n` + textoPagina + '\n';
   }
   return txt;
 }
@@ -1292,6 +1409,15 @@ function mascararDadosSensiveis(texto) {
   substituir(/\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g, 'TELEFONE');
   substituir(/\b(?:ag[êe]ncia|conta corrente|c\/c)\s*:?\s*\d{3,10}-?\d?\b/gi, 'BANCARIO');
   return { textoMascarado, mapa, totalMascarado: mapa.size, detalhes };
+}
+
+// Detecta dados sensíveis num arquivo recém-lido, ANTES mesmo de existir Checagem —
+// reaproveita o mesmo motor de mascararDadosSensiveis (mesmos padrões, mesma forma de
+// achar página) só que aqui é puramente informativo: não mascara nada, só lista o que
+// tem, pra já aparecer na importação em vez de só depois que a Checagem rodar.
+function detectarSensiveisDoArquivo(texto, nomeArquivo) {
+  const { detalhes } = mascararDadosSensiveis(texto);
+  return detalhes.map(d => ({ tipo: d.tipo, doc: nomeArquivo, pagina: d.pagina }));
 }
 
 function desmascararTexto(texto, mapa) {
@@ -1549,8 +1675,17 @@ function montarDadosExtraidos(textoIntegral) {
   const docs = dividirPorDocumento(textoIntegral);
   if (!docs.length) return '(nenhum documento)';
   return docs.map(d => {
-    const v = extrairValoresMonetarios(d.texto);
-    return `\n--- ${d.nome} ---\n` + (v.length ? v.map(x => `• ${x.valor}`).join('\n') : '(sem valores)');
+    const valores = extrairValoresMonetarios(d.texto);
+    const datas = extrairDatas(d.texto);
+    const numsProcesso = extrairNumerosProcesso(d.texto);
+    const ceps = extrairCEPs(d.texto);
+    let bloco = `\n--- ${d.nome} ---\n`;
+    if (valores.length) bloco += 'VALORES:\n' + valores.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (datas.length) bloco += 'DATAS:\n' + datas.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (numsProcesso.length) bloco += 'Nº PROCESSO:\n' + numsProcesso.map(v => `  • ${v.valor}`).join('\n') + '\n';
+    if (ceps.length) bloco += 'CEP:\n' + ceps.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (!valores.length && !datas.length && !numsProcesso.length && !ceps.length) bloco += '(nenhum valor/data/nº de processo/CEP detectado)\n';
+    return bloco;
   }).join('\n');
 }
 
@@ -1562,6 +1697,30 @@ async function rodarRaioX() {
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 50) {
     return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
   }
+
+  // Aviso fixo e visível durante toda a checagem, com números REAIS (não é barra de
+  // "página X de Y" fingida — o sistema manda o texto numa única chamada, não tem como
+  // saber "em que página" está). O cronômetro sim é real, conta segundo a segundo.
+  _garantirEstiloPulso();
+  const banner = document.getElementById('banner-conferindo');
+  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
+  const bannerTimer = document.getElementById('banner-conferindo-timer');
+  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
+  let segundosDecorridos = 0;
+  let intervaloTimer = null;
+  if (banner) {
+    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU CONFERINDO OS DOCUMENTOS...';
+    banner.classList.remove('hidden');
+    if (bannerDetalhe) {
+      const qtdDocs = (textoIntegralAtual.match(/--- DOC: /g) || []).length;
+      bannerDetalhe.textContent = `${qtdDocs} documento(s) — ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`;
+    }
+    if (bannerTimer) {
+      bannerTimer.textContent = '0s';
+      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
+    }
+  }
+
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
 
@@ -1624,21 +1783,41 @@ ${resJuris.texto}`;
     }
 
     st.innerHTML = `<span class="spinner"></span> Analisando documentos...`;
-    const prompt = `Audite os documentos da unidade ${p.unidade} e OSS ${p.oss}:\n${dadosExtraidos}${historicoUnidadeBloco}${externasBloco}
-Se algum achado se basear no histórico da unidade ou na busca de normas/jurisprudência, marque
-"baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false) para ele.
+    const prompt = `Atue como Auditor Técnico Sênior (SES-PE). Cheque os documentos da unidade ${p.unidade} e OSS ${p.oss}.
 
-Para CADA achado, escreva também um campo "sugestao": o que fazer para resolver isso, em
-linguagem simples e direta (nada de juridiquês, nada de "verificar a divergência" de forma vaga).
-A sugestão precisa ser certeira e prática: diga exatamente qual documento corrigir, qual dos
-valores/textos divergentes parece o correto com base no que os documentos já mostram (ex.: "a
-tabela detalhada soma 1.200, então o título com 1.920 parece erro de digitação — corrija o
-título"), e o que confirmar antes de decidir, quando não houver como saber com certeza qual
-versão está certa (ex.: nos dois casos de CEP diferente, diga que é preciso confirmar qual é o
-CEP oficial antes de padronizar, em vez de chutar um dos dois). Se não houver base nos documentos
-pra apontar qual lado está certo, diga isso claramente em vez de inventar uma resposta.
+VALORES, DATAS, Nº DE PROCESSO E CEP JÁ EXTRAÍDOS POR CÓDIGO (100% precisos — extração automática,
+não depende de leitura sua). USE ESTA LISTA COMO BASE PRINCIPAL para qualquer comparação NUMÉRICA
+(valor divergente, data divergente, CEP divergente) — é mais confiável que reler o número direto do
+texto bruto, que fica abaixo:
+${dadosExtraidos}${historicoUnidadeBloco}${externasBloco}
 
-Retorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}`;
+REGRAS DE CHECAGEM:
+1. DIVERGÊNCIA DE VALOR/DATA/CEP: usando a lista extraída acima, ao achar dois valores que deveriam
+   ser o mesmo dado mas aparecem diferentes, cite OS DOIS valores exatos e o documento de origem de
+   cada um. Nunca diga "há divergência" sem mostrar os dois lado a lado.
+2. TEXTO DUPLICADO OU COPIADO DO LUGAR ERRADO, TÍTULO QUE NÃO BATE COM O CORPO/TABELA, ATRIBUIÇÃO OU
+   DESCRIÇÃO TROCADA ENTRE ITENS: para isso, USE O TEXTO BRUTO dos documentos (abaixo) — não é
+   comparação numérica, é comparação de redação. Ex.: um título de meta dizendo um número enquanto a
+   tabela detalhada logo depois soma outro; a descrição de um cargo/item copiada do item errado.
+3. Se algum achado se basear no histórico da unidade ou na busca de normas/jurisprudência, marque
+   "baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false).
+4. Para cada achado, marque "verificar": true se depender de conferência manual, ou false apenas se
+   for uma certeza absoluta e objetiva. Na dúvida, use true.
+5. Escreva um campo "sugestao": o que fazer para resolver isso, em linguagem simples e direta (nada
+   de juridiquês, nada de "verificar a divergência" de forma vaga). Diga exatamente qual documento
+   corrigir e qual valor/texto parece o correto, com base no que os documentos já mostram (ex.: "a
+   tabela detalhada soma 1.200, então o título com 1.920 parece erro de digitação — corrija o
+   título"). Quando não houver como saber qual versão está certa, diga isso claramente e oriente o
+   que confirmar antes de decidir, em vez de chutar um lado. Nunca invente uma sugestão sem base.
+
+MUITO IMPORTANTE: se não houver inconsistência real e verificável, retorne {"cards": []}. Nunca
+invente achado pra preencher a resposta.
+
+Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
+{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}
+
+TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
+${textoIntegralAtual}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const jsonObj = JSON.parse(jsonStr);
     window.achadosAtuais = (jsonObj.cards || []).map(c => {
@@ -1652,23 +1831,36 @@ Retorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Títu
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
   }
 }
 
 
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
-  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento.</div>';
+  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
   let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
+    // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
+    const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
+    const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
+    const tagVerificar = c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`;
     html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
-        <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span></div>
+        <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
       </div>
       <div class="rx-body">
+        <div style="margin-bottom: 12px;">
+            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
+               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>
+            </span>
+        </div>
+        ${c.evidencia ? `<div class="rx-evidence">${escHtml(c.evidencia)}</div>` : ''}
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
         ${c.sugestao ? `
@@ -1676,7 +1868,7 @@ function renderizarCards(cards) {
           <div style="font-size:0.72rem; font-weight:700; color:#087f5b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:3px;"><i class="ti ti-bulb"></i> O que fazer</div>
           <div style="font-size:0.85rem; color:#0b6157;">${escHtml(c.sugestao)}</div>
         </div>` : ''}
-        <div style="margin-top:10px; display:flex; gap:10px;">
+        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
         </div>
@@ -1731,42 +1923,249 @@ async function responderConsultaAchado(id) {
   carregarStatusConsultasAchados();
 }
 
+// Filtra o texto integral pra só os parágrafos que contêm palavra-chave da pergunta —
+// usado apenas quando o texto acumulado é grande (ver LIMIAR_FILTRAGEM no chamador).
+// Sem isso, processo muito grande podia demorar demais ou estourar limite da IA.
+function extrairTrechosRelevantes(textoIntegral, pergunta) {
+  const palavrasChave = pergunta.toLowerCase()
+    .replace(/[^\w\sáéíóúâêîôûãõç]/g, '')
+    .split(/\s+/)
+    .filter(p => p.length > 3);
+  if (!palavrasChave.length) return textoIntegral.substring(0, 15000);
+
+  const trechosDocumento = textoIntegral.split('--- DOC: ');
+  let blocosRelevantes = [];
+  trechosDocumento.forEach(docTexto => {
+    if (!docTexto.trim()) return;
+    const linhas = docTexto.split('\n');
+    const nomeDoc = linhas[0] || 'Desconhecido';
+    const corpo = linhas.slice(1).join('\n');
+    corpo.split(/\n\s*\n/).forEach(par => {
+      const parLower = par.toLowerCase();
+      const score = palavrasChave.reduce((s, pal) => s + (parLower.includes(pal) ? 1 : 0), 0);
+      if (score > 0) blocosRelevantes.push({ doc: nomeDoc, texto: par, score });
+    });
+  });
+  blocosRelevantes.sort((a, b) => b.score - a.score);
+  if (!blocosRelevantes.length) return textoIntegral.substring(0, 20000); // nada bateu — melhor mandar algo do que nada
+
+  return 'TRECHOS MAIS RELEVANTES ENCONTRADOS NOS DOCUMENTOS PARA ESTA PERGUNTA:\n' +
+    blocosRelevantes.slice(0, 8).map((b, i) => `\n[${i + 1}] Documento: ${b.doc}\nTrecho: "${b.texto.trim()}"\n`).join('');
+}
+
 async function fazerPerguntaAoProcesso() {
   const input = document.getElementById('chat-input');
   const history = document.getElementById('chat-history');
+  const btn = document.getElementById('btn-perguntar');
   const pergunta = input.value.trim();
   if (!pergunta) return;
-  if (history.innerHTML.includes('O histórico')) history.innerHTML = '';
-  history.innerHTML += `<div><strong>Você:</strong> ${escHtml(pergunta)}</div>`;
-  input.value = '';
-  try {
-    const resposta = await invocarIAComFallback(pergunta, true);
-    history.innerHTML += `<div><strong>IA:</strong> ${escHtml(resposta)}</div>`;
-    api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email });
-  } catch (e) {
-    history.innerHTML += `<div>Erro ao responder.</div>`;
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) {
+    history.innerHTML += `<div style="color:#c92a2a; font-size:0.85rem;">Nenhum documento importado neste processo ainda — importe antes de perguntar.</div>`;
+    return;
   }
+
+  if (history.innerHTML.includes('O histórico do chat aparecerá aqui')) history.innerHTML = '';
+  history.innerHTML += `
+      <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
+          <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(pergunta)}
+      </div>`;
+  input.value = '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Localizando nos documentos...'; }
+  history.scrollTop = history.scrollHeight;
+
+  // Por padrão manda o texto INTEIRO — o objetivo da ferramenta é não deixar passar
+  // inconsistência nenhuma. O filtro por relevância só entra em volume realmente grande,
+  // como válvula de escape, não como economia de rotina.
+  const LIMIAR_FILTRAGEM = 400000;
+  const contextoDocs = textoIntegralAtual.length > LIMIAR_FILTRAGEM
+    ? extrairTrechosRelevantes(textoIntegralAtual, pergunta)
+    : textoIntegralAtual;
+
+  const prompt = `Você é um assistente investigativo sênior. O usuário fará uma pergunta sobre o processo em anexo.
+Responda EXCLUSIVAMENTE com base nos documentos. Se a resposta não estiver clara nos documentos, diga
+"A informação não foi encontrada nos documentos anexados."
+
+MUITO IMPORTANTE — INFORMAÇÃO MAIS RECENTE:
+Os documentos podem incluir o contrato original e vários aditivos/apostilamentos ao longo do tempo, cada
+um podendo alterar o que veio antes. Ao responder:
+1. Se mais de um documento tratar do mesmo dado com informações diferentes, use APENAS o documento com
+   a data mais recente como resposta — nunca misture ou faça média entre versões.
+2. Diga explicitamente qual documento e qual data você usou como base.
+3. Se o documento mais recente que você tem acesso parecer antigo e a pergunta assumir que existe algo
+   mais novo ainda não importado, avise isso explicitamente.
+
+Seja analítico, claro e vá direto ao ponto. Sempre cite o NOME DO ARQUIVO que você usou para responder.
+
+PERGUNTA DO USUÁRIO: "${pergunta}"
+
+DOCUMENTOS:
+${contextoDocs}`;
+
+  try {
+    const resposta = await invocarIAComFallback(prompt, true);
+    const respId = `chat-${Date.now()}`;
+    window.memoriaEvidencias[respId] = { tag: 'Investigação', titulo: `P: ${pergunta}`, texto: resposta, doc: 'Resposta do Chat' };
+    history.innerHTML += `
+        <div style="background:#e7f5ff; border: 1px solid #74c0fc; padding:10px 15px; border-radius:15px 15px 0 15px; align-self:flex-end; max-width:85%; font-size: 0.9rem; color: #0b509e;">
+            <strong><i class="ti ti-robot"></i> IA Investigadora:</strong><br>
+            <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(resposta)}</div>
+            <div style="text-align:right; margin-top:10px;">
+                <button class="btn btn-sm" style="background-color:#0dcaf0; color:#000; border:none; font-size:0.75rem; font-weight:bold; padding:4px 8px; border-radius:4px;" onclick="fixarEvidenciaDaMemoria('${respId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
+            </div>
+        </div>`;
+    api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email })
+      .catch(e => console.warn('Falha ao salvar consulta no histórico:', e.message));
+  } catch (e) {
+    const { titulo, sugestao } = _mensagemErroAmigavel(e.message);
+    history.innerHTML += `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px 12px; margin-top:5px; max-width:85%; align-self:flex-end; font-size:0.82rem; color:#7c2d12;">
+      <i class="ti ti-cloud-exclamation" style="color:#c2410c;"></i> ${escHtml(titulo)} <span style="color:#9a3412;">${escHtml(sugestao)}</span>
+    </div>`;
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Perguntar'; }
+  history.scrollTop = history.scrollHeight;
 }
 
 async function rodarRevisaoFinal() {
   const st = document.getElementById('status-revisao');
-  const txt = document.getElementById('editor-final').value.trim();
-  if (!txt) return st.innerHTML = '<div class="alert alert-danger">Cole seu parecer.</div>';
-  st.innerHTML = 'Revisando...';
+  const contadorEl = document.getElementById('contador-revisao');
+  contadorEl.innerHTML = '';
+  const txtAnalista = document.getElementById('editor-final').value.trim();
+  if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Cole o seu parecer na caixa de texto primeiro.</div>';
+  const p = processoAtual;
+  st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
+
+  _garantirEstiloPulso();
+  const banner = document.getElementById('banner-conferindo');
+  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
+  const bannerTimer = document.getElementById('banner-conferindo-timer');
+  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
+  let segundosDecorridos = 0;
+  let intervaloTimer = null;
+  if (banner) {
+    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU REVISANDO O PARECER...';
+    if (bannerDetalhe) bannerDetalhe.textContent = `${Math.round(txtAnalista.length / 1000)} mil caracteres no parecer`;
+    banner.classList.remove('hidden');
+    if (bannerTimer) {
+      bannerTimer.textContent = '0s';
+      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
+    }
+  }
+
+  const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
+apenas aponta pontos de atenção para o analista decidir. Avalie o texto (parecer, nota técnica ou ofício)
+elaborado pelo analista seguindo três frentes obrigatórias:
+
+1. REVISÃO DE MÉRITO: verifique se o analista avaliou corretamente as regras (Unidade: ${p.unidade} | OSS: ${p.oss}).
+   Para cada crítica de mérito, cite a cláusula/trecho exato do texto e do documento original a que ela se refere.
+2. REVISÃO GRAMATICAL: aponte falhas ortográficas específicas (não generalidades).
+3. ADEQUAÇÃO À LINGUAGEM SIMPLES: verifique se há excesso de juridiquês.
+
+Se não houver nenhuma crítica real em determinada frente, não invente uma só para preencher a resposta.
+
+Retorne EXCLUSIVAMENTE um objeto JSON válido, com esta estrutura exata (NÃO inclua campo de aprovação/veredito):
+{
+  "criticas": ["Crítica específica, citando o trecho exato do texto e/ou do documento original: ..."],
+  "sugestao_linguagem_simples": "Uma versão em parágrafo único sugerindo como reescrever com clareza, ou string vazia se não houver necessidade."
+}
+
+DOCUMENTOS ORIGINAIS:
+${textoIntegralAtual}
+------------------------------------------------
+TEXTO DO ANALISTA:
+${txtAnalista}`;
+
   try {
-    const prompt = `Revise o parecer com base nos documentos:\n${textoIntegralAtual}\nParecer:\n${txt}\nRetorne JSON: {"criticas": [], "sugestao_linguagem_simples": ""}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const rev = JSON.parse(jsonStr);
-    st.innerHTML = `<div class="alert alert-warning">${(rev.criticas || []).join('<br/>')}</div>` + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
-    _ultimoTextoRevisadoHash = await sha256(txt);
+    const qtdCriticas = (rev.criticas || []).length;
+
+    contadorEl.innerHTML = qtdCriticas > 0
+      ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${qtdCriticas} ponto(s) de atenção</span>`
+      : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Sem críticas nesta revisão.</span>`;
+
+    let htmlResultado = '';
+    if (qtdCriticas > 0) {
+      const criticasHtml = rev.criticas.map(c => `<li style="margin-bottom:6px;">${escHtml(c)}</li>`).join('');
+      htmlResultado += `<div class="alert alert-danger" style="background:#f8d7da; color:#842029; margin-bottom:15px;"><strong>Pontos de atenção (a decisão final é sua):</strong><ul style="margin-top:8px; margin-left:20px;">${criticasHtml}</ul></div>`;
+    } else {
+      htmlResultado += `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; margin-bottom:15px;"><strong>✓ Nenhum ponto de atenção identificado nesta revisão.</strong></div>`;
+    }
+    if (rev.sugestao_linguagem_simples) {
+      htmlResultado += `<div style="background:#fff; border:1px solid #ced4da; padding:15px; border-radius:6px;">
+        <h4 style="color:#d97706; font-size:0.95rem; margin-bottom:8px;"><i class="ti ti-bulb"></i> Sugestão de Linguagem Simples:</h4>
+        <p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p>
+      </div>`;
+    }
+    st.innerHTML = htmlResultado + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
+
+    // Registra no histórico — sem isso, a Revisão Final não deixava rastro nenhum.
+    const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
+    await api('auditorias/salvar', {
+      processo_id: p.id, tipo_checkpoint: 'SAIDA',
+      achados_json: JSON.stringify(achadosRevisao), raw_ia: jsonStr, executado_por: usuarioAtual.email
+    });
+
+    _ultimoTextoRevisadoHash = await sha256(txtAnalista);
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
   }
 }
 
-function _mensagemErroAmigavel(msg) { return { titulo: 'Erro no processamento', sugestao: msg }; }
-function renderErroAmigavel(msg) { return `<div class="alert alert-danger">${escHtml(msg)}</div>`; }
-function _garantirEstiloPulso() {}
+function _mensagemErroAmigavel(msg) {
+  msg = String(msg || '');
+  if (/HTTP 503/.test(msg) || /sobrecarregad[oa]/i.test(msg)) {
+    return { titulo: 'O serviço de IA está sobrecarregado no momento.', sugestao: 'Isso costuma passar rápido — aguarde um minuto e tente de novo.' };
+  }
+  if (/HTTP 429/.test(msg)) {
+    return { titulo: 'O limite de uso da IA foi atingido por agora.', sugestao: 'Aguarde alguns minutos antes de tentar de novo.' };
+  }
+  if (/não respondeu em \d+s/.test(msg)) {
+    return { titulo: 'A IA demorou demais para responder.', sugestao: 'Se o processo for muito grande, isso pode ser normal — tente de novo, e se persistir, verifique sua conexão.' };
+  }
+  if (/Todos os provedores de IA falharam/i.test(msg)) {
+    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: 'Tente de novo em alguns minutos. Se persistir, confira a configuração em "Motor de IA".' };
+  }
+  if (/chave.*não configurada/i.test(msg)) {
+    return { titulo: 'Nenhuma IA está configurada.', sugestao: 'Vá em "Motor de IA" no menu lateral e cole uma chave válida.' };
+  }
+  if (/não foi possível conectar/i.test(msg) || /falha de rede/i.test(msg)) {
+    return { titulo: 'Não foi possível conectar ao serviço de IA.', sugestao: 'Verifique sua conexão com a internet e tente de novo.' };
+  }
+  if (/resposta vazia|resposta válida/i.test(msg)) {
+    return { titulo: 'A IA respondeu de um jeito inesperado.', sugestao: 'Normalmente resolve na segunda tentativa — tente executar de novo.' };
+  }
+  return { titulo: 'Algo deu errado ao processar essa etapa.', sugestao: 'Tente novamente em alguns instantes.' };
+}
+
+function renderErroAmigavel(mensagemTecnica) {
+  const { titulo, sugestao } = _mensagemErroAmigavel(mensagemTecnica);
+  const detalheId = 'detalhe-erro-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  return `
+    <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:16px 18px;">
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <i class="ti ti-cloud-exclamation" style="font-size:1.3rem; color:#c2410c; flex-shrink:0; margin-top:1px;"></i>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600; color:#7c2d12; font-size:0.9rem;">${escHtml(titulo)}</div>
+          <div style="font-size:0.83rem; color:#9a3412; margin-top:4px;">${escHtml(sugestao)}</div>
+          <a href="#" onclick="document.getElementById('${detalheId}').classList.toggle('hidden'); return false;" style="font-size:0.72rem; color:#c2410c; display:inline-block; margin-top:8px;">Ver detalhe técnico</a>
+          <div id="${detalheId}" class="hidden" style="margin-top:8px; font-size:0.7rem; color:#78716c; font-family:monospace; white-space:pre-wrap; background:#fffbeb; padding:8px; border-radius:6px;">${escHtml(mensagemTecnica)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+function _garantirEstiloPulso() {
+  if (document.getElementById('estilo-pulso-conferindo')) return;
+  const style = document.createElement('style');
+  style.id = 'estilo-pulso-conferindo';
+  style.textContent = `
+    @keyframes pulseConferindo { 0%,100% { box-shadow: 0 0 0 0 rgba(142,22,40,0.30); } 50% { box-shadow: 0 0 0 8px rgba(142,22,40,0); } }
+    #banner-conferindo:not(.hidden) { animation: pulseConferindo 1.6s infinite; }
+  `;
+  document.head.appendChild(style);
+}
 function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 function criarModal(h, comRodapePadrao = true) {
@@ -1777,4 +2176,19 @@ function criarModal(h, comRodapePadrao = true) {
   document.body.appendChild(m);
 }
 function fecharModal() { document.getElementById('modal-ov')?.remove(); }
-function verificarIA() {}
+function verificarIA() {
+  const dot = document.getElementById('ai-dot');
+  const txt = document.getElementById('ai-status-txt');
+  if (!dot || !txt) return;
+  const provedoresNuvem = [];
+  if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresNuvem.push('Gemini');
+  if (GROQ_KEY && GROQ_KEY.trim()) provedoresNuvem.push('Groq');
+  if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresNuvem.push('OpenRouter');
+  if (provedoresNuvem.length) {
+    dot.className = 'ai-dot on';
+    txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
+  } else {
+    dot.className = 'ai-dot off';
+    txt.innerText = 'Nenhuma IA em nuvem configurada — só Ollama, se estiver rodando';
+  }
+}
