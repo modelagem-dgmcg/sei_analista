@@ -1624,7 +1624,7 @@ async function invocarGroq(prompt, isChat, statusEl) {
 async function invocarKimi(prompt, isChat, statusEl) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
-  const body = { model: 'kimi-k2.6', messages: [{ role: 'user', content: prompt }], temperature: 0.3 };
+  const body = { model: 'kimi-k2.6', messages: [{ role: 'user', content: prompt }] };
   if (!isChat) body.response_format = { type: 'json_object' };
   const resp = await fetch('https://api.moonshot.ai/v1/chat/completions', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + KIMI_KEY },
