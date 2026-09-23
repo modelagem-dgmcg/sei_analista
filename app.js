@@ -11,9 +11,15 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
+let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
 let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
+
+// Ordem de tentativa dos provedores — cada pessoa pode reordenar (tela "Motor de IA"),
+// porque o provedor que funciona rápido pra uma pessoa pode não ser o mesmo pra outra
+// (rede, cota, região). Padrão de fábrica: Gemini primeiro, igual sempre foi.
+let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","ollama"]');
 
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
@@ -87,6 +93,15 @@ const TEXTO_SOBRE_FERRAMENTA = `
     Antes de qualquer texto ser enviado para análise externa, os dados pessoais e as
     informações sensíveis são ocultados automaticamente, conforme a LGPD. O sistema sempre
     mostra de forma transparente o que foi protegido e em qual documento estava o registro.
+  </p>
+
+  <h3 style="font-size:1rem; margin-bottom:8px;">Base legal e titularidade</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Os direitos econômicos deste software pertencem à SES-PE, por ter sido desenvolvido no
+    âmbito do vínculo funcional do autor com o órgão público (Lei nº 9.609/98, art. 4º). O
+    direito de paternidade da criação, porém, é preservado ao autor a qualquer tempo,
+    independentemente da titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº
+    9.610/98, art. 24, I).
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:8px;">Desenvolvido por</h3>
@@ -203,9 +218,9 @@ async function showView(v, subCaixa = 'entrada') {
              onclick="document.getElementById('np-arquivo').click()" style="margin-bottom:20px; padding:24px;">
           <i class="ti ti-wand" style="font-size:1.8rem; color:var(--action-primary); margin-bottom:6px;"></i><br>
           <strong style="font-size:0.9rem;">Solte um documento aqui pra preencher os campos automaticamente</strong><br>
-          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md, .pptx, .png, .jpg ou .zip. Foto de documento/página escaneada é lida por OCR (mais lento). Confira tudo antes de salvar; a IA sugere, não afirma.</span>
+          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md, .pptx, .html (despacho SEI GOV), .png, .jpg ou .zip. Foto de documento/página escaneada é lida por OCR (mais lento). Confira tudo antes de salvar; a IA sugere, não afirma.</span>
         </div>
-        <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt,.png,.jpg,.jpeg,.zip" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
+        <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt,.png,.jpg,.jpeg,.html,.htm,.zip" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
         <div id="np-status-preenchimento" style="margin-bottom:15px;"></div>
         <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Dica: Cole o nome do arquivo (ex: SEI_230...) no campo abaixo e o sistema limpa o número, se não usar o preenchimento automático.</p>
         <div class="form-group"><label>Número SEI *</label><input id="np-sei" placeholder="Ex: 230000..." oninput="formatarSEI(this)"></div>
@@ -216,18 +231,45 @@ async function showView(v, subCaixa = 'entrada') {
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
   } else if (v === 'config') {
+    // Número que aparece pré-selecionado em cada seletor = posição atual de cada
+    // provedor na ordem salva — assim a tela sempre reflete o que está configurado
+    // agora, não um valor fixo de fábrica.
+    const opcoesPrioridade = (id) => [1, 2, 3, 4, 5].map(n =>
+      `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id) + 1 === n ? 'selected' : ''}>${n}</option>`
+    ).join('');
     content.innerHTML = `
-      <div style="max-width:600px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+      <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-          Ordem de uso: Gemini primeiro; se falhar, tenta Groq; se falhar, tenta OpenRouter (grátis); se
-          falhar, tenta Ollama local. Cada etapa só é usada se a anterior der erro de verdade.
+          O número ao lado de cada provedor é a ordem de tentativa — 1 é tentado primeiro, e só passa
+          pro próximo se o anterior der erro de verdade (não é sobre gostar mais ou menos, é sobre qual
+          responde mais rápido/confiável pra você). Pode repetir número — nesse caso, a ordem entre eles
+          fica a de sempre (Gemini, Groq, Kimi, OpenRouter, Ollama). Ollama, por rodar local, não muda
+          quando qualquer outro estiver sobrecarregado — mas continua exigindo estar instalado e aberto
+          na sua máquina.
         </p>
-        <div class="form-group"><label>1. Gemini (principal)</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
-        <div class="form-group"><label>2. Groq (fallback em nuvem — opcional)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
-        <div class="form-group"><label>3. OpenRouter (fallback em nuvem — opcional)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
-        <div class="form-group"><label>4. Ollama (fallback local — opcional)</label>
-          <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
-          <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-gemini" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('gemini')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Gemini</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-groq" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('groq')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-kimi" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('kimi')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai..."></div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-openrouter" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:16px;">
+          <select id="prio-ollama" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;">
+            <label>Ollama (local, opcional)</label>
+            <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
+            <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
+          </div>
         </div>
         <button class="btn btn-primary" onclick="salvarConfig()"><i class="ti ti-check"></i> Salvar</button>
       </div>`;
@@ -583,12 +625,24 @@ function salvarConfig() {
   localStorage.setItem('sei_gemini_key', GEMINI_KEY);
   GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
   localStorage.setItem('sei_groq_key', GROQ_KEY);
+  KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
+  localStorage.setItem('sei_kimi_key', KIMI_KEY);
   OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
   localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
   OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
   OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
   localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
+
+  // Ordena pelo número escolhido em cada seletor — em caso de empate, o sort estável do
+  // JS preserva a ordem de partida abaixo (a ordem de fábrica), então empate nunca é
+  // ambíguo, sempre cai de volta no padrão de sempre entre os que empataram.
+  const idsBase = ['gemini', 'groq', 'kimi', 'openrouter', 'ollama'];
+  const comPrioridade = idsBase.map(id => ({ id, prioridade: Number(document.getElementById('prio-' + id)?.value) || 99 }));
+  comPrioridade.sort((a, b) => a.prioridade - b.prioridade);
+  ORDEM_PROVEDORES_IDS = comPrioridade.map(p => p.id);
+  localStorage.setItem('sei_ordem_provedores', JSON.stringify(ORDEM_PROVEDORES_IDS));
+
   alert('Configurações de IA salvas!');
   verificarIA();
 }
@@ -1046,7 +1100,7 @@ function modalUploadZIP() {
          onclick="document.getElementById('file-up').click()">
       <i class="ti ti-cloud-download" style="font-size:2.5rem; margin-bottom:10px; color:var(--action-primary);"></i><br>
       <strong>Arraste um ou mais arquivos aqui</strong><br>
-      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD, PPTX, PNG ou JPG — pode soltar vários juntos, sem precisar zipar antes. Foto de documento/página escaneada é lida por OCR (mais lento).</span>
+      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD, PPTX, HTML (despacho SEI GOV), PNG ou JPG — pode soltar vários juntos, sem precisar zipar antes. Foto de documento/página escaneada é lida por OCR (mais lento).</span>
     </div>
     <input type="file" id="file-up" multiple style="display:none" onchange="processarUploadZIP(this.files)">
     <div id="up-status" style="margin-top:15px;"></div>
@@ -1062,7 +1116,7 @@ async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis) {
   if (!res.ok) throw new Error('Falha ao salvar documento: ' + res.erro);
 }
 
-const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt', '.png', '.jpg', '.jpeg'];
+const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt', '.png', '.jpg', '.jpeg', '.html', '.htm'];
 
 // ==================== OCR (leitura de imagem/PDF escaneado) ====================
 // Usa Tesseract.js — roda no navegador, sem precisar de servidor. É lento (alguns
@@ -1090,6 +1144,17 @@ async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
   }
   if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
     return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  }
+  // Despacho exportado direto do SEI GOV vem em .html — usa o interpretador de HTML
+  // nativo do navegador (DOMParser) pra tirar só o texto legível, sem tag nenhuma
+  // sobrando no meio (senão a IA ficaria lendo "<div>" e "<span>" junto do conteúdo).
+  if (nome.endsWith('.html') || nome.endsWith('.htm')) {
+    const htmlBruto = new TextDecoder('utf-8', { fatal: false }).decode(buf);
+    if (typeof DOMParser === 'undefined') throw new Error('Leitor de HTML não disponível neste navegador.');
+    const doc = new DOMParser().parseFromString(htmlBruto, 'text/html');
+    const texto = (doc.body?.textContent || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    if (!texto.length) throw new Error('Nenhum texto legível encontrado nesse HTML.');
+    return texto;
   }
   // Imagem solta (foto de documento, print de tela) — só dá pra ler via OCR, não tem
   // texto embutido nenhum pra extrair.
@@ -1310,12 +1375,15 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
 }
 
 const PROVEDOR_TIMEOUT_MS = 60000;
-const ORDEM_PROVEDORES = [
-  { id: 'gemini', nome: 'Gemini' },
-  { id: 'groq', nome: 'Groq' },
-  { id: 'openrouter', nome: 'OpenRouter' },
-  { id: 'ollama', nome: 'Ollama' }
-];
+// Metadados de cada provedor — usado tanto pra montar o painel visual quanto pro motor
+// de fallback. A ORDEM em que tenta é ORDEM_PROVEDORES_IDS (configurável), não esta lista.
+const PROVEDORES_INFO = {
+  gemini:     { nome: 'Gemini',     temChave: () => !!GEMINI_KEY,     invocar: invocarGeminiPremium },
+  groq:       { nome: 'Groq',       temChave: () => !!GROQ_KEY,       invocar: invocarGroq },
+  kimi:       { nome: 'Kimi',       temChave: () => !!KIMI_KEY,       invocar: invocarKimi },
+  openrouter: { nome: 'OpenRouter', temChave: () => !!OPENROUTER_KEY, invocar: invocarOpenRouter },
+  ollama:     { nome: 'Ollama',     temChave: () => true,             invocar: invocarOllama }
+};
 
 function renderPainelProvedores(statusEl, estados, mensagem) {
   if (!statusEl) return;
@@ -1327,13 +1395,15 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
     pulado:    { bg: '#f8f9fa', cor: '#adb5bd' }
   };
   const icones = { pendente: 'ti-minus', ok: 'ti-check', falhou: 'ti-x', pulado: 'ti-slash' };
-  const pills = ORDEM_PROVEDORES.map(p => {
-    const estado = estados[p.id] || 'pendente';
+  const pills = ORDEM_PROVEDORES_IDS.map(id => {
+    const info = PROVEDORES_INFO[id];
+    if (!info) return '';
+    const estado = estados[id] || 'pendente';
     const c = cores[estado];
     const iconeHtml = estado === 'tentando'
       ? '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span>'
       : `<i class="ti ${icones[estado]}"></i>`;
-    return `<span style="display:inline-flex; align-items:center; gap:5px; background:${c.bg}; color:${c.cor}; padding:4px 10px; border-radius:20px; font-size:0.78rem; font-weight:600;">${iconeHtml} ${p.nome}</span>`;
+    return `<span style="display:inline-flex; align-items:center; gap:5px; background:${c.bg}; color:${c.cor}; padding:4px 10px; border-radius:20px; font-size:0.78rem; font-weight:600;">${iconeHtml} ${info.nome}</span>`;
   }).join('');
   statusEl.innerHTML = `
     <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">${pills}</div>
@@ -1468,68 +1538,41 @@ function renderPainelMascaramento(detalhes) {
 
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
-  const estados = { gemini: 'pendente', groq: 'pendente', openrouter: 'pendente', ollama: 'pendente' };
-  if (!GEMINI_KEY) estados.gemini = 'pulado';
-  if (!GROQ_KEY) estados.groq = 'pulado';
-  if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
+  const estados = {};
+  ORDEM_PROVEDORES_IDS.forEach(id => {
+    const info = PROVEDORES_INFO[id];
+    estados[id] = (info && info.temChave()) ? 'pendente' : 'pulado';
+  });
+
   const { textoMascarado: promptMascarado, mapa, totalMascarado, detalhes } = mascararDadosSensiveis(prompt);
   // Exposto globalmente pra quem chamou (rodarRaioX, rodarRevisaoFinal) poder montar o
   // painel "o que foi mascarado" depois que a chamada terminar — o Ollama (local) não
   // mascara nada, mas se ele for usado DEPOIS de uma tentativa em nuvem que já mascarou,
   // esse registro do que teria sido mascarado continua valendo (foi calculado antes).
   window._ultimoMascaramentoDetalhes = detalhes;
-  if (GEMINI_KEY) {
-    estados.gemini = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...');
+
+  for (const id of ORDEM_PROVEDORES_IDS) {
+    const info = PROVEDORES_INFO[id];
+    if (!info || !info.temChave()) continue; // Ollama sempre "tem chave" (não precisa de uma)
+    estados[id] = 'tentando';
+    renderPainelProvedores(statusEl, estados, `Chamando ${info.nome}...`);
     try {
-      const r = await invocarGeminiPremium(promptMascarado, isChat, statusEl);
-      estados.gemini = 'ok';
+      // Ollama roda local — usa o prompt ORIGINAL, sem máscara (não há por quê mascarar
+      // pra si mesmo). Todo o resto (nuvem) usa a versão mascarada.
+      const promptDesteProvedor = id === 'ollama' ? prompt : promptMascarado;
+      const r = await info.invocar(promptDesteProvedor, isChat, statusEl);
+      estados[id] = 'ok';
       renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
+      return id === 'ollama' ? r : desmascararTexto(r, mapa);
     } catch (e) {
-      estados.gemini = 'falhou';
-      erros.push('Gemini: ' + e.message);
+      estados[id] = 'falhou';
+      erros.push(`${info.nome}: ${e.message}`);
     }
   }
-  if (GROQ_KEY) {
-    estados.groq = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Groq...');
-    try {
-      const r = await invocarGroq(promptMascarado, isChat, statusEl);
-      estados.groq = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.groq = 'falhou';
-      erros.push('Groq: ' + e.message);
-    }
-  }
-  if (OPENROUTER_KEY) {
-    estados.openrouter = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando OpenRouter...');
-    try {
-      const r = await invocarOpenRouter(promptMascarado, isChat, statusEl);
-      estados.openrouter = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.openrouter = 'falhou';
-      erros.push('OpenRouter: ' + e.message);
-    }
-  }
-  estados.ollama = 'tentando';
-  renderPainelProvedores(statusEl, estados, 'Chamando Ollama local...');
-  try {
-    const r = await invocarOllama(prompt, isChat, statusEl);
-    estados.ollama = 'ok';
-    renderPainelProvedores(statusEl, estados, 'Concluído.');
-    return r;
-  } catch (e) {
-    estados.ollama = 'falhou';
-    erros.push('Ollama: ' + e.message);
-  }
+  renderPainelProvedores(statusEl, estados, 'Nenhum provedor respondeu.');
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
+
 
 async function invocarGroq(prompt, isChat, statusEl) {
   const controller = new AbortController();
@@ -1538,6 +1581,24 @@ async function invocarGroq(prompt, isChat, statusEl) {
   if (!isChat) body.response_format = { type: 'json_object' };
   const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + GROQ_KEY },
+    body: JSON.stringify(body), signal: controller.signal
+  });
+  clearTimeout(timer);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
+  const txt = json.choices?.[0]?.message?.content;
+  return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+// Kimi (Moonshot AI) — mesmo padrão compatível com a API da OpenAI que Groq/OpenRouter
+// já usam. Endpoint e modelo confirmados na documentação oficial da Moonshot.
+async function invocarKimi(prompt, isChat, statusEl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
+  const body = { model: 'kimi-k2.6', messages: [{ role: 'user', content: prompt }], temperature: 0.3 };
+  if (!isChat) body.response_format = { type: 'json_object' };
+  const resp = await fetch('https://api.moonshot.ai/v1/chat/completions', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + KIMI_KEY },
     body: JSON.stringify(body), signal: controller.signal
   });
   clearTimeout(timer);
@@ -2220,6 +2281,7 @@ function verificarIA() {
   const provedoresNuvem = [];
   if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresNuvem.push('Gemini');
   if (GROQ_KEY && GROQ_KEY.trim()) provedoresNuvem.push('Groq');
+  if (KIMI_KEY && KIMI_KEY.trim()) provedoresNuvem.push('Kimi');
   if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresNuvem.push('OpenRouter');
   if (provedoresNuvem.length) {
     dot.className = 'ai-dot on';
