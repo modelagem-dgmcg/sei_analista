@@ -97,12 +97,12 @@ function abrirSobreFerramenta() {
 function injetarBotaoSobre() {
   const loginBox = document.querySelector('#login-screen .login-box');
   if (!loginBox || document.getElementById('link-sobre-ferramenta')) return;
-  const link = document.createElement('a');
+  const link = document.createElement('button');
   link.id = 'link-sobre-ferramenta';
-  link.href = '#';
+  link.type = 'button';
   link.innerHTML = '<i class="ti ti-info-circle"></i> O que é o SEI Analista?';
-  link.style = "display:block; text-align:center; margin-top:18px; font-size:0.85rem; color:#495057; text-decoration:underline; cursor:pointer;";
-  link.onclick = (e) => { e.preventDefault(); abrirSobreFerramenta(); };
+  link.style = "display:block; width:100%; text-align:center; margin-top:18px; padding:0; border:none; background:none; font-size:0.85rem; color:#495057; text-decoration:underline; cursor:pointer;";
+  link.addEventListener('click', abrirSobreFerramenta);
   loginBox.appendChild(link);
 }
 
@@ -139,6 +139,7 @@ async function fazerLogin() {
     const res = await api('auth/login', { email: usuario, senha_hash: hash });
     if (res.ok) {
       usuarioAtual = res.usuario;
+      fecharModal();
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
@@ -604,14 +605,19 @@ async function prePreencherDeArquivo(file) {
     _arquivoPrePreenchido = arquivosLidos;
 
     // Nº do processo: procura em todos os arquivos lidos, usa o primeiro que achar
+    let achouNumeroProcesso = false;
     for (const a of arquivosLidos) {
       const nums = extrairNumerosProcesso(a.texto);
       if (nums.length) {
         const campoSei = document.getElementById('np-sei');
         campoSei.value = nums[0].valor;
         _marcarComoSugerido(campoSei);
+        achouNumeroProcesso = true;
         break;
       }
+    }
+    if (!achouNumeroProcesso) {
+      console.warn('Nenhum número de processo (formato XXXXXXX.XXXXXX/AAAA-XX) encontrado nos arquivos lidos — preencha manualmente.');
     }
 
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
@@ -644,8 +650,12 @@ ${amostra}`;
       console.warn('Sugestão de título/unidade/OSS via IA falhou:', e.message);
     }
     const nomesLidos = arquivosLidos.map(a => a.nome).join(', ');
+    const avisoSemNumero = !achouNumeroProcesso
+      ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> Não achei um número de processo no formato SEI (ex: 2300002.104000/2022-91) — preencha o campo manualmente.</div>`
+      : '';
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
       <i class="ti ti-check"></i> ${arquivosLidos.length > 1 ? `${arquivosLidos.length} arquivos lidos (${escHtml(nomesLidos)})` : escHtml(nomesLidos)}. Confira os campos destacados abaixo antes de salvar.
+      ${avisoSemNumero}
     </div>`;
   } catch (e) {
     _arquivoPrePreenchido = null;
@@ -1659,7 +1669,16 @@ function extrairContexto(texto, termo, raio) {
 }
 function extrairValoresMonetarios(texto) { return [...new Set(texto.match(/R\$\s?[\d.]+,\d{2}/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
 function extrairDatas(texto) { return [...new Set(texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
-function extrairNumerosProcesso(texto) { return [...new Set(texto.match(/\d{4,}\.\d{5,6}\/\d{4}-\d{2}/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 40) })); }
+function extrairNumerosProcesso(texto) {
+  // Tolera espaço solto ao redor de ".", "/" e "-" — a extração de PDF junta trechos de
+  // texto separados com espaço simples, e o número do processo pode vir fragmentado em
+  // pedaços assim, principalmente em PDF escaneado ou gerado por certos sistemas.
+  const encontrados = [...new Set(texto.match(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g) || [])];
+  return encontrados.slice(0, 10).map(original => ({
+    valor: original.replace(/\s+/g, ''),
+    contexto: extrairContexto(texto, original, 40)
+  }));
+}
 function extrairCEPs(texto) { return [...new Set(texto.match(/\b\d{2}\.?\d{3}-\d{3}\b/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 45) })); }
 
 function dividirPorDocumento(textoIntegral) {
@@ -2172,6 +2191,15 @@ function criarModal(h, comRodapePadrao = true) {
   fecharModal();
   const m = document.createElement('div');
   m.className = 'modal-overlay'; m.id = 'modal-ov';
+  // Estilo inline, forçado por JS — sobrescreve qualquer z-index/position que o CSS
+  // tenha, pra garantir que o aviso apareça por cima de TUDO, inclusive da tela de
+  // login (que tem sua própria camada e estava escondendo o modal atrás dela).
+  m.style.position = 'fixed';
+  m.style.top = '0'; m.style.left = '0'; m.style.right = '0'; m.style.bottom = '0';
+  m.style.zIndex = '99999';
+  m.style.display = 'flex';
+  m.style.alignItems = 'center';
+  m.style.justifyContent = 'center';
   m.innerHTML = `<div class="modal">${h}${comRodapePadrao ? '<button onclick="fecharModal()">Fechar</button>' : ''}</div>`;
   document.body.appendChild(m);
 }
