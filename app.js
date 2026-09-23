@@ -251,9 +251,13 @@ async function showView(v, subCaixa = 'entrada') {
       `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id) + 1 === n ? 'selected' : ''}>${n}</option>`
     ).join('');
     const checkboxAtivo = (id, ativo) => `
-      <label title="Ligado/desligado — desligar não apaga a chave, só faz o sistema não usar esse provedor por ora" style="display:flex; align-items:center; gap:4px; font-size:0.72rem; color:var(--text-muted); cursor:pointer; white-space:nowrap; margin-top:6px;">
-        <input type="checkbox" id="ativo-${id}" ${ativo ? 'checked' : ''} style="cursor:pointer;"> Habilitado
-      </label>`;
+      <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+        <label title="Ligado/desligado — desligar não apaga a chave, só faz o sistema não usar esse provedor por ora" style="display:flex; align-items:center; gap:4px; font-size:0.72rem; color:var(--text-muted); cursor:pointer; white-space:nowrap;">
+          <input type="checkbox" id="ativo-${id}" ${ativo ? 'checked' : ''} style="cursor:pointer;"> Habilitado
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.72rem; padding:2px 10px;" onclick="testarConexaoProvedor('${id}')">Testar conexão</button>
+        <span id="teste-${id}" style="font-size:0.75rem;"></span>
+      </div>`;
     content.innerHTML = `
       <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
@@ -634,6 +638,34 @@ function formatarSEI(input) {
     val = val.replace(/_/g, '/');
   }
   input.value = val;
+}
+
+// Testa UM provedor específico direto, sem passar pela fila de fallback (não faz
+// sentido testar Gemini e, se falhar, o teste "vazar" pro Groq — a pessoa quer saber
+// exatamente SE AQUELE ali funciona). Usa o valor que está no campo agora, mesmo que
+// ainda não tenha clicado "Salvar" — não devia precisar salvar só pra testar.
+async function testarConexaoProvedor(id) {
+  const resultadoEl = document.getElementById('teste-' + id);
+  if (resultadoEl) resultadoEl.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span> Testando...';
+
+  if (id === 'gemini') GEMINI_KEY = (document.getElementById('cfg-gemini')?.value || '').trim();
+  if (id === 'groq') GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
+  if (id === 'kimi') KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
+  if (id === 'openrouter') OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
+  if (id === 'ollama') {
+    OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
+    OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
+  }
+
+  const info = PROVEDORES_INFO[id];
+  if (!info) return;
+
+  try {
+    await info.invocar('Responda só a palavra: ok', true, null);
+    if (resultadoEl) resultadoEl.innerHTML = `<span style="color:#2b8a3e; font-weight:600;"><i class="ti ti-check"></i> Conectado!</span>`;
+  } catch (e) {
+    if (resultadoEl) resultadoEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-x"></i> ${escHtml(e.message)}</span>`;
+  }
 }
 
 function salvarConfig() {
