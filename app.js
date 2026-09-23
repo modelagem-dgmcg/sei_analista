@@ -30,6 +30,8 @@ window.achadosAtuais = [];
 window.onload = () => {
   verificarIA();
   injetarMarcaDagua();
+  injetarBotaoSobre();
+  _garantirEstiloNotificacoes();
 };
 
 function injetarMarcaDagua() {
@@ -37,6 +39,73 @@ function injetarMarcaDagua() {
   rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.`;
   rodape.style = "text-align: center; padding: 15px; font-size: 0.75rem; color: #adb5bd; margin-top: auto; border-top: 1px solid #dee2e6;";
   document.getElementById('content').parentElement.appendChild(rodape);
+}
+
+// ==================== "O QUE É ISSO?" NA TELA DE LOGIN ====================
+// Texto pensado por situação do dia a dia (não por lista de função), em linguagem
+// simples (Lei da Linguagem Simples na administração pública) — decantado ao longo
+// de várias rodadas de revisão, não é o primeiro rascunho.
+const TEXTO_SOBRE_FERRAMENTA = `
+  <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
+    Ferramenta da DGMCG/GGPCG para apoiar a análise de processos de Contrato de Gestão
+    com Organizações Sociais de Saúde (OSS) na SES-PE.
+  </p>
+
+  <h3 style="font-size:1rem; margin-bottom:10px;">O que ele faz por você</h3>
+  <ul style="font-size:0.87rem; line-height:1.6; padding-left:18px; margin-bottom:18px;">
+    <li style="margin-bottom:10px;"><strong>Antes de qualquer assinatura</strong> — confere o processo inteiro:
+      valor, data, cálculo e indicador de meta contratual, texto duplicado ou copiado do lugar errado.
+      Se a soma de uma tabela não bater com o total citado no texto, ou um número mudar de um documento
+      pro outro, ele mostra o trecho exato e o que parece ser o certo.</li>
+    <li style="margin-bottom:10px;"><strong>Quando você não tem certeza se existe uma norma ou decisão de
+      Tribunal sobre aquilo</strong> — ele busca e mostra a fonte, em nível estadual e federal.</li>
+    <li style="margin-bottom:10px;"><strong>Quando você precisa confirmar um dado sem reler o processo
+      inteiro</strong> — você pergunta, ele responde e diz de qual documento tirou.</li>
+    <li style="margin-bottom:10px;"><strong>Antes de mandar um parecer, nota técnica ou ofício pra
+      frente</strong> — ele revisa junto com você: mérito, gramática, linguagem simples.</li>
+    <li><strong>Quando você quer a opinião de um colega antes de decidir</strong> — encaminha o achado
+      específico ou o processo inteiro, sem sair da ferramenta.</li>
+  </ul>
+
+  <h3 style="font-size:1rem; margin-bottom:8px;">O que ele não faz</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Não decide nem aprova nada. Todo apontamento é uma sugestão pra você conferir — a palavra final
+    é sempre do analista.
+  </p>
+
+  <h3 style="font-size:1rem; margin-bottom:8px;">Sobre os dados</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Antes de qualquer trecho de documento ser enviado para os serviços de inteligência artificial,
+    dado pessoal (CPF, RG, e-mail, nome dentro da qualificação de contrato) é ocultado automaticamente,
+    conforme a LGPD — e fica sempre visível pra você o que foi ocultado e de onde veio.
+  </p>
+
+  <h3 style="font-size:1rem; margin-bottom:8px;">Desenvolvido por</h3>
+  <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.6;">
+    SES-PE — DGMCG/GGPCG. Ferramenta criada por Antonio Cleuton Eufrasio Vieira, Analista Administrativo,
+    para uso da equipe da Gerência de Gestão de Processos dos Contratos de Gestão.
+  </p>
+`;
+
+function abrirSobreFerramenta() {
+  criarModal(`<div style="max-height:70vh; overflow-y:auto; padding-right:6px;">${TEXTO_SOBRE_FERRAMENTA}</div>`);
+}
+
+// Injeta o botão "?" dentro da caixa de login, sem precisar tocar no index.html —
+// mesmo padrão já usado pra rodapé/marca d'água.
+function injetarBotaoSobre() {
+  const loginBox = document.querySelector('#login-screen .login-box');
+  if (!loginBox || document.getElementById('btn-sobre-ferramenta')) return;
+  const btn = document.createElement('button');
+  btn.id = 'btn-sobre-ferramenta';
+  btn.type = 'button';
+  btn.title = 'O que é essa ferramenta?';
+  btn.innerHTML = '?';
+  btn.style = "position:absolute; top:14px; right:14px; width:26px; height:26px; border-radius:50%; border:1px solid #ced4da; background:#f8f9fa; color:#495057; font-size:0.85rem; font-weight:700; cursor:pointer; line-height:1;";
+  btn.onclick = abrirSobreFerramenta;
+  loginBox.style.position = loginBox.style.position || 'relative';
+  loginBox.appendChild(btn);
 }
 
 const API_TIMEOUT_MS = 25000;
@@ -78,6 +147,7 @@ async function fazerLogin() {
       document.getElementById('sidebar-gerencia').textContent = usuarioAtual.gerencia;
       document.getElementById('sidebar-email').textContent = usuarioAtual.email;
       showView('dashboard', 'entrada');
+      iniciarMonitoramentoNovosItens();
     } else {
       mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
     }
@@ -188,6 +258,104 @@ async function atualizarContagensSidebar() {
     } else {
       caixaFlutuante.style.display = 'none';
     }
+  }
+}
+
+// ==================== AVISO DE CHEGADA (processo novo / achado pendente) ====================
+// Checagem periódica discreta — o backend (Apps Script) não sustenta conexão aberta,
+// então isso não é "em tempo real", é "a cada X segundos". Pra esse tipo de aviso,
+// imperceptível na prática. Não usa a cor de alerta de achado (bordô) de propósito —
+// aqui é só "chegou algo", não "achamos um problema".
+const INTERVALO_MONITORAMENTO_MS = 45000;
+let _intervaloMonitoramento = null;
+let _ultimaContagemEntrada = null;
+let _ultimaContagemAchadosPendentes = null;
+
+function _garantirEstiloNotificacoes() {
+  if (document.getElementById('estilo-notificacoes-chegada')) return;
+  const style = document.createElement('style');
+  style.id = 'estilo-notificacoes-chegada';
+  style.textContent = `
+    @keyframes pulsoChegada { 0%,100% { box-shadow: 0 0 0 0 rgba(74,144,226,0.35); } 50% { box-shadow: 0 0 0 7px rgba(74,144,226,0); } }
+    .pulso-chegada { animation: pulsoChegada 1.2s ease-out 2; border-radius: 6px; }
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 900; display: flex; flex-direction: column; gap: 10px; }
+    .toast-chegada {
+      background: #2b2f36; color: #f1f3f5; padding: 12px 16px; border-radius: 8px;
+      font-size: 0.85rem; box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 300px;
+      opacity: 0; transform: translateX(12px); transition: opacity 0.25s ease, transform 0.25s ease;
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .toast-chegada.visivel { opacity: 1; transform: translateX(0); }
+    .toast-chegada i { color: #74c0fc; font-size: 1rem; margin-top: 1px; }
+  `;
+  document.head.appendChild(style);
+}
+
+function pulsarElemento(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('pulso-chegada');
+  // Força reflow pra reiniciar a animação, caso já tenha rodado antes.
+  void el.offsetWidth;
+  el.classList.add('pulso-chegada');
+  setTimeout(() => el.classList.remove('pulso-chegada'), 2600);
+}
+
+function mostrarToast(mensagem) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast-chegada';
+  toast.innerHTML = `<i class="ti ti-bell"></i><span>${escHtml(mensagem)}</span>`;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visivel'));
+  setTimeout(() => {
+    toast.classList.remove('visivel');
+    setTimeout(() => toast.remove(), 300);
+  }, 4500);
+}
+
+function iniciarMonitoramentoNovosItens() {
+  if (_intervaloMonitoramento) clearInterval(_intervaloMonitoramento);
+  _ultimaContagemEntrada = null; _ultimaContagemAchadosPendentes = null;
+  _verificarNovosItens(); // primeira leitura só define a base — o guard "!== null" impede aviso aqui
+  _intervaloMonitoramento = setInterval(_verificarNovosItens, INTERVALO_MONITORAMENTO_MS);
+}
+
+async function _verificarNovosItens() {
+  if (!usuarioAtual) return;
+  try {
+    const [resContagens, resPendentes] = await Promise.all([
+      api('processos/contagens', { responsavel: usuarioAtual.email }),
+      api('achados/contar-pendentes', { usuario: usuarioAtual.email })
+    ]);
+
+    if (resContagens.ok) {
+      const entradaAtual = resContagens.contagens.entrada || 0;
+      if (_ultimaContagemEntrada !== null && entradaAtual > _ultimaContagemEntrada) {
+        pulsarElemento('nav-entrada');
+        const diferenca = entradaAtual - _ultimaContagemEntrada;
+        mostrarToast(diferenca === 1 ? 'Chegou um processo novo na Caixa de Entrada.' : `Chegaram ${diferenca} processos novos na Caixa de Entrada.`);
+      }
+      _ultimaContagemEntrada = entradaAtual;
+      const badgeEntrada = document.getElementById('badge-entrada');
+      if (badgeEntrada) badgeEntrada.textContent = entradaAtual > 0 ? entradaAtual : '';
+    }
+
+    if (resPendentes.ok) {
+      const pendentesAtual = resPendentes.pendentes || 0;
+      if (_ultimaContagemAchadosPendentes !== null && pendentesAtual > _ultimaContagemAchadosPendentes) {
+        pulsarElemento('nav-entrada');
+        mostrarToast('Um colega pediu sua opinião sobre um achado.');
+      }
+      _ultimaContagemAchadosPendentes = pendentesAtual;
+    }
+  } catch (e) {
+    console.warn('Falha na checagem periódica de novos itens:', e.message);
   }
 }
 
@@ -1317,7 +1485,7 @@ function exportarRelatorioAchados() {
   // aviso importa, não na tela de trabalho.
   const avisos = [];
   window.achadosAtuais.forEach((c, idx) => {
-    const textoJunto = [c.titulo, c.explicacao, c.evidencia].filter(Boolean).join(' — ');
+    const textoJunto = [c.titulo, c.explicacao, c.evidencia, c.sugestao].filter(Boolean).join(' — ');
     const tipos = _escanearDadosPessoais(textoJunto);
     tipos.forEach(tipo => avisos.push({ tipo, achadoNum: idx + 1, titulo: c.titulo, doc: c.doc_origem || 'não identificado' }));
   });
@@ -1347,7 +1515,9 @@ function _gerarArquivoRelatorioAchados() {
   const sei = processoAtual.numero_sei || String(processoAtual.id);
   let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
   window.achadosAtuais.forEach((c, index) => {
-    htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}</p>`;
+    htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}`;
+    if (c.sugestao) htmlReport += `<br/><strong>O que fazer:</strong> ${c.sugestao}`;
+    htmlReport += `</p>`;
   });
   htmlReport += "</body></html>";
   const blob = new Blob(['\ufeff', htmlReport], { type: 'application/msword' });
@@ -1457,7 +1627,18 @@ ${resJuris.texto}`;
     const prompt = `Audite os documentos da unidade ${p.unidade} e OSS ${p.oss}:\n${dadosExtraidos}${historicoUnidadeBloco}${externasBloco}
 Se algum achado se basear no histórico da unidade ou na busca de normas/jurisprudência, marque
 "baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false) para ele.
-Retorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}`;
+
+Para CADA achado, escreva também um campo "sugestao": o que fazer para resolver isso, em
+linguagem simples e direta (nada de juridiquês, nada de "verificar a divergência" de forma vaga).
+A sugestão precisa ser certeira e prática: diga exatamente qual documento corrigir, qual dos
+valores/textos divergentes parece o correto com base no que os documentos já mostram (ex.: "a
+tabela detalhada soma 1.200, então o título com 1.920 parece erro de digitação — corrija o
+título"), e o que confirmar antes de decidir, quando não houver como saber com certeza qual
+versão está certa (ex.: nos dois casos de CEP diferente, diga que é preciso confirmar qual é o
+CEP oficial antes de padronizar, em vez de chutar um dos dois). Se não houver base nos documentos
+pra apontar qual lado está certo, diga isso claramente em vez de inventar uma resposta.
+
+Retorne JSON: {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho", "explicacao": "motivo", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const jsonObj = JSON.parse(jsonStr);
     window.achadosAtuais = (jsonObj.cards || []).map(c => {
@@ -1481,7 +1662,7 @@ function renderizarCards(cards) {
   let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
-    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao, doc: c.doc_origem };
+    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
     html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
@@ -1490,6 +1671,11 @@ function renderizarCards(cards) {
       <div class="rx-body">
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
+        ${c.sugestao ? `
+        <div style="margin-top:10px; background:#e6fcf5; border-left:3px solid #12b886; border-radius:4px; padding:8px 12px;">
+          <div style="font-size:0.72rem; font-weight:700; color:#087f5b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:3px;"><i class="ti ti-bulb"></i> O que fazer</div>
+          <div style="font-size:0.85rem; color:#0b6157;">${escHtml(c.sugestao)}</div>
+        </div>` : ''}
         <div style="margin-top:10px; display:flex; gap:10px;">
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
