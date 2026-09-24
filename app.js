@@ -570,14 +570,21 @@ async function renderFinalizados(termoBusca, containerId) {
 async function abrirRegistroConcluido(id) {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando registro...';
-  const [resProc, resAud, resCons, resNotas] = await Promise.all([
+  const [resProc, resAud, resCons, resNotas, resDocs] = await Promise.all([
     api('processos/obter', { id }),
     api('auditorias/listar', { processo_id: id }),
     api('consultas/listar', { processo_id: id }),
-    api('notas/listar', { processo_id: id })
+    api('notas/listar', { processo_id: id }),
+    api('documentos/listar', { processo_id: id })
   ]);
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">${escHtml(resProc.erro)}</div>`; return; }
   const proc = resProc.processo;
+  // Necessário pra importar a versão assinada daqui mesmo (salvarDocumentoNoBackend usa processoAtual)
+  processoAtual = proc;
+  const assinados = (resDocs.documentos || []).filter(d => d.tipo_documento === 'FINAL_ASSINADO');
+  const assinadosHtml = assinados.length
+    ? '<ul style="margin:0 0 10px 18px; font-size:0.85rem;">' + assinados.map(d => `<li>✓ ${escHtml(d.nome_arquivo)} <span style="color:var(--text-muted); font-size:0.75rem;">— importado em ${d.adicionado_em ? new Date(d.adicionado_em).toLocaleString('pt-BR') : ''}</span></li>`).join('') + '</ul>'
+    : '<p style="font-size:0.85rem; color:#856404; margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> A versão assinada no SEI ainda não foi importada. O texto abaixo é o rascunho revisado, que pode ter mudado antes da assinatura.</p>';
   const auditorias = resAud.auditorias || [];
   const consultas = resCons.consultas || [];
   const notas = resNotas.notas || [];
@@ -612,7 +619,10 @@ async function abrirRegistroConcluido(id) {
       </div>
     </div>
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
-      <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-file-text"></i> Documento Final</h3>
+      <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-file-check"></i> Versão final assinada (SEI)</h3>
+      ${assinadosHtml}
+      <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('registro')" style="margin-bottom:18px;"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
+      <h3 style="font-size:1.05rem;margin-bottom:12px;"><i class="ti ti-file-text"></i> Rascunho revisado na ferramenta</h3>
       ${proc.documento_final
         ? `<pre style="white-space:pre-wrap; font-family:inherit; font-size:0.88rem; color:#212529;">${escHtml(proc.documento_final)}</pre>`
         : '<p class="text-muted">Nenhum texto de parecer foi registrado ao finalizar este processo.</p>'}
@@ -959,7 +969,9 @@ async function abrirProcesso(identificador) {
             : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
         } catch (e) { /* resumo antigo ou inválido — só não mostra */ }
       }
-      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${resumoTxt}</li>`;
+      const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO'
+        ? ' <span style="background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600;">✓ VERSÃO ASSINADA</span>' : '';
+      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${seloAssinado}${resumoTxt}</li>`;
     });
     docsHtml += '</ul>';
   }
@@ -997,6 +1009,8 @@ async function abrirProcesso(identificador) {
       </div>
       <div style="margin-top:15px;display:flex;gap:10px;">
         <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
+        <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
       </div>
     </div>
 
@@ -1037,6 +1051,7 @@ async function abrirProcesso(identificador) {
       <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole seu parecer, nota técnica, ofício ou qualquer minuta abaixo. A IA cruza seu texto com os documentos originais do processo para apontar melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
       <textarea id="editor-final" placeholder="Cole aqui o texto que você escreveu, pra ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
       <div style="display: flex; align-items: center; gap: 15px;">
+          <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
       </div>
@@ -1151,6 +1166,207 @@ async function finalizarProcesso() {
   showView('dashboard', 'concluidos');
 }
 
+// ==================== TABELA DE DADOS DO PROCESSO ====================
+// Monta uma tabela com valores, datas, nº de processo e CEP extraídos POR CÓDIGO dos
+// documentos — nenhum número é escrito pela IA. Cada linha diz de qual documento e
+// página veio, pra quem for usar a tabela num parecer poder conferir na fonte.
+function montarLinhasTabelaDados() {
+  const linhas = [];
+  dividirPorDocumento(textoIntegralAtual).forEach(d => {
+    const tipos = [
+      ['Valor', extrairValoresMonetarios(d.texto)],
+      ['Data', extrairDatas(d.texto)],
+      ['Nº de processo', extrairNumerosProcesso(d.texto)],
+      ['CEP', extrairCEPs(d.texto)]
+    ];
+    tipos.forEach(([tipo, itens]) => itens.forEach(it => {
+      const pos = d.texto.indexOf(it.valor);
+      linhas.push({ doc: d.nome, pagina: pos >= 0 ? _paginaNaPosicao(d.texto, pos) : null, tipo, valor: it.valor, trecho: it.contexto || '' });
+    }));
+  });
+  return linhas;
+}
+
+// Estado da tabela personalizada — vive enquanto o modal está aberto.
+// Os VALORES nunca são editáveis aqui (vêm da extração por código); o que a pessoa
+// ajusta é recorte, colunas, título e as observações que ela mesma escreve.
+const COLUNAS_TABELA = [
+  { id: 'doc', nome: 'Documento' },
+  { id: 'pagina', nome: 'Pág.' },
+  { id: 'tipo', nome: 'Tipo' },
+  { id: 'valor', nome: 'Valor' },
+  { id: 'trecho', nome: 'Trecho' },
+  { id: 'obs', nome: 'Observação' }
+];
+
+function _htmlTabelaDados(linhas, cfg) {
+  const th = 'style="border:1px solid #999; padding:4px 8px; background:#eee; text-align:left;"';
+  const td = 'style="border:1px solid #999; padding:4px 8px; vertical-align:top;"';
+  const cols = COLUNAS_TABELA.filter(c => cfg.colunas[c.id]);
+  const celula = (l, c) => {
+    if (c.id === 'valor') return `<strong>${escHtml(l.valor)}</strong>`;
+    if (c.id === 'pagina') return escHtml(l.pagina || '—');
+    return escHtml(l[c.id] || '');
+  };
+  const titulo = cfg.titulo.trim() ? `<p style="font-weight:bold; margin:0 0 6px 0;">${escHtml(cfg.titulo.trim())}</p>` : '';
+  const rodape = cfg.rodape
+    ? `<p style="font-size:0.75em; color:#555; margin:4px 0 0 0;">Fonte: dados extraídos dos documentos do processo SEI ${escHtml(processoAtual?.numero_sei || '')}, com indicação de documento e página.</p>` : '';
+  return `${titulo}<table style="border-collapse:collapse; font-size:0.8rem; width:100%;">
+    <tr>${cols.map(c => `<th ${th}>${c.nome}</th>`).join('')}</tr>
+    ${linhas.map(l => `<tr>${cols.map(c => `<td ${td}>${celula(l, c)}</td>`).join('')}</tr>`).join('')}
+  </table>${rodape}`;
+}
+
+function abrirTabelaDadosProcesso() {
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) return alert('Importe os documentos do processo primeiro.');
+  const linhas = montarLinhasTabelaDados().map((l, i) => ({ ...l, id: i, incluida: true, obs: '' }));
+  const docs = [...new Set(linhas.map(l => l.doc))];
+  window._tab = {
+    linhas,
+    cfg: {
+      titulo: '', busca: '', rodape: true,
+      colunas: { doc: true, pagina: true, tipo: true, valor: true, trecho: false, obs: false },
+      tipos: { 'Valor': true, 'Data': true, 'Nº de processo': false, 'CEP': false },
+      docs: Object.fromEntries(docs.map(d => [d, true]))
+    }
+  };
+  const chk = (grupo, chave, rotulo, marcado) =>
+    `<label style="display:inline-flex; align-items:center; gap:4px; margin:0 10px 4px 0; font-size:0.78rem; cursor:pointer;">
+      <input type="checkbox" ${marcado ? 'checked' : ''} onchange="_tab.cfg.${grupo}[${JSON.stringify(chave).replace(/"/g, '&quot;')}]=this.checked; _atualizarTabelaDados()"> ${escHtml(rotulo)}</label>`;
+  const cfg = window._tab.cfg;
+  criarModal(`
+    <h2 style="margin-bottom:6px; font-size:1.15rem;">Tabela de dados do processo</h2>
+    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">Os números vêm direto dos documentos e não podem ser editados aqui. Você escolhe o que entra, as colunas, o título, e pode escrever observações.</p>
+
+    <div style="background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; padding:10px 12px; margin-bottom:10px;">
+      <input type="text" placeholder="Título da tabela (opcional) — ex.: Valores contratuais por documento" oninput="_tab.cfg.titulo=this.value; _atualizarTabelaDados()" style="width:100%; padding:6px 8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:8px;">
+      <input type="text" placeholder="Buscar nos trechos (ex.: consultas, aditivo, meta)" oninput="_tab.cfg.busca=this.value; _atualizarTabelaDados()" style="width:100%; padding:6px 8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:8px;">
+      <div style="font-size:0.75rem; font-weight:600; margin-bottom:2px;">Tipos de dado</div>
+      <div>${Object.keys(cfg.tipos).map(t => chk('tipos', t, t, cfg.tipos[t])).join('')}</div>
+      <div style="font-size:0.75rem; font-weight:600; margin:6px 0 2px;">Colunas</div>
+      <div>${COLUNAS_TABELA.map(c => chk('colunas', c.id, c.nome, cfg.colunas[c.id])).join('')}</div>
+      <div style="font-size:0.75rem; font-weight:600; margin:6px 0 2px;">Documentos</div>
+      <div style="max-height:70px; overflow:auto;">${Object.keys(cfg.docs).map(d => chk('docs', d, d, true)).join('')}</div>
+      <label style="display:inline-flex; align-items:center; gap:4px; margin-top:6px; font-size:0.78rem; cursor:pointer;">
+        <input type="checkbox" checked onchange="_tab.cfg.rodape=this.checked"> Incluir linha de fonte no rodapé</label>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" onclick="copiarTabelaDados()"><i class="ti ti-copy"></i> Copiar tabela</button>
+      <span id="contagem-tabela-dados" style="font-size:0.78rem; color:var(--text-muted);"></span>
+      <span id="status-copia-tabela" style="font-size:0.78rem;"></span>
+    </div>
+    <div id="area-tabela-dados" style="max-height:40vh; overflow:auto;"></div>`);
+  _atualizarTabelaDados();
+}
+
+// Linhas que passam nos filtros (tipo, documento, busca). A caixinha de cada linha
+// decide se ela entra na tabela copiada.
+function _linhasVisiveis() {
+  const { linhas, cfg } = window._tab;
+  const busca = cfg.busca.trim().toLowerCase();
+  return linhas.filter(l => cfg.tipos[l.tipo] && cfg.docs[l.doc]
+    && (!busca || (l.trecho + ' ' + l.valor + ' ' + l.doc).toLowerCase().includes(busca)));
+}
+
+function _atualizarTabelaDados() {
+  const area = document.getElementById('area-tabela-dados');
+  if (!area) return;
+  const { cfg } = window._tab;
+  const visiveis = _linhasVisiveis();
+  const incluidas = visiveis.filter(l => l.incluida).length;
+  document.getElementById('contagem-tabela-dados').textContent = `${incluidas} de ${visiveis.length} linha(s) selecionada(s)`;
+  if (!visiveis.length) { area.innerHTML = '<p class="text-muted">Nenhum dado com esses filtros.</p>'; return; }
+
+  const cols = COLUNAS_TABELA.filter(c => cfg.colunas[c.id]);
+  const th = 'style="border:1px solid #ccc; padding:4px 6px; background:#eee; text-align:left; font-size:0.75rem;"';
+  const td = 'style="border:1px solid #ccc; padding:4px 6px; vertical-align:top; font-size:0.78rem;"';
+  area.innerHTML = `<table style="border-collapse:collapse; width:100%;">
+    <tr><th ${th}>Incluir</th>${cols.map(c => `<th ${th}>${c.nome}</th>`).join('')}</tr>
+    ${visiveis.map(l => `<tr style="${l.incluida ? '' : 'opacity:0.4;'}">
+      <td ${td}><input type="checkbox" ${l.incluida ? 'checked' : ''} onchange="_tab.linhas[${l.id}].incluida=this.checked; _atualizarTabelaDados()"></td>
+      ${cols.map(c => c.id === 'obs'
+        ? `<td ${td}><input type="text" value="${escHtml(l.obs)}" placeholder="Sua observação" oninput="_tab.linhas[${l.id}].obs=this.value" style="width:100%; min-width:120px; padding:3px; border:1px solid #ced4da; border-radius:4px; font-size:0.78rem;"></td>`
+        : `<td ${td}>${c.id === 'valor' ? '<strong>' + escHtml(l.valor) + '</strong>' : escHtml(c.id === 'pagina' ? (l.pagina || '—') : (l[c.id] || ''))}</td>`).join('')}
+    </tr>`).join('')}
+  </table>`;
+}
+
+// Copia como HTML (mantém a tabela ao colar no Word/SEI) e como texto separado por
+// tabulação (fallback pra onde não aceitar HTML). Só as linhas marcadas.
+async function copiarTabelaDados() {
+  const { cfg } = window._tab;
+  const linhas = _linhasVisiveis().filter(l => l.incluida);
+  const status = document.getElementById('status-copia-tabela');
+  if (!linhas.length) { status.innerHTML = '<span style="color:#c92a2a;">Nenhuma linha selecionada.</span>'; return; }
+  const cols = COLUNAS_TABELA.filter(c => cfg.colunas[c.id]);
+  const html = _htmlTabelaDados(linhas, cfg);
+  const texto = [
+    cfg.titulo.trim(),
+    cols.map(c => c.nome).join('\t'),
+    ...linhas.map(l => cols.map(c => c.id === 'pagina' ? (l.pagina || '—') : (l[c.id] || '')).join('\t'))
+  ].filter(Boolean).join('\n');
+  try {
+    if (window.ClipboardItem) {
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([texto], { type: 'text/plain' })
+      })]);
+    } else {
+      await navigator.clipboard.writeText(texto);
+    }
+    status.innerHTML = '<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Copiada — cole no documento.</span>';
+  } catch (e) {
+    status.innerHTML = `<span style="color:#c92a2a;">Não foi possível copiar: ${escHtml(e.message)}</span>`;
+  }
+}
+
+// ==================== VERSÃO ASSINADA (volta do SEI) ====================
+// Depois de assinar no SEI, a pessoa importa o documento oficial de volta. É ELE que
+// compõe o banco de dados — o rascunho revisado aqui pode ter mudado antes da assinatura.
+let _origemVersaoAssinada = 'processo';
+
+function modalImportarVersaoAssinada(origem) {
+  _origemVersaoAssinada = origem || 'processo';
+  criarModal(`
+    <h2 style="margin-bottom:8px; font-size:1.15rem;">Importar versão assinada (SEI)</h2>
+    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">Depois de assinar no SEI, exporte o documento (o SEI gera .html ou .pdf) e importe aqui. Ele fica marcado como a versão oficial deste processo.</p>
+    <input type="file" id="arquivo-versao-assinada" accept=".html,.htm,.pdf,.docx,.doc" onchange="processarVersaoAssinada(this.files[0])">
+    <div id="status-versao-assinada" style="margin-top:12px;"></div>`);
+}
+
+async function processarVersaoAssinada(file) {
+  if (!file) return;
+  const status = document.getElementById('status-versao-assinada');
+  status.innerHTML = '<span class="spinner"></span> Lendo o documento assinado...';
+  try {
+    const buf = await file.arrayBuffer();
+    const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
+    if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
+    const sensiveis = detectarSensiveisDoArquivo(texto, file.name);
+    await salvarDocumentoNoBackend(file.name, texto, sensiveis, 'FINAL_ASSINADO');
+    await api('log/registrar', { usuario: usuarioAtual.email, acao: 'VERSAO_ASSINADA', processo_id: processoAtual.id, detalhes: file.name });
+    status.innerHTML = '<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ Versão assinada registrada neste processo.</div>';
+    setTimeout(() => {
+      fecharModal();
+      if (_origemVersaoAssinada === 'registro') abrirRegistroConcluido(processoAtual.id);
+      else abrirProcesso(processoAtual.numero_sei || String(processoAtual.id));
+    }, 1500);
+  } catch (e) {
+    status.innerHTML = `<div class="alert alert-danger">Não foi possível importar: ${escHtml(e.message)}</div>`;
+  }
+}
+
+// ==================== CRIAR DOCUMENTO (aguardando modelos padrão) ====================
+// O botão já existe; os modelos (nota técnica, parecer, minuta, ofício) serão montados a
+// partir de exemplos reais já assinados pela equipe, quando forem catalogados.
+function abrirCriarDocumento() {
+  criarModal(`
+    <h2 style="margin-bottom:8px; font-size:1.15rem;">Criar documento</h2>
+    <p style="font-size:0.88rem; line-height:1.6;">Esta função está aguardando os modelos padrão de nota técnica, parecer, minuta e ofício da DGMCG/GGPCG.</p>
+    <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Enquanto isso, use "Gerar tabela de dados" (no topo do processo) pra levar os números do processo pro seu documento, com a origem de cada um.</p>`);
+}
+
 function modalUploadZIP() {
   criarModal(`
     <h2 style="margin-bottom:15px; font-size:1.2rem;">Importar Arquivos</h2>
@@ -1169,10 +1385,11 @@ function modalUploadZIP() {
   `);
 }
 
-async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis) {
+async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis, tipoDocumento) {
   const res = await api('documentos/adicionar-completo', {
     processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email,
-    resumo_sensiveis: sensiveis && sensiveis.length ? JSON.stringify(sensiveis) : ''
+    resumo_sensiveis: sensiveis && sensiveis.length ? JSON.stringify(sensiveis) : '',
+    tipo_documento: tipoDocumento || ''
   });
   if (!res.ok) throw new Error('Falha ao salvar documento: ' + res.erro);
 }
@@ -1835,6 +2052,131 @@ function dividirPorDocumento(textoIntegral) {
   return docs;
 }
 
+// ==================== CONFERÊNCIA DE CONTAS POR CÓDIGO ====================
+// Faz a conta com regra fixa, como uma calculadora — não depende da IA "notar". É a
+// parte que mais pesa pro erário, então tem cobertura garantida em toda Checagem,
+// mesmo que a IA falhe. LIMITE: só confere o que reconhece como tabela com linha de
+// "Total" ou como valor com rótulo claro. Não substitui a IA, soma a ela.
+
+// Converte número no formato brasileiro ("1.200", "17.292.449,28", "R$ 5,00") em número.
+function _numeroBR(txt) {
+  let t = String(txt).replace(/R\$\s?/g, '').replace(/\s+/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else t = t.replace(/\./g, '');
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+
+function _formatarBR(n) {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+
+// Todos os números "de valor" de uma linha, da esquerda pra direita — ignora data, nº de
+// processo e CEP, que têm dígitos mas não entram em soma.
+function _numerosDaLinha(linha) {
+  const limpa = linha
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
+    .replace(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g, ' ')
+    .replace(/\b\d{2}\.?\d{3}-\d{3}\b/g, ' ');
+  const achados = limpa.match(/\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?/g) || [];
+  return achados.map(_numeroBR).filter(n => n !== null);
+}
+
+function _paginaNaPosicao(texto, posicao) {
+  const marcas = [...texto.substring(0, posicao).matchAll(/--- PÁGINA (\d+) ---/g)];
+  return marcas.length ? marcas[marcas.length - 1][1] : null;
+}
+
+// 1) Tabelas com linha "Total": soma as linhas logo acima e compara com o total informado.
+// Se todas as linhas têm a mesma quantidade de números, confere coluna por coluna; se
+// não, confere só o último número de cada linha.
+function conferirSomasPorCodigo(textoIntegral) {
+  const achados = [];
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    const linhas = d.texto.split('\n');
+    let posicao = 0;
+    const posicaoDaLinha = linhas.map(l => { const p = posicao; posicao += l.length + 1; return p; });
+
+    linhas.forEach((linha, i) => {
+      if (!/\btotal\b/i.test(linha)) return;
+      const numsTotal = _numerosDaLinha(linha);
+      if (!numsTotal.length) return;
+
+      const itens = [];
+      for (let j = i - 1; j >= 0 && itens.length < 40; j--) {
+        const l = linhas[j];
+        if (/--- PÁGINA \d+ ---/.test(l) || /total/i.test(l)) break;
+        const nums = _numerosDaLinha(l);
+        if (!nums.length) break;
+        itens.unshift(nums);
+      }
+      if (itens.length < 2) return;
+
+      const mesmaQtd = itens.every(n => n.length === numsTotal.length);
+      const colunas = mesmaQtd ? numsTotal.map((_, c) => c) : [null];
+      colunas.forEach(c => {
+        const valorTotal = c === null ? numsTotal[numsTotal.length - 1] : numsTotal[c];
+        const soma = itens.reduce((acc, n) => acc + (c === null ? n[n.length - 1] : n[c]), 0);
+        if (Math.abs(soma - valorTotal) <= 0.01) return;
+        const pagina = _paginaNaPosicao(d.texto, posicaoDaLinha[i]);
+        achados.push({
+          tag: 'Cálculo', setor: 'SFCG',
+          titulo: 'Soma da tabela não bate com o total informado',
+          evidencia: linha.trim(),
+          explicacao: `As ${itens.length} linhas logo acima do total somam ${_formatarBR(soma)}, mas o total informado é ${_formatarBR(valorTotal)} (diferença de ${_formatarBR(Math.abs(soma - valorTotal))}). Conta feita por código, não pela IA.`,
+          sugestao: `Refaça a soma das linhas dessa tabela${pagina ? ' (página ' + pagina + ')' : ''} e corrija o valor errado — pode ser o total ou uma das linhas. Antes, confira se a tabela não continua em outra página: tabela quebrada entre páginas pode enganar a conferência.`,
+          doc_origem: d.nome, pagina, verificar: true, conferido_por_codigo: true
+        });
+      });
+    });
+  });
+  return achados;
+}
+
+// 2) Mesmo valor rotulado ("valor global", "valor mensal"...) com números diferentes
+// dentro do processo. Pode ser alteração legítima por aditivo — por isso sai sempre
+// como "verificar", e a sugestão manda confirmar qual documento é o mais recente.
+function conferirValoresRotuladosPorCodigo(textoIntegral) {
+  const porRotulo = {};
+  const regex = /(valor\s+(?:global|total|mensal|anual|estimado|contratual|do\s+contrato)(?:\s+do\s+contrato)?(?:\s+de\s+gest[aã]o)?)[^\n]{0,60}?(R\$\s?[\d.]+,\d{2})/gi;
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    let m;
+    while ((m = regex.exec(d.texto)) !== null) {
+      const rotulo = m[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+      (porRotulo[rotulo] = porRotulo[rotulo] || []).push({
+        valorTxt: m[2].replace(/\s+/g, ' '), valor: _numeroBR(m[2]), doc: d.nome, pagina: _paginaNaPosicao(d.texto, m.index)
+      });
+    }
+    regex.lastIndex = 0;
+  });
+
+  const achados = [];
+  Object.entries(porRotulo).forEach(([rotulo, ocorrencias]) => {
+    const distintos = [...new Set(ocorrencias.map(o => o.valor))];
+    if (distintos.length < 2) return;
+    const lista = ocorrencias.slice(0, 8)
+      .map(o => `${o.valorTxt} em ${o.doc}${o.pagina ? ' (pág. ' + o.pagina + ')' : ''}`).join('; ');
+    achados.push({
+      tag: 'Cálculo', setor: 'SFCG',
+      titulo: `"${rotulo}" aparece com valores diferentes no processo`,
+      evidencia: lista,
+      explicacao: `O mesmo tipo de valor aparece com ${distintos.length} números diferentes: ${lista}. Conferência feita por código, não pela IA.`,
+      sugestao: 'Se um documento mais recente (aditivo, apostilamento) alterou esse valor, a diferença é esperada — confirme qual é o documento mais recente e se ele cita a alteração. Se nenhum documento explica a mudança, corrija o valor divergente.',
+      doc_origem: ocorrencias[0].doc, pagina: ocorrencias[0].pagina, verificar: true, conferido_por_codigo: true
+    });
+  });
+  return achados;
+}
+
+function conferirContasPorCodigo(textoIntegral) {
+  try {
+    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral)];
+  } catch (e) {
+    console.warn('Conferência de contas por código falhou:', e.message);
+    return [];
+  }
+}
+
 function montarDadosExtraidos(textoIntegral) {
   const docs = dividirPorDocumento(textoIntegral);
   if (!docs.length) return '(nenhum documento)';
@@ -1885,8 +2227,11 @@ async function rodarRaioX() {
     }
   }
 
+  let achadosCodigo = [];
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
+    // Contas conferidas por código ANTES da IA — cobertura garantida, mesmo se a IA falhar.
+    achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
 
     // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
     // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
@@ -1980,21 +2325,29 @@ invente achado pra preencher a resposta.
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
 {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}
 
-TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
+${achadosCodigo.length ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n' : ''}TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
 ${textoIntegralAtual}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const jsonObj = JSON.parse(jsonStr);
-    window.achadosAtuais = (jsonObj.cards || []).map(c => {
+    const achadosIA = (jsonObj.cards || []).map(c => {
       // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
       if (c.baseado_em_fonte_externa) c.verificar = true;
       return c;
     });
+    window.achadosAtuais = [...achadosCodigo, ...achadosIA];
     contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
     st.innerHTML = renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
+    // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
+    // que ela achou, pra parte financeira nunca ficar sem cobertura.
+    if (achadosCodigo.length) {
+      window.achadosAtuais = achadosCodigo;
+      renderizarCards(achadosCodigo);
+      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta — a análise da IA não rodou</span>`;
+    }
   } finally {
     if (intervaloTimer) clearInterval(intervaloTimer);
     if (banner) banner.classList.add('hidden');
@@ -2013,7 +2366,8 @@ function renderizarCards(cards) {
     // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
     const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
     const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
-    const tagVerificar = c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`;
+    const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
+      + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
     html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
         <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
@@ -2021,7 +2375,7 @@ function renderizarCards(cards) {
       <div class="rx-body">
         <div style="margin-bottom: 12px;">
             <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
-               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>
+               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>${c.pagina ? ' — pág. ' + escHtml(c.pagina) : ''}
             </span>
         </div>
         ${c.evidencia ? `<div class="rx-evidence">${escHtml(c.evidencia)}</div>` : ''}
