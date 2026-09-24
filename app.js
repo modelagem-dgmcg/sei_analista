@@ -212,6 +212,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_andamento: 'Processos em Andamento',
     dashboard_encaminhados: 'Processos Encaminhados (Acompanhamento)',
     dashboard_concluidos: 'Registro de Concluídos',
+    dashboard_perguntas: 'Perguntas sobre achados',
     novo: 'Importar Processo', config: 'Configuração IA Premium'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
@@ -423,7 +424,7 @@ async function _verificarNovosItens() {
       const pendentesAtual = resPendentes.pendentes || 0;
       if (_ultimaContagemAchadosPendentes !== null && pendentesAtual > _ultimaContagemAchadosPendentes) {
         pulsarElemento('nav-entrada');
-        mostrarToast('Um colega pediu sua opinião sobre um achado.');
+        mostrarToast('Um colega pediu sua opinião sobre um achado. Veja na aba "Perguntas".');
       }
       _ultimaContagemAchadosPendentes = pendentesAtual;
     }
@@ -442,7 +443,18 @@ async function renderDashboard(caixa = 'entrada') {
       <button class="btn btn-sm ${caixa === 'andamento' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','andamento')"><i class="ti ti-loader"></i> Em Andamento</button>
       <button class="btn btn-sm ${caixa === 'encaminhados' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','encaminhados')"><i class="ti ti-share"></i> Encaminhados</button>
       <button class="btn btn-sm ${caixa === 'concluidos' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','concluidos')"><i class="ti ti-archive"></i> Concluídos</button>
+      <button class="btn btn-sm ${caixa === 'perguntas' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','perguntas')"><i class="ti ti-message-question"></i> Perguntas <span id="badge-perguntas"></span></button>
     </div>`;
+  // Contador de perguntas esperando resposta — não segura a tela carregando
+  api('achados/contar-pendentes', { usuario: usuarioAtual.email }).then(r => {
+    const b = document.getElementById('badge-perguntas');
+    if (b && r.ok && r.pendentes > 0) b.innerHTML = `<span style="background:#ffc107; color:#000; padding:0 6px; border-radius:10px; font-size:0.7rem; font-weight:bold;">${r.pendentes}</span>`;
+  }).catch(() => {});
+  if (caixa === 'perguntas') {
+    content.innerHTML = abasHtml + '<div id="area-perguntas"><span class="spinner"></span> Carregando perguntas...</div>';
+    await renderPerguntasAchados();
+    return;
+  }
   if (caixa === 'concluidos') {
     content.innerHTML = abasHtml + '<div id="area-finalizados"><span class="spinner"></span></div>';
     await renderFinalizados('', 'area-finalizados');
@@ -2620,12 +2632,64 @@ async function modalEncaminharAchado(ref) {
   criarModal(`<h2>Encaminhar Achado</h2><input type="hidden" id="enc-ach-referencia" value="${escAttr(ref)}"><select id="enc-ach-destinatario" style="width:100%;padding:8px;margin-bottom:10px;">${opcoes}</select><textarea id="enc-ach-mensagem" placeholder="Sua pergunta..." style="width:100%;min-height:70px;padding:8px;margin-bottom:10px;"></textarea><button class="btn btn-primary" onclick="confirmarEncaminharAchado()">Enviar</button>`, false);
 }
 
+// ==================== ABA PERGUNTAS ====================
+// Recebidas (com resposta ali mesmo) e enviadas (com a resposta quando chegar), em
+// qualquer processo — o destinatário não precisa ter o processo na caixa dele.
+async function renderPerguntasAchados() {
+  const area = document.getElementById('area-perguntas');
+  const res = await api('achados/meus', { usuario: usuarioAtual.email });
+  if (!res.ok) {
+    area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}. Se falar em rota desconhecida, o Code.gs publicado está desatualizado.</div>`;
+    return;
+  }
+  const recebidas = (res.recebidas || []).sort((a, b) => (a.resposta ? 1 : 0) - (b.resposta ? 1 : 0));
+  const enviadas = res.enviadas || [];
+  const linkProcesso = q => `<a href="#" onclick="abrirProcesso('${escAttr(q.numero_sei || q.processo_id)}'); return false;">${escHtml(q.numero_sei || 'processo ' + q.processo_id)}</a>${q.titulo_processo ? ' — ' + escHtml(q.titulo_processo) : ''}`;
+  const cartao = (q, tipo) => {
+    const pendente = !q.resposta;
+    const cor = pendente ? (tipo === 'recebida' ? '#fff9db; border-left:3px solid #f5c518' : '#f8f9fa; border-left:3px solid #adb5bd') : '#e7f5ff; border-left:3px solid #339af0';
+    const quem = tipo === 'recebida' ? `De <strong>${escHtml(q.de_usuario)}</strong>` : `Para <strong>${escHtml(q.para_usuario)}</strong>`;
+    const quando = q.data_envio ? ` · há ${_tempoDecorridoDesde(q.data_envio)}` : '';
+    const resposta = q.resposta
+      ? `<div style="margin-top:6px; color:#1864ab;"><strong>Resposta:</strong> ${escHtml(q.resposta)}</div>`
+      : (tipo === 'recebida'
+          ? `<textarea id="resp-caixa-${q.id}" placeholder="Sua resposta..." style="width:100%; margin-top:8px; padding:6px; border:1px solid #ced4da; border-radius:4px; min-height:50px;"></textarea>
+             <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderPerguntaNaCaixa(${q.id})">Responder</button>`
+          : `<div style="margin-top:6px; color:var(--text-muted);"><i class="ti ti-clock"></i> Aguardando resposta.</div>`);
+    return `<div style="background:${cor}; padding:10px 14px; border-radius:6px; margin-bottom:10px; font-size:0.85rem;">
+      <div style="font-size:0.78rem; color:var(--text-muted);">${quem}${quando} · Processo ${linkProcesso(q)}</div>
+      <div style="margin-top:4px;"><strong>Achado:</strong> ${escHtml(q.achado_referencia)}</div>
+      <div style="margin-top:4px;"><strong>Pergunta:</strong> ${escHtml(q.mensagem || '(sem mensagem)')}</div>
+      ${resposta}
+    </div>`;
+  };
+  area.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:10px;">Recebidas</h3>
+    ${recebidas.length ? recebidas.map(q => cartao(q, 'recebida')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta recebida.</p>'}
+    <h3 style="font-size:1rem; margin:20px 0 10px;">Enviadas</h3>
+    ${enviadas.length ? enviadas.map(q => cartao(q, 'enviada')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta enviada.</p>'}`;
+}
+
+async function responderPerguntaNaCaixa(id) {
+  const campo = document.getElementById('resp-caixa-' + id);
+  const resposta = (campo?.value || '').trim();
+  if (!resposta) return alert('Escreva a resposta antes de enviar.');
+  const res = await api('achados/responder', { id, resposta });
+  if (!res.ok) return alert('A resposta NÃO foi enviada: ' + (res.erro || 'erro desconhecido'));
+  mostrarToast('Resposta enviada.');
+  renderPerguntasAchados();
+}
+
 async function confirmarEncaminharAchado() {
   const referencia = document.getElementById('enc-ach-referencia').value;
   const destinatario = document.getElementById('enc-ach-destinatario').value;
   const mensagem = document.getElementById('enc-ach-mensagem').value.trim();
-  await api('achados/encaminhar', { processo_id: processoAtual.id, achado_referencia: referencia, de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem });
+  if (!mensagem) return alert('Escreva a pergunta antes de enviar.');
+  const res = await api('achados/encaminhar', { processo_id: processoAtual.id, achado_referencia: referencia, de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem });
+  // Antes, a janela fechava mesmo se o envio falhasse — a pergunta sumia sem ninguém saber.
+  if (!res.ok) { alert('A pergunta NÃO foi enviada: ' + (res.erro || 'erro desconhecido') + '\n\nSe o erro falar em rota desconhecida, o Code.gs publicado está desatualizado.'); return; }
   fecharModal();
+  mostrarToast('Pergunta enviada. Ela aparece na aba "Perguntas" de quem recebeu.');
   carregarStatusConsultasAchados();
 }
 
