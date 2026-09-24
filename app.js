@@ -294,6 +294,7 @@ async function showView(v, subCaixa = 'entrada') {
           </div>
         </div>
         <button class="btn btn-primary" onclick="salvarConfig()"><i class="ti ti-check"></i> Salvar</button>
+        ${htmlFontesOficiais()}
       </div>`;
   }
 }
@@ -678,6 +679,50 @@ async function testarConexaoProvedor(id) {
   }
 }
 
+// ==================== FONTES OFICIAIS DE DADOS ====================
+// Dados públicos, sem chave. Este espaço mostra para que cada fonte serve e testa a
+// conexão. Nenhuma delas entra na Checagem ainda — são propostas registradas.
+const FONTES_OFICIAIS_INFO = [
+  { id: 'ibge_ipca', nome: 'IBGE — Índices de preço (IPCA)', testavel: true,
+    serve: 'Conferir se o percentual de reajuste aplicado nos aditivos bate com o índice oficial do período.' },
+  { id: 'ibge_localidades', nome: 'IBGE — Localidades', testavel: true,
+    serve: 'Conferir nome e código dos municípios citados nos documentos.' },
+  { id: 'cnes', nome: 'CNES — Cadastro Nacional de Estabelecimentos de Saúde', testavel: false,
+    serve: 'Comparar nome oficial, número CNES, leitos e serviços da unidade com o que o contrato declara.',
+    situacao: 'Em estudo: falta confirmar uma forma estável de consulta ao cadastro.' },
+  { id: 'sia_sih', nome: 'SIA/SIH — Produção registrada no SUS', testavel: false,
+    serve: 'Comparar atendimentos contratados com os registrados nos sistemas nacionais.',
+    situacao: 'Em estudo: os dados saem em arquivos grandes e exigem rotina própria.' }
+];
+
+function htmlFontesOficiais() {
+  const linhas = FONTES_OFICIAIS_INFO.map(f => `
+    <div style="border:1px solid #dee2e6; border-radius:6px; padding:10px 12px; margin-bottom:8px;">
+      <div style="font-weight:600; font-size:0.88rem;">${escHtml(f.nome)}</div>
+      <div style="font-size:0.8rem; color:var(--text-muted); margin-top:2px;">Para que serve: ${escHtml(f.serve)}</div>
+      ${f.testavel
+        ? `<div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+             <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.72rem; padding:2px 10px;" onclick="testarFonteOficial('${f.id}')">Testar conexão</button>
+             <span id="teste-fonte-${f.id}" style="font-size:0.75rem;"></span>
+           </div>`
+        : `<div style="font-size:0.75rem; color:#856404; margin-top:6px;"><i class="ti ti-clock"></i> ${escHtml(f.situacao)}</div>`}
+    </div>`).join('');
+  return `
+    <h3 style="font-size:1rem; margin:26px 0 6px;">Fontes oficiais de dados</h3>
+    <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">Dados públicos, sem chave. Por enquanto este espaço só testa a conexão: nenhuma fonte entra na Checagem ainda.</p>
+    ${linhas}`;
+}
+
+async function testarFonteOficial(id) {
+  const el = document.getElementById('teste-fonte-' + id);
+  if (el) el.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span> Testando...';
+  const res = await api('fontes/testar', { fonte: id });
+  if (!el) return;
+  el.innerHTML = res.ok
+    ? `<span style="color:#2b8a3e; font-weight:600;"><i class="ti ti-check"></i> Conectado — ${escHtml(res.resumo)}</span>`
+    : `<span style="color:#c92a2a;"><i class="ti ti-x"></i> ${escHtml(res.erro)}</span>`;
+}
+
 function salvarConfig() {
   const inputEl = document.getElementById('cfg-gemini');
   if (!inputEl) return;
@@ -718,6 +763,63 @@ function salvarConfig() {
   verificarIA();
 }
 
+// Escolhe o nº do processo com critério, em vez de pegar o primeiro que aparecer (que
+// pode ser um processo apenas CITADO num documento). Ordem: 1) nome do arquivo exportado
+// do SEI; 2) o número que mais se repete nos documentos (o do próprio processo costuma
+// estar no cabeçalho ou rodapé de tudo). Devolve a origem e os outros candidatos.
+const REGEX_NUM_PROCESSO = /(\d{4,})\s*\.\s*(\d{5,6})\s*[\/_]\s*(\d{4})\s*-\s*(\d{2})/g;
+
+function escolherNumeroProcesso(nomeArquivo, arquivosLidos) {
+  // Nome do ZIP exportado pelo SEI: aceita ponto, sublinhado, hífen, barra ou espaço
+  // entre as partes (2300002773.000116_2026-49, 2300002773_000116_2026_49...).
+  const m = String(nomeArquivo || '').match(/(\d{4,})[.\s_-]?(\d{6})[\s_\/-](\d{4})[\s_-](\d{2})(?!\d)/);
+  const contagem = {}, docsPorNumero = {};
+  arquivosLidos.forEach(a => {
+    for (const x of (a.texto || '').matchAll(REGEX_NUM_PROCESSO)) {
+      const num = `${x[1]}.${x[2]}/${x[3]}-${x[4]}`;
+      contagem[num] = (contagem[num] || 0) + 1;
+      (docsPorNumero[num] = docsPorNumero[num] || new Set()).add(a.nome);
+    }
+  });
+  const ranking = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
+  if (m) {
+    const doNome = `${m[1]}.${m[2]}/${m[3]}-${m[4]}`;
+    // Número do nome do ZIP é o do processo — não compete com números citados nos documentos.
+    return { valor: doNome, origem: 'tirado do nome do arquivo exportado do SEI', outros: [] };
+  }
+  if (!ranking.length) return null;
+  const escolhido = ranking[0];
+  return {
+    valor: escolhido,
+    origem: `o que mais aparece nos documentos (${contagem[escolhido]} vez(es), em ${docsPorNumero[escolhido].size} documento(s))`,
+    outros: ranking.slice(1, 4)
+  };
+}
+
+// Conferência da importação: compara o que chegou com o que ficou gravado no processo,
+// perguntando ao backend (não confia só na contagem feita na tela).
+async function conferirImportacao(processoId, docsAntes, recebidos, falhas) {
+  let noProcesso = null;
+  try {
+    const r = await api('documentos/listar', { processo_id: processoId });
+    if (r.ok) noProcesso = (r.documentos || []).length - docsAntes;
+  } catch (e) { /* sem confirmação do backend — o resumo avisa */ }
+  return { recebidos, salvos: noProcesso, falhas };
+}
+
+function htmlResumoImportacao(c) {
+  const ok = c.salvos === c.recebidos && !c.falhas.length;
+  const cor = ok ? 'background:#d1e7dd; color:#0f5132; border:1px solid #badbcc;' : 'background:#fff3cd; color:#664d03; border:1px solid #ffecb5;';
+  const salvosTxt = c.salvos === null ? 'não foi possível confirmar quantos ficaram gravados' : `${c.salvos} gravado(s) no processo`;
+  const lista = c.falhas.length
+    ? `<ul style="margin:6px 0 0 18px; padding:0;">${c.falhas.map(f => `<li>${escHtml(f)}</li>`).join('')}</ul>` : '';
+  return `<div id="resumo-importacao" style="${cor} padding:10px 14px; border-radius:6px; font-size:0.84rem; margin-bottom:15px; position:relative;">
+    <button onclick="this.parentElement.remove()" title="Fechar" style="position:absolute; top:6px; right:8px; background:none; border:none; cursor:pointer; color:inherit;">✕</button>
+    <strong><i class="ti ti-${ok ? 'check' : 'alert-triangle'}"></i> Conferência da importação:</strong> ${c.recebidos} arquivo(s) recebido(s), ${salvosTxt}.
+    ${c.falhas.length ? `<div style="margin-top:4px;">Não entraram no processo:</div>${lista}` : ''}
+  </div>`;
+}
+
 async function prePreencherDeArquivo(file) {
   if (!file) return;
   const status = document.getElementById('np-status-preenchimento');
@@ -725,33 +827,27 @@ async function prePreencherDeArquivo(file) {
   try {
     let arquivosLidos; // sempre uma lista — [{nome, texto}] — mesmo pra 1 arquivo só, evita caso especial
     if (file.name.toLowerCase().endsWith('.zip')) {
-      const { arquivos, avisos } = await abrirZipEExtrairArquivos(file, (nome) => {
+      const { arquivos, avisos, total } = await abrirZipEExtrairArquivos(file, (nome) => {
         status.innerHTML = `<span class="spinner"></span> Lendo ${escHtml(nome.substring(0, 40))}...`;
       });
       if (!arquivos.length) throw new Error('Nenhum arquivo legível dentro do ZIP.' + (avisos.length ? ' (' + avisos[0] + ')' : ''));
       arquivosLidos = arquivos;
+      window._importacaoInfo = { recebidos: total, avisos };
     } else {
       const buf = await file.arrayBuffer();
       const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
       if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
       arquivosLidos = [{ nome: file.name, texto, sensiveis: detectarSensiveisDoArquivo(texto, file.name) }];
+      window._importacaoInfo = { recebidos: 1, avisos: [] };
     }
     _arquivoPrePreenchido = arquivosLidos;
 
-    // Nº do processo: procura em todos os arquivos lidos, usa o primeiro que achar
-    let achouNumeroProcesso = false;
-    for (const a of arquivosLidos) {
-      const nums = extrairNumerosProcesso(a.texto);
-      if (nums.length) {
-        const campoSei = document.getElementById('np-sei');
-        campoSei.value = nums[0].valor;
-        _marcarComoSugerido(campoSei);
-        achouNumeroProcesso = true;
-        break;
-      }
-    }
-    if (!achouNumeroProcesso) {
-      console.warn('Nenhum número de processo (formato XXXXXXX.XXXXXX/AAAA-XX) encontrado nos arquivos lidos — preencha manualmente.');
+    const escolha = escolherNumeroProcesso(file.name, arquivosLidos);
+    const achouNumeroProcesso = !!escolha;
+    if (escolha) {
+      const campoSei = document.getElementById('np-sei');
+      campoSei.value = escolha.valor;
+      _marcarComoSugerido(campoSei);
     }
 
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
@@ -774,22 +870,33 @@ Retorne EXCLUSIVAMENTE um JSON: {"titulo": "", "unidade": "", "oss": ""}
 
 TEXTO:
 ${amostra}`;
+    let avisoIA = '';
     try {
       const jsonStr = await invocarIAComFallback(prompt, false, null);
-      const sugestao = JSON.parse(jsonStr);
+      // Alguns serviços devolvem texto em volta do JSON — pega só o objeto.
+      const bloco = String(jsonStr).match(/\{[\s\S]*\}/);
+      if (!bloco) throw new Error('A IA respondeu sem o formato esperado.');
+      const sugestao = JSON.parse(bloco[0]);
       if (sugestao.titulo)  { const el = document.getElementById('np-titulo');  el.value = sugestao.titulo;  _marcarComoSugerido(el); }
       if (sugestao.unidade) { const el = document.getElementById('np-unidade'); el.value = sugestao.unidade; _marcarComoSugerido(el); }
       if (sugestao.oss)     { const el = document.getElementById('np-oss');     el.value = sugestao.oss;     _marcarComoSugerido(el); }
+      if (!sugestao.titulo && !sugestao.unidade && !sugestao.oss) {
+        avisoIA = 'A IA não encontrou título, unidade nem OSS claramente escritos no início dos documentos. Preencha manualmente.';
+      }
     } catch (e) {
-      console.warn('Sugestão de título/unidade/OSS via IA falhou:', e.message);
+      const { sugestao } = _mensagemErroAmigavel(e.message);
+      avisoIA = `Não consegui sugerir título, unidade e OSS (${sugestao}). Preencha manualmente.`;
     }
     const nomesLidos = arquivosLidos.map(a => a.nome).join(', ');
     const avisoSemNumero = !achouNumeroProcesso
       ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> Não achei um número de processo no formato SEI (ex: 2300002.104000/2022-91) — preencha o campo manualmente.</div>`
-      : '';
+      : `<div style="margin-top:6px;">Nº do processo: ${escHtml(escolha.origem)}.${escolha.outros.length ? ` Outros números citados nos documentos: ${escHtml(escolha.outros.join(', '))} — confira se o escolhido é o certo.` : ''}</div>`;
+    const blocoAvisoIA = avisoIA ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> ${escHtml(avisoIA)}</div>` : '';
+    const blocoNaoLidos = (window._importacaoInfo?.avisos || []).length
+      ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> ${window._importacaoInfo.avisos.length} arquivo(s) do ZIP não serão importados: ${escHtml(window._importacaoInfo.avisos.join('; '))}</div>` : '';
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
       <i class="ti ti-check"></i> ${arquivosLidos.length > 1 ? `${arquivosLidos.length} arquivos lidos (${escHtml(nomesLidos)})` : escHtml(nomesLidos)}. Confira os campos destacados abaixo antes de salvar.
-      ${avisoSemNumero}
+      ${avisoSemNumero}${blocoAvisoIA}${blocoNaoLidos}
     </div>`;
   } catch (e) {
     _arquivoPrePreenchido = null;
@@ -807,8 +914,10 @@ function _marcarComoSugerido(el) {
 async function salvarNovoProcesso() {
   const sei = document.getElementById('np-sei').value.trim();
   const titulo = document.getElementById('np-titulo').value.trim();
-  const unidade = document.getElementById('np-unidade').value.trim() || 'HRA';
-  const oss = document.getElementById('np-oss').value.trim() || 'ISG';
+  // Sem valor padrão: preencher "HRA"/"ISG" por conta própria gravava processo de outra
+  // unidade como HRA, e a comparação com o histórico buscava a unidade errada.
+  const unidade = document.getElementById('np-unidade').value.trim();
+  const oss = document.getElementById('np-oss').value.trim();
   const gerencia = document.getElementById('np-gerencia').value.trim();
   if (!titulo) return alert('Preencha ao menos o Título/Objeto.');
   const btn = document.getElementById('btn-criar-processo');
@@ -824,16 +933,22 @@ async function salvarNovoProcesso() {
   }
   if (_arquivoPrePreenchido && _arquivoPrePreenchido.length) {
     processoAtual = res.processo;
+    const info = window._importacaoInfo || { recebidos: _arquivoPrePreenchido.length, avisos: [] };
+    const falhas = [...info.avisos];
     for (let i = 0; i < _arquivoPrePreenchido.length; i++) {
       const a = _arquivoPrePreenchido[i];
       if (btn) btn.innerHTML = `<span class="spinner"></span> Anexando documento já lido (${i + 1}/${_arquivoPrePreenchido.length})...`;
       try {
         await salvarDocumentoNoBackend(a.nome, a.texto, a.sensiveis);
       } catch (e) {
-        console.warn(`Processo criado, mas falhou ao anexar "${a.nome}":`, e.message);
+        falhas.push(`${a.nome}: não foi gravado (${e.message})`);
       }
     }
+    if (btn) btn.innerHTML = '<span class="spinner"></span> Conferindo a importação...';
+    const conf = await conferirImportacao(res.processo.id, 0, info.recebidos, falhas);
+    window._resumoImportacaoPendente = htmlResumoImportacao(conf);
     _arquivoPrePreenchido = null;
+    window._importacaoInfo = null;
   }
   abrirProcesso(res.processo.numero_sei || String(res.processo.id));
 }
@@ -1059,6 +1174,10 @@ async function abrirProcesso(identificador) {
     </div>
   `;
   content.innerHTML = html;
+  if (window._resumoImportacaoPendente) {
+    content.insertAdjacentHTML('afterbegin', window._resumoImportacaoPendente);
+    window._resumoImportacaoPendente = null;
+  }
   api('consultas/listar', { processo_id: processoAtual.id }).then(resConsultas => {
     const consultas = resConsultas.consultas || [];
     if (!consultas.length) return;
@@ -1474,10 +1593,14 @@ function _decodeXmlEntities(s) {
 // tela "Importar Processo" (antes, só o primeiro sabia abrir ZIP; os dois divergiam e foi
 // exatamente isso que quebrou ao soltar um ZIP na tela de importar processo).
 async function abrirZipEExtrairArquivos(file, onProgresso) {
-  const resultado = { arquivos: [], avisos: [] };
+  const resultado = { arquivos: [], avisos: [], total: 0 };
   const zip = new JSZip();
   const contents = await zip.loadAsync(file);
-  const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir);
+  // Arquivos de sistema que o Mac/Windows põem dentro do ZIP não são documentos — não
+  // entram na contagem, senão a conferência acusaria "faltando" o que nunca foi documento.
+  const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir
+    && !k.startsWith('__MACOSX/') && !k.split('/').pop().startsWith('.'));
+  resultado.total = todosArquivos.length;
   const arquivosSuportados = todosArquivos.filter(k => EXTENSOES_SUPORTADAS.some(ext => k.toLowerCase().endsWith(ext)));
   const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
 
@@ -1515,14 +1638,22 @@ async function processarUploadZIP(files) {
   if (!listaArquivos.length) return;
   const avisos = [];
   let importados = 0;
+  let recebidos = 0; // arquivos soltos + arquivos de dentro de cada ZIP
+  // Quantos documentos o processo já tinha — base pra conferir quantos entraram agora.
+  let docsAntes = 0;
+  try {
+    const r = await api('documentos/listar', { processo_id: processoAtual.id });
+    if (r.ok) docsAntes = (r.documentos || []).length;
+  } catch (e) { /* segue; a conferência avisa se não conseguir confirmar */ }
   for (const file of listaArquivos) {
     const nomeLower = file.name.toLowerCase();
     if (nomeLower.endsWith('.zip')) {
       status.innerHTML = `<span class="spinner"></span> Mapeando ${escHtml(file.name)}...`;
       try {
-        const { arquivos, avisos: avisosZip } = await abrirZipEExtrairArquivos(file, (nome) => {
+        const { arquivos, avisos: avisosZip, total } = await abrirZipEExtrairArquivos(file, (nome) => {
           status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(nome.substring(0, 70))}...`;
         });
+        recebidos += total;
         for (const a of arquivos) {
           try {
             await salvarDocumentoNoBackend(a.nome, a.texto, a.sensiveis);
@@ -1533,8 +1664,10 @@ async function processarUploadZIP(files) {
         avisos.push(...avisosZip);
       } catch (e) {
         avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
+        recebidos += 1;
       }
     } else if (EXTENSOES_SUPORTADAS.some(ext => nomeLower.endsWith(ext))) {
+      recebidos += 1;
       status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
       try {
         const buf = await file.arrayBuffer();
@@ -1548,13 +1681,17 @@ async function processarUploadZIP(files) {
         avisos.push(`${file.name}: ${e.message}`);
       }
     } else {
+      recebidos += 1;
       avisos.push(`${file.name}: tipo não suportado — NÃO importado`);
     }
   }
-  status.innerHTML = avisos.length
-    ? `<div class="alert alert-warning"><strong>${importados} importado(s), ${avisos.length} aviso(s):</strong><br>${avisos.map(escHtml).join('<br>')}</div>`
-    : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) importado(s) com sucesso!</div>`;
-  setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, avisos.length ? 4500 : 1800);
+  // Conferência: pergunta ao backend quantos documentos o processo ganhou, e mostra o
+  // resumo no topo da tela do processo (fica lá até a pessoa fechar, não some sozinho).
+  status.innerHTML = '<span class="spinner"></span> Conferindo a importação...';
+  const conf = await conferirImportacao(processoAtual.id, docsAntes, recebidos, avisos);
+  window._resumoImportacaoPendente = htmlResumoImportacao(conf);
+  fecharModal();
+  abrirProcesso(processoAtual.numero_sei || String(processoAtual.id));
 }
 
 async function extrairTextoPDF(buf, onProgresso) {
@@ -1848,6 +1985,7 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     }
   }
   renderPainelProvedores(statusEl, estados, 'Nenhum provedor respondeu.');
+  if (!erros.length) throw new Error('Nenhum serviço de IA está habilitado com chave. Vá em "Motor de IA" e ligue ao menos um.');
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
 
@@ -2534,10 +2672,7 @@ ${contextoDocs}`;
     api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email })
       .catch(e => console.warn('Falha ao salvar consulta no histórico:', e.message));
   } catch (e) {
-    const { titulo, sugestao } = _mensagemErroAmigavel(e.message);
-    history.innerHTML += `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px 12px; margin-top:5px; max-width:85%; align-self:flex-end; font-size:0.82rem; color:#7c2d12;">
-      <i class="ti ti-cloud-exclamation" style="color:#c2410c;"></i> ${escHtml(titulo)} <span style="color:#9a3412;">${escHtml(sugestao)}</span>
-    </div>`;
+    history.innerHTML += `<div style="max-width:85%; align-self:flex-end;">${renderErroAmigavel(e.message)}</div>`;
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Perguntar'; }
   history.scrollTop = history.scrollHeight;
@@ -2632,8 +2767,35 @@ ${txtAnalista}`;
   }
 }
 
+// Traduz o erro de UM serviço numa expressão curta. A Kimi tem três tipos de 429,
+// com causas e soluções diferentes, por isso vêm separados.
+function _motivoCurtoProvedor(m) {
+  if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
+  if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia do nível da conta';
+  if (/exceeded_current_quota|insufficient/i.test(m)) return 'saldo insuficiente';
+  if (/HTTP 429/.test(m)) return 'limite de uso atingido';
+  if (/HTTP 40[13]|API key not valid|API_KEY_INVALID|invalid.*(api.?key|authentication)/i.test(m)) return 'chave inválida';
+  if (/não respondeu em|aborted/i.test(m)) return 'demorou demais para responder';
+  if (/Failed to fetch|falha de rede|não foi possível conectar/i.test(m)) return 'sem conexão (se for o Ollama, ele não está aberto)';
+  if (/HTTP 5\d\d/.test(m)) return 'serviço fora do ar';
+  if (/HTTP 400/.test(m)) return 'pedido recusado pelo serviço';
+  return 'erro não identificado';
+}
+
 function _mensagemErroAmigavel(msg) {
   msg = String(msg || '');
+  // Vem ANTES das outras regras: quando todos falham, cada um pode ter falhado por um
+  // motivo diferente — resumir numa frase só ("limite atingido") escondia o resto.
+  if (/Todos os provedores de IA falharam/i.test(msg)) {
+    const porServico = msg.split('\n').slice(1).filter(l => l.includes(':')).map(l => {
+      const i = l.indexOf(':');
+      return `${l.slice(0, i).trim()}: ${_motivoCurtoProvedor(l.slice(i + 1))}`;
+    });
+    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: porServico.join(' · ') || 'Confira a configuração em "Motor de IA".' };
+  }
+  if (/Nenhum serviço de IA está habilitado/i.test(msg)) {
+    return { titulo: 'Nenhum serviço de IA está ligado.', sugestao: 'Vá em "Motor de IA", cole uma chave e marque "Habilitado".' };
+  }
   if (/HTTP 503/.test(msg) || /sobrecarregad[oa]/i.test(msg)) {
     return { titulo: 'O serviço de IA está sobrecarregado no momento.', sugestao: 'Isso costuma passar rápido — aguarde um minuto e tente de novo.' };
   }
