@@ -1526,6 +1526,34 @@ async function ocrImagem(fonte) {
   return (resultado?.data?.text) || '';
 }
 
+// Converte o despacho em HTML do SEI em texto que a IA lê bem e com poucos tokens:
+// tabela continua tabela (formato Markdown, colunas separadas por "|"), cada parágrafo
+// vira uma linha, e estilo, script e marcação somem. Antes, parágrafos colavam um no
+// outro e as tabelas viravam texto corrido, sem dar pra saber o que era linha ou coluna.
+function htmlParaTextoEstruturado(doc) {
+  const body = doc.body;
+  if (!body) return '';
+  body.querySelectorAll('script, style, noscript').forEach(el => el.remove());
+  body.querySelectorAll('table').forEach(tabela => {
+    const linhas = [...tabela.querySelectorAll('tr')].map(tr =>
+      [...tr.querySelectorAll('th, td')].map(c => c.textContent.replace(/\s+/g, ' ').trim().replace(/\|/g, '/'))
+    ).filter(celulas => celulas.some(c => c));
+    if (!linhas.length) { tabela.remove(); return; }
+    const colunas = Math.max(...linhas.map(l => l.length));
+    const md = linhas.map(l => '| ' + [...l, ...Array(colunas - l.length).fill('')].join(' | ') + ' |');
+    md.splice(1, 0, '| ' + Array(colunas).fill('---').join(' | ') + ' |');
+    tabela.replaceWith(doc.createTextNode('\n' + md.join('\n') + '\n'));
+  });
+  body.querySelectorAll('br').forEach(br => br.replaceWith(doc.createTextNode('\n')));
+  body.querySelectorAll('p, div, li, h1, h2, h3, h4, h5, h6').forEach(el => el.append(doc.createTextNode('\n')));
+  return body.textContent
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ *\n */g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
   const nome = nomeArquivo.toLowerCase();
   if (nome.endsWith('.pdf')) return extrairTextoPDF(buf, onProgresso);
@@ -1549,7 +1577,7 @@ async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
     const htmlBruto = new TextDecoder('utf-8', { fatal: false }).decode(buf);
     if (typeof DOMParser === 'undefined') throw new Error('Leitor de HTML não disponível neste navegador.');
     const doc = new DOMParser().parseFromString(htmlBruto, 'text/html');
-    const texto = (doc.body?.textContent || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+    const texto = htmlParaTextoEstruturado(doc);
     if (!texto.length) throw new Error('Nenhum texto legível encontrado nesse HTML.');
     return texto;
   }
@@ -1697,7 +1725,7 @@ async function processarUploadZIP(files) {
 async function extrairTextoPDF(buf, onProgresso) {
   if (typeof pdfjsLib === 'undefined') return '';
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
-  let txt = '';
+  const paginas = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
@@ -1721,12 +1749,61 @@ async function extrairTextoPDF(buf, onProgresso) {
       }
     }
 
-    // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
-    // documentos) de propósito, pra dividirPorDocumento() continuar funcionando sem confundir
-    // "página" com "documento". Serve pra localizar onde um dado mascarado apareceu.
-    txt += `\n--- PÁGINA ${i} ---\n` + textoPagina + '\n';
+    paginas.push(textoPagina);
   }
-  return txt;
+  // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
+  // documentos) de propósito, pra dividirPorDocumento() continuar funcionando sem confundir
+  // "página" com "documento". Serve pra localizar onde um dado apareceu.
+  return removerRepeticoesDePagina(paginas)
+    .map((t, i) => `\n--- PÁGINA ${i + 1} ---\n` + t + '\n').join('');
+}
+
+// Cabeçalho, rodapé, numeração de página e timbre se repetem em toda página e vão para a
+// IA a cada página, sem acrescentar nada — gastam tokens e deixam a checagem mais lenta.
+// Regras, todas conservadoras, porque apagar conteúdo real é pior que gastar token:
+// 1) Só as 3 primeiras e as 3 últimas linhas de cada página são candidatas (é onde ficam
+//    cabeçalho e rodapé). O meio da página nunca é tocado.
+// 2) A linha precisa ser IDÊNTICA em pelo menos 3 páginas e em 60% ou mais delas. Números
+//    só são ignorados quando a linha TERMINA em numeração de página ("Página 3 de 10",
+//    "pg. 4", "fls. 12"), pra essas contarem como a mesma linha.
+// 3) Nunca sai: linha curta (menos de 8 caracteres), linha com "total" e linha com valor
+//    em R$ — é delas que a conferência de contas depende.
+// Fica sempre a primeira ocorrência.
+const REGEX_NUMERACAO_PAGINA = /(p[áa]g(ina)?\.?|pg\.|fls?\.|folha)\s*\d+(\s*(de|\/)\s*\d+)?\s*$/i;
+const LINHAS_BORDA_PAGINA = 3;
+
+function removerRepeticoesDePagina(paginas) {
+  if (paginas.length < 3) return paginas;
+  const normalizar = l => {
+    let n = l.trim().replace(/\s+/g, ' ').toLowerCase();
+    if (REGEX_NUMERACAO_PAGINA.test(n)) n = n.replace(/\d+/g, '#');
+    return n;
+  };
+  const protegida = l => l.trim().length < 8 || /\btotal\b/i.test(l) || /R\$/.test(l);
+  // Índices das linhas de borda (topo e pé) de cada página, ignorando linhas vazias
+  const bordas = paginas.map(t => {
+    const idx = t.split('\n').map((l, i) => l.trim() ? i : -1).filter(i => i >= 0);
+    return new Set([...idx.slice(0, LINHAS_BORDA_PAGINA), ...idx.slice(-LINHAS_BORDA_PAGINA)]);
+  });
+  const paginasPorLinha = {};
+  paginas.forEach((t, p) => {
+    t.split('\n').forEach((linha, i) => {
+      if (!bordas[p].has(i) || protegida(linha)) return;
+      (paginasPorLinha[normalizar(linha)] = paginasPorLinha[normalizar(linha)] || new Set()).add(p);
+    });
+  });
+  const minimo = Math.max(3, Math.ceil(paginas.length * 0.6));
+  const repetidas = new Set(Object.keys(paginasPorLinha).filter(l => paginasPorLinha[l].size >= minimo));
+  if (!repetidas.size) return paginas;
+  const jaMantidas = new Set();
+  return paginas.map((t, p) => t.split('\n').filter((linha, i) => {
+    if (!bordas[p].has(i) || protegida(linha)) return true;
+    const n = normalizar(linha);
+    if (!repetidas.has(n)) return true;
+    if (jaMantidas.has(n)) return false;
+    jaMantidas.add(n);
+    return true;
+  }).join('\n'));
 }
 
 function _reconstruirLinhasPDF(items) {
