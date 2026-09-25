@@ -5,9 +5,13 @@
 // ==================== REGISTRO DE AUTORIA ====================
 // © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
+// VERSÃO: atualize BUILD_DATE sempre que entregar um arquivo novo — é o que confirma
+// que o código novo está rodando, sem abrir DevTools.
+const BUILD_VERSION = '2026-09-25 v21';
+const BUILD_DATE    = '25/09/2026 20h';
 // matrícula 18515045.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
-console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13px;");
+console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
@@ -57,7 +61,7 @@ window.onload = () => {
 
 function injetarMarcaDagua() {
   const rodape = document.createElement('div');
-  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.`;
+  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>. <span id='build-tag' style='color:#6c757d; margin-left:8px;' title='app.js / Code.gs'>app v${BUILD_VERSION} · backend …</span>`;
   rodape.style = "text-align: center; padding: 15px; font-size: 0.75rem; color: #adb5bd; margin-top: auto; border-top: 1px solid #dee2e6;";
   document.getElementById('content').parentElement.appendChild(rodape);
 }
@@ -197,6 +201,11 @@ async function fazerLogin() {
       iniciarMonitoramentoNovosItens();
       carregarAlertasSidebar();
       setInterval(carregarAlertasSidebar, 300000);
+      // Mostra versão do backend no rodapé — confirma que o Code.gs publicado é o novo
+      api('versao', {}).then(r => {
+        const tag = document.getElementById('build-tag');
+        if (tag && r.versao) tag.textContent = `app v${BUILD_VERSION} · backend v${r.versao}`;
+      }).catch(() => {});
     } else {
       mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
     }
