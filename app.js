@@ -12,7 +12,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
 let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
-let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
+let OPENROUTER_KEY  = localStorage.getItem('sei_openrouter_key')  || '';
+let DEEPSEEK_KEY    = localStorage.getItem('sei_deepseek_key')    || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
@@ -27,12 +28,13 @@ let GEMINI_ATIVO = _lerHabilitado('sei_gemini_ativo');
 let GROQ_ATIVO = _lerHabilitado('sei_groq_ativo');
 let KIMI_ATIVO = _lerHabilitado('sei_kimi_ativo');
 let OPENROUTER_ATIVO = _lerHabilitado('sei_openrouter_ativo');
-let OLLAMA_ATIVO = _lerHabilitado('sei_ollama_ativo');
+let DEEPSEEK_ATIVO   = _lerHabilitado('sei_deepseek_ativo');
+let OLLAMA_ATIVO     = _lerHabilitado('sei_ollama_ativo');
 
 // Ordem de tentativa dos provedores — cada pessoa pode reordenar (tela "Motor de IA"),
 // porque o provedor que funciona rápido pra uma pessoa pode não ser o mesmo pra outra
 // (rede, cota, região). Padrão de fábrica: Gemini primeiro, igual sempre foi.
-let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","ollama"]');
+let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","deepseek","ollama"]');
 
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
@@ -180,10 +182,21 @@ async function fazerLogin() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
+      // Garante que a área de alertas exista na sidebar
+      if (!document.getElementById('area-alertas-sidebar')) {
+        const sn = document.getElementById('sidebar-nome');
+        if (sn?.parentElement) {
+          const div = document.createElement('div');
+          div.id = 'area-alertas-sidebar'; div.style.cssText = 'padding:6px 6px 2px;';
+          sn.parentElement.insertBefore(div, sn.parentElement.firstChild);
+        }
+      }
       document.getElementById('sidebar-gerencia').textContent = usuarioAtual.gerencia;
       document.getElementById('sidebar-email').textContent = usuarioAtual.email;
       showView('dashboard', 'entrada');
       iniciarMonitoramentoNovosItens();
+      carregarAlertasSidebar();
+      setInterval(carregarAlertasSidebar, 300000);
     } else {
       mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
     }
@@ -242,6 +255,15 @@ async function showView(v, subCaixa = 'entrada') {
         <div class="form-group"><label>Unidade</label><input id="np-unidade" placeholder="Ex: HRA"></div>
         <div class="form-group"><label>OSS</label><input id="np-oss" placeholder="Ex: ISG"></div>
         <div class="form-group"><label>Gerência</label><input id="np-gerencia" placeholder="Ex: GGPCG" value="${usuarioAtual?.gerencia || ''}"></div>
+        <div class="form-group"><label>Tipo de documento</label>
+          <select id="np-tipo-processo" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:6px;">
+            <option value="">— Selecione —</option>
+            <option>Contrato de Gestão</option><option>Aditivo</option><option>Apostilamento</option>
+            <option>Renovação / Prorrogação</option><option>Rescisão</option><option>Distrato</option>
+            <option>Ofício</option><option>Nota Técnica</option><option>Parecer</option><option>Outros</option>
+          </select></div>
+        <div class="form-group"><label>Data-limite <span style="color:var(--text-muted);font-size:0.8rem;">(opcional)</span></label>
+          <input type="date" id="np-data-limite" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:6px;"></div>
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
   } else if (v === 'config') {
@@ -284,6 +306,10 @@ async function showView(v, subCaixa = 'entrada') {
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
           <select id="prio-openrouter" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys...">${checkboxAtivo('openrouter', OPENROUTER_ATIVO)}</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-deepseek" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('deepseek')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys...">${checkboxAtivo('deepseek', DEEPSEEK_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:16px;">
           <select id="prio-ollama" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
@@ -341,6 +367,32 @@ async function atualizarContagensSidebar() {
 // imperceptível na prática. Não usa a cor de alerta de achado (bordô) de propósito —
 // aqui é só "chegou algo", não "achamos um problema".
 const INTERVALO_MONITORAMENTO_MS = 45000;
+let _alertasCache = [];
+
+async function carregarAlertasSidebar() {
+  if (!usuarioAtual) return;
+  try { const res = await api('processos/alertas', { usuario: usuarioAtual.email });
+    _alertasCache = (res.ok && res.alertas) ? res.alertas : []; }
+  catch(e) { _alertasCache = []; }
+  _renderAlertasSidebar();
+}
+
+function _renderAlertasSidebar() {
+  const area = document.getElementById('area-alertas-sidebar');
+  if (!area) return;
+  if (!_alertasCache.length) { area.innerHTML = ''; return; }
+  const cor   = a => COR_ALERTA[a.cor]   || '#868e96';
+  const icone = a => ICONE_ALERTA[a.cor] || 'ti-bell';
+  area.innerHTML = _alertasCache.slice(0,5).map(a =>
+    `<a href='#' onclick="abrirProcesso('${escAttr(a.numero_sei||String(a.processo_id))}'); return false;"
+       style='display:block;padding:6px 10px;margin-bottom:3px;border-left:3px solid ${cor(a)};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;text-decoration:none;color:inherit;'>
+      <div style='font-size:0.72rem;font-weight:600;color:${cor(a)};'><i class='ti ${icone(a)}'></i> ${escHtml(a.mensagem)}</div>
+      <div style='font-size:0.7rem;color:#adb5bd;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>${escHtml(a.titulo||a.numero_sei||'')}</div>
+    </a>`).join('');
+  if (_alertasCache.length > 5)
+    area.insertAdjacentHTML('beforeend',`<div style='font-size:0.7rem;color:#adb5bd;padding:3px 10px;'>+${_alertasCache.length-5} alerta(s)</div>`);
+}
+
 let _intervaloMonitoramento = null;
 let _ultimaContagemEntrada = null;
 let _ultimaContagemAchadosPendentes = null;
@@ -493,7 +545,10 @@ async function renderDashboard(caixa = 'entrada') {
 
       let infoTramitacao = '';
       if (p.ultima_tramitacao) {
-        infoTramitacao = `<div style="font-size:0.75rem; color:#0b509e; margin-top:4px;"><i class="ti ti-clock"></i> Tramitado para <strong>${escHtml(p.ultima_tramitacao.para_usuario)}</strong> em ${new Date(p.ultima_tramitacao.data).toLocaleString('pt-BR')}</div>`;
+        const lidoInfo = p.ultima_tramitacao.lido_em
+          ? `<span style='color:#2b8a3e; margin-left:8px;'><i class='ti ti-eye-check'></i> Visto ${new Date(p.ultima_tramitacao.lido_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>`
+          : `<span style='color:var(--text-muted); margin-left:8px;'><i class='ti ti-eye-off'></i> Ainda não aberto</span>`;
+        infoTramitacao = `<div style="font-size:0.75rem; color:#0b509e; margin-top:4px;"><i class="ti ti-clock"></i> Tramitado para <strong>${escHtml(p.ultima_tramitacao.para_usuario)}</strong> em ${new Date(p.ultima_tramitacao.data).toLocaleString('pt-BR')} ${lidoInfo}</div>`;
       }
       const botaoParar = caixa === 'encaminhados'
         ? `<div style="margin-top:10px; border-top:1px dashed #dee2e6; padding-top:8px;">
@@ -675,6 +730,7 @@ async function testarConexaoProvedor(id) {
   if (id === 'groq') GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
   if (id === 'kimi') KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
   if (id === 'openrouter') OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
+  if (id === 'deepseek')   DEEPSEEK_KEY   = (document.getElementById('cfg-deepseek')?.value   || '').trim();
   if (id === 'ollama') {
     OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
     OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
@@ -759,6 +815,10 @@ function salvarConfig() {
   localStorage.setItem('sei_kimi_ativo', String(KIMI_ATIVO));
   OPENROUTER_ATIVO = !!document.getElementById('ativo-openrouter')?.checked;
   localStorage.setItem('sei_openrouter_ativo', String(OPENROUTER_ATIVO));
+  DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
+  localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
+  DEEPSEEK_ATIVO = !!document.getElementById('ativo-deepseek')?.checked;
+  localStorage.setItem('sei_deepseek_ativo', String(DEEPSEEK_ATIVO));
   OLLAMA_ATIVO = !!document.getElementById('ativo-ollama')?.checked;
   localStorage.setItem('sei_ollama_ativo', String(OLLAMA_ATIVO));
 
@@ -930,7 +990,9 @@ async function salvarNovoProcesso() {
   // unidade como HRA, e a comparação com o histórico buscava a unidade errada.
   const unidade = document.getElementById('np-unidade').value.trim();
   const oss = document.getElementById('np-oss').value.trim();
-  const gerencia = document.getElementById('np-gerencia').value.trim();
+  const gerencia      = document.getElementById('np-gerencia').value.trim();
+  const tipo_processo = document.getElementById('np-tipo-processo')?.value || '';
+  const data_limite   = document.getElementById('np-data-limite')?.value   || '';
   if (!titulo) return alert('Preencha ao menos o Título/Objeto.');
   const btn = document.getElementById('btn-criar-processo');
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Criando...'; }
@@ -1060,6 +1122,9 @@ async function fixarEvidenciaDaMemoria(id) {
   }
 }
 
+const COR_ALERTA   = { vermelho:'#dc3545', amarelo:'#f5c518', laranja:'#fd7e14', azul:'#0dcaf0' };
+const ICONE_ALERTA = { vermelho:'ti-alert-octagon', amarelo:'ti-alert-triangle', laranja:'ti-clock-pause', azul:'ti-file-check' };
+
 async function abrirProcesso(identificador) {
   const content = document.getElementById('content');
   if (!content) return;
@@ -1067,6 +1132,7 @@ async function abrirProcesso(identificador) {
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
+  api('processos/marcar-lido', { processo_id: resProc.processo.id, usuario: usuarioAtual.email }).catch(()=>{});
   _ultimoTextoRevisadoHash = null;
   const [resDocs, resConteudo, resTram] = await Promise.all([
     api('documentos/listar', { processo_id: processoAtual.id }),
@@ -1889,6 +1955,7 @@ const PROVEDORES_INFO = {
   groq:       { nome: 'Groq',       temChave: () => !!GROQ_KEY && GROQ_ATIVO,             invocar: invocarGroq },
   kimi:       { nome: 'Kimi',       temChave: () => !!KIMI_KEY && KIMI_ATIVO,             invocar: invocarKimi },
   openrouter: { nome: 'OpenRouter', temChave: () => !!OPENROUTER_KEY && OPENROUTER_ATIVO, invocar: invocarOpenRouter },
+  deepseek:   { nome: 'DeepSeek',   temChave: () => !!DEEPSEEK_KEY && DEEPSEEK_ATIVO,     invocar: invocarDeepSeek },
   ollama:     { nome: 'Ollama',     temChave: () => OLLAMA_ATIVO,                         invocar: invocarOllama }
 };
 
@@ -2146,6 +2213,28 @@ async function invocarOpenRouter(prompt, isChat, statusEl) {
   if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
   const json = await resp.json();
   const txt = json.choices?.[0]?.message?.content;
+  return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+async function invocarDeepSeek(prompt, isChat, statusEl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
+  const body = { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.3 };
+  if (!isChat) body.response_format = { type: 'json_object' };
+  let resp;
+  try {
+    resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
+      body: JSON.stringify(body), signal: controller.signal
+    });
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('DeepSeek não respondeu no tempo esperado. Tente de novo.');
+    throw new Error('Falha de rede ao chamar o DeepSeek: ' + e.message);
+  } finally { clearTimeout(timer); }
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).substring(0, 300)}`);
+  const json = await resp.json();
+  const txt = json.choices?.[0]?.message?.content;
+  if (!txt) throw new Error('O DeepSeek não devolveu conteúdo.');
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
@@ -3051,6 +3140,7 @@ function verificarIA() {
   if (GROQ_KEY && GROQ_KEY.trim() && GROQ_ATIVO) provedoresNuvem.push('Groq');
   if (KIMI_KEY && KIMI_KEY.trim() && KIMI_ATIVO) provedoresNuvem.push('Kimi');
   if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
+  if (DEEPSEEK_KEY   && DEEPSEEK_KEY.trim()   && DEEPSEEK_ATIVO)   provedoresNuvem.push('DeepSeek');
   if (provedoresNuvem.length) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
