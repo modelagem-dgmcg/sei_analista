@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sei-analista-shell-v5';
+const CACHE_NAME = 'sei-analista-shell-v4';
 const APP_SHELL = [
   './',
   './index.html',
@@ -23,10 +23,7 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   const url = new URL(event.request.url);
-  // Requisições da API e chamadas para IA nunca entram no cache: são dados vivos e sensíveis.
   if (url.hostname === 'script.google.com' || url.hostname.endsWith('googleusercontent.com')) return;
-  // Prioriza sempre o arquivo atual. O cache só é usado se o servidor local estiver
-  // indisponível, para que alterações em HTML/CSS/JS apareçam ao reabrir ou atualizar.
   event.respondWith(
     fetch(event.request).then(response => {
       if (url.origin === self.location.origin && response.ok) {
