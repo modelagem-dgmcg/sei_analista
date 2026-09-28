@@ -1330,7 +1330,35 @@ async function abrirProcesso(identificador) {
   const blocos = resConteudo.blocos || [];
   const tramitacoes = resTram.tramitacoes || [];
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
-  textoIntegralAtual = docs.map(d => {
+
+  // Ordem de leitura da IA: documentos estruturantes primeiro (contrato, aditivos),
+  // depois os de referência (planilhas, ofícios), por último os de trâmite (despachos).
+  // Dentro de cada grupo, mantém a ordem original do SEI (número no nome do arquivo).
+  // Isso garante que a IA lê a base contratual primeiro — e, em processos grandes que
+  // precisam ser cortados por limite de tokens, o que cai fora são os menos relevantes.
+  const _prioridadeTipo = nome => {
+    const n = (nome || '').toLowerCase();
+    if (/contrato[\s_-]*(de[\s_-]*gest[aã]o)?|cg[\s_-]*\d|cgm/.test(n)) return 0;
+    if (/aditivo|termo[\s_-]*aditivo/.test(n))                             return 1;
+    if (/apostilamento/.test(n))                                           return 2;
+    if (/anexo[\s_-]*(t[eé]cnico|financeiro|i+\b)/.test(n))               return 3;
+    if (/planilha|excel|xlsx|financ|or[cç]amento/.test(n))                 return 4;
+    if (/nota[\s_-]*t[eé]cnica|parecer|relat[oó]rio/.test(n))             return 5;
+    if (/of[ií]cio/.test(n))                                               return 6;
+    if (/despacho|informa[cç][aã]o|minuta/.test(n))                        return 7;
+    return 8; // outros
+  };
+  const _numSEINoNome = nome => {
+    const m = (nome || '').match(/^\[(\d+)\]/);
+    return m ? parseInt(m[1]) : 999;
+  };
+  const docsOrdenados = [...docs].sort((a, b) => {
+    const pa = _prioridadeTipo(a.nome_arquivo), pb = _prioridadeTipo(b.nome_arquivo);
+    if (pa !== pb) return pa - pb;
+    return _numSEINoNome(a.nome_arquivo) - _numSEINoNome(b.nome_arquivo);
+  });
+
+  textoIntegralAtual = docsOrdenados.map(d => {
     const textoDoc = blocos.filter(b => String(b.documento_id) === String(d.id))
       .sort((a, b) => a.bloco_num - b.bloco_num)
       .map(b => b.conteudo || '').join('');
@@ -2779,14 +2807,22 @@ async function rodarRaioX() {
         if (resHist.ok && resHist.encontrado) {
           const nomes = resHist.arquivos.map(a => a.nome).join(', ');
           if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Encontrado: <strong>${escHtml(nomes)}</strong></span>`;
-          historicoUnidadeBloco = '\n\nHISTÓRICO CONTRATUAL DA UNIDADE (contratos/aditivos anteriores dessa mesma unidade —\n' +
-            'o casamento do arquivo é por nome, então pode confundir unidades parecidas; trate como forte\n' +
-            'indício, não certeza):\n' +
+          // Usa o texto integral das guias (contrato + todos os aditivos/apostilamentos),
+          // não só valores/datas/CEP extraídos. Isso dá à IA o contexto real do contrato
+          // de referência da unidade, com a mesma profundidade de análise dos documentos
+          // importados manualmente.
+          historicoUnidadeBloco = '\n\nREFERÊNCIA CONTRATUAL DA UNIDADE (fonte: Google Drive, pasta LEIS E DECRETOS)\n' +
+            'IMPORTANTE: use este bloco para comparar cláusulas, valores, metas e datas com os documentos do processo atual.\n' +
             resHist.arquivos.map(a => {
-              let bloco = `\n--- ${a.nome} ---\n`;
-              if (a.valores?.length) bloco += 'VALORES:\n' + a.valores.map(v => `  • ${v.valor}`).join('\n') + '\n';
-              if (a.datas?.length) bloco += 'DATAS:\n' + a.datas.map(v => `  • ${v.valor}`).join('\n') + '\n';
-              if (a.cep?.length) bloco += 'CEP:\n' + a.cep.map(v => `  • ${v.valor}`).join('\n') + '\n';
+              let bloco = `\n===== ${a.nome} (Drive) =====\n`;
+              if (a.texto) {
+                bloco += a.texto;
+              } else {
+                // Fallback para versão antiga sem texto completo
+                if (a.valores?.length) bloco += 'VALORES: ' + a.valores.map(v => v.valor).join(', ') + '\n';
+                if (a.datas?.length)   bloco += 'DATAS: '   + a.datas.map(v => v.valor).join(', ')   + '\n';
+                if (a.cep?.length)     bloco += 'CEP: '     + a.cep.map(v => v.valor).join(', ')     + '\n';
+              }
               return bloco;
             }).join('\n');
         } else if (resHist.ok && !resHist.encontrado) {
