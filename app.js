@@ -7,8 +7,8 @@
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
 // VERSÃO: atualize BUILD_DATE sempre que entregar um arquivo novo — é o que confirma
 // que o código novo está rodando, sem abrir DevTools.
-const BUILD_VERSION = '2026-09-28 v21.2';
-const BUILD_DATE    = '28/09/2026 13h';
+const BUILD_VERSION = '2026-09-28 v21.3';
+const BUILD_DATE    = '28/09/2026 14h';
 // matrícula 18515045.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -64,7 +64,7 @@ const TEXTO_SOBRE_FERRAMENTA = `
   <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
   <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
     Ferramenta da DGMCG e da GGPCG para apoiar a análise de processos de Contrato de Gestão
-    com Organizações Osiciais de Saúde na SES-PE.
+    com Organizações Sociais de Saúde na SES-PE.
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:10px;">O que ele faz por você</h3>
@@ -1499,9 +1499,8 @@ async function rodarRaioX() {
     } else if (!p.unidade) {
       if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Processo sem "unidade" definida — não há como buscar no Drive.</span>`;
     } else {
-      // Mensagem visível no status e no banner para avisar que está lendo o Drive
       if (bannerDetalhe) bannerDetalhe.textContent += ' · Buscando contratos no Google Drive (LEIS E DECRETOS)...';
-      st.innerHTML = `<span class="spinner"></span> Buscando contratos e aditivos antigos de "${escHtml(p.unidade)}" no Google Drive...`;
+      st.innerHTML = `<span class="spinner"></span> Buscando contratos e aditivos antigos de "${escHtml(p.unidade)}" no Google Drive (LEIS E DECRETOS)...`;
       try {
         const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade });
         if (resHist.ok && resHist.encontrado) {
