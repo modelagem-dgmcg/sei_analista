@@ -370,6 +370,111 @@ async function atualizarContagensSidebar() {
   }
 }
 
+// ==================== MENSAGEIRO ====================
+let _msgConversaAtual = null;
+let _msgContatosCache = null;
+
+async function toggleMensageiro() {
+  const painel = document.getElementById('painel-mensageiro');
+  if (!painel) return;
+  if (painel.style.display === 'none') {
+    painel.style.display = 'block';
+    await abrirListaContatos();
+  } else {
+    painel.style.display = 'none';
+    _msgConversaAtual = null;
+  }
+}
+
+async function abrirListaContatos() {
+  const listaEl = document.getElementById('msg-lista-contatos');
+  const convEl  = document.getElementById('msg-conversa');
+  if (!listaEl || !convEl) return;
+  convEl.style.display = 'none';
+  listaEl.style.display = 'block';
+  listaEl.innerHTML = '<div style="padding:8px 10px; font-size:0.72rem; color:#adb5bd;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin:0 4px 0 0;"></span> Carregando...</div>';
+  const res = await api('mensagens/contatos', { usuario: usuarioAtual.email });
+  if (!res.ok) { listaEl.innerHTML = '<div style="padding:8px 10px; font-size:0.72rem; color:#f87171;">Erro ao carregar contatos.</div>'; return; }
+  _msgContatosCache = res;
+  let html = '';
+  if (res.grupos?.length) {
+    html += '<div style="padding:4px 10px 2px; font-size:0.65rem; font-weight:700; color:#adb5bd; text-transform:uppercase;">Grupos</div>';
+    html += res.grupos.map(g => `
+      <div onclick="abrirConversa('${escAttr(g.conversa_id)}','${escAttr(g.nome)}','grupo')"
+           style="padding:6px 10px; cursor:pointer; font-size:0.78rem; display:flex; align-items:center; gap:6px;"
+           onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background=''">
+        <i class="ti ti-users" style="color:#6f42c1; font-size:0.9rem;"></i>
+        <span>${escHtml(g.nome)}</span>
+      </div>`).join('');
+  }
+  if (res.individuais?.length) {
+    html += '<div style="padding:4px 10px 2px; margin-top:4px; font-size:0.65rem; font-weight:700; color:#adb5bd; text-transform:uppercase;">Individual</div>';
+    html += res.individuais.map(c => `
+      <div onclick="abrirConversa('${escAttr(c.conversa_id)}','${escAttr(c.nome)}','dm')"
+           style="padding:6px 10px; cursor:pointer; font-size:0.78rem; display:flex; align-items:center; gap:6px;"
+           onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background=''">
+        <i class="ti ti-user" style="color:#0b509e; font-size:0.9rem;"></i>
+        <span>${escHtml(c.nome)}</span>
+      </div>`).join('');
+  }
+  listaEl.innerHTML = html || '<div style="padding:8px 10px; font-size:0.72rem; color:#adb5bd;">Nenhum contato encontrado.</div>';
+}
+
+async function abrirConversa(conversaId, nome, tipo) {
+  _msgConversaAtual = conversaId;
+  const listaEl   = document.getElementById('msg-lista-contatos');
+  const convEl    = document.getElementById('msg-conversa');
+  const nomeEl    = document.getElementById('msg-conversa-nome');
+  const histEl    = document.getElementById('msg-historico');
+  if (!listaEl || !convEl || !nomeEl || !histEl) return;
+  listaEl.style.display = 'none';
+  convEl.style.display  = 'block';
+  nomeEl.textContent    = nome;
+  histEl.innerHTML      = '<div style="font-size:0.72rem; color:#adb5bd; text-align:center; padding:8px;">Carregando...</div>';
+  const res = await api('mensagens/listar', { conversa_id: conversaId, usuario: usuarioAtual.email });
+  if (!res.ok) { histEl.innerHTML = '<div style="font-size:0.72rem; color:#f87171; text-align:center; padding:8px;">Erro ao carregar mensagens.</div>'; return; }
+  _renderMensagens(res.mensagens || []);
+  document.getElementById('msg-input')?.focus();
+}
+
+function _renderMensagens(msgs) {
+  const histEl = document.getElementById('msg-historico');
+  if (!histEl) return;
+  if (!msgs.length) { histEl.innerHTML = '<div style="font-size:0.72rem; color:#adb5bd; text-align:center; padding:8px;">Sem mensagens ainda. Diga olá!</div>'; return; }
+  histEl.innerHTML = msgs.map(m => {
+    const meu = String(m.de_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase();
+    const hora = m.enviado_em ? new Date(m.enviado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div style="
+      max-width:90%; padding:5px 8px; border-radius:8px; font-size:0.76rem; line-height:1.4;
+      align-self:${meu ? 'flex-end' : 'flex-start'};
+      background:${meu ? '#0b509e' : 'rgba(255,255,255,0.12)'};
+      color:#fff;">
+      ${!meu ? `<div style="font-size:0.65rem; color:#93c5fd; margin-bottom:2px;">${escHtml(m.de_nome)}</div>` : ''}
+      ${escHtml(m.texto)}
+      <div style="font-size:0.62rem; color:rgba(255,255,255,0.5); text-align:right; margin-top:2px;">${hora}</div>
+    </div>`;
+  }).join('');
+  histEl.scrollTop = histEl.scrollHeight;
+}
+
+async function enviarMensagem() {
+  const input = document.getElementById('msg-input');
+  const texto = (input?.value || '').trim();
+  if (!texto || !_msgConversaAtual) return;
+  input.value = '';
+  const res = await api('mensagens/enviar', { de_usuario: usuarioAtual.email, conversa_id: _msgConversaAtual, texto });
+  if (!res.ok) { mostrarToast('Erro ao enviar mensagem: ' + (res.erro || '')); return; }
+  // Recarrega o histórico
+  const hist = await api('mensagens/listar', { conversa_id: _msgConversaAtual, usuario: usuarioAtual.email });
+  if (hist.ok) _renderMensagens(hist.mensagens || []);
+}
+
+function voltarListaContatos() {
+  _msgConversaAtual = null;
+  document.getElementById('msg-lista-contatos').style.display = 'block';
+  document.getElementById('msg-conversa').style.display = 'none';
+}
+
 // ==================== AVISO DE CHEGADA (processo novo / achado pendente) ====================
 // Checagem periódica discreta — o backend (Apps Script) não sustenta conexão aberta,
 // então isso não é "em tempo real", é "a cada X segundos". Pra esse tipo de aviso,
