@@ -197,7 +197,7 @@ async function fazerLogin() {
       }
       document.getElementById('sidebar-gerencia').textContent = usuarioAtual.gerencia;
       document.getElementById('sidebar-email').textContent = usuarioAtual.email;
-      showView('dashboard', 'entrada');
+      showView('dashboard', 'panorama');
       iniciarMonitoramentoNovosItens();
       carregarAlertasSidebar();
       setInterval(carregarAlertasSidebar, 300000);
@@ -494,14 +494,86 @@ async function _verificarNovosItens() {
   }
 }
 
+async function renderPanorama(content, abasHtml) {
+  // Busca os contadores das 4 caixas em paralelo — não bloqueia nada
+  const [resEntrada, resAndamento, resEnc, resConc, resPerguntas, resAlertas] = await Promise.all([
+    api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'entrada' }),
+    api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'andamento' }),
+    api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'encaminhados' }),
+    api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'concluidos' }),
+    api('achados/contar-pendentes', { usuario: usuarioAtual.email }),
+    api('processos/alertas', { usuario: usuarioAtual.email })
+  ]);
+  const n = res => (res.ok && res.processos) ? res.processos.length : 0;
+  const qtdEntrada     = n(resEntrada);
+  const qtdAndamento   = n(resAndamento);
+  const qtdEncaminhados = n(resEnc);
+  const qtdConcluidos  = n(resConc);
+  const qtdPerguntas   = (resPerguntas.ok && resPerguntas.pendentes) || 0;
+  const alertas        = (resAlertas.ok && resAlertas.alertas) || [];
+  const qtdAlertas     = alertas.length;
+
+  const bloco = (icone, rotulo, qtd, caixa, cor, destaque) => `
+    <div onclick="showView('dashboard','${caixa}')" style="
+      cursor:pointer; padding:16px 20px; border-radius:10px; background:#fff;
+      border:1px solid ${destaque ? cor : '#dee2e6'};
+      border-left:4px solid ${cor};
+      display:flex; align-items:center; gap:14px;
+      transition:box-shadow .15s;"
+      onmouseenter="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'"
+      onmouseleave="this.style.boxShadow='none'">
+      <div style="font-size:1.6rem; color:${cor}; line-height:1;"><i class="ti ${icone}"></i></div>
+      <div>
+        <div style="font-size:1.8rem; font-weight:700; color:${cor}; line-height:1;">${qtd}</div>
+        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">${rotulo}</div>
+      </div>
+    </div>`;
+
+  const blocoAlerta = (a) => {
+    const cores = { vermelho:'#dc3545', amarelo:'#f5c518', laranja:'#fd7e14', azul:'#0dcaf0' };
+    const cor = cores[a.cor] || '#868e96';
+    return `<div onclick="abrirProcesso('${escAttr(a.numero_sei||String(a.processo_id))}')" style="
+      cursor:pointer; padding:8px 12px; border-radius:6px; background:#fff;
+      border-left:3px solid ${cor}; border:1px solid ${cor}33;
+      font-size:0.8rem; display:flex; gap:10px; align-items:flex-start;"
+      onmouseenter="this.style.background='#f8f9fa'" onmouseleave="this.style.background='#fff'">
+      <span style="color:${cor}; font-size:1rem; margin-top:1px;"><i class="ti ${COR_ALERTA[a.cor] ? ICONE_ALERTA[a.cor] : 'ti-bell'}"></i></span>
+      <div>
+        <div style="font-weight:600; color:${cor};">${escHtml(a.mensagem)}</div>
+        <div style="color:var(--text-muted); font-size:0.75rem;">${escHtml(a.titulo||a.numero_sei||'')}</div>
+      </div>
+    </div>`;
+  };
+
+  content.innerHTML = abasHtml + `
+    <div style="margin-bottom:20px;">
+      <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px;">Panorama — ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:18px;">
+        ${bloco('ti-inbox',       'Na caixa de entrada',   qtdEntrada,      'entrada',      '#0b509e', qtdEntrada > 0)}
+        ${bloco('ti-loader',      'Em andamento',          qtdAndamento,    'andamento',    '#6f42c1', false)}
+        ${bloco('ti-share',       'Encaminhados',          qtdEncaminhados, 'encaminhados', '#0d6efd', false)}
+        ${bloco('ti-archive',     'Concluídos',            qtdConcluidos,   'concluidos',   '#198754', false)}
+        ${bloco('ti-message-question', 'Perguntas pendentes', qtdPerguntas, 'perguntas',   '#fd7e14', qtdPerguntas > 0)}
+      </div>
+      ${qtdAlertas ? `
+        <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">Alertas ativos (${qtdAlertas})</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          ${alertas.slice(0,6).map(blocoAlerta).join('')}
+          ${qtdAlertas > 6 ? `<div style="font-size:0.75rem; color:var(--text-muted); padding:4px 0;">+${qtdAlertas-6} alerta(s) — veja a sidebar</div>` : ''}
+        </div>` : `
+        <div style="font-size:0.82rem; color:#2b8a3e;"><i class="ti ti-check"></i> Nenhum alerta no momento.</div>`}
+    </div>`;
+}
+
 async function renderDashboard(caixa = 'entrada') {
   const content = document.getElementById('content');
-  content.innerHTML = '<span class="spinner"></span> Carregando processos...';
+  content.innerHTML = '<span class="spinner"></span> Carregando...';
   await atualizarContagensSidebar();
   const abasHtml = `
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; border-bottom:1px solid #dee2e6; padding-bottom:12px;">
-      <button class="btn btn-sm ${caixa === 'entrada' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','entrada')"><i class="ti ti-inbox"></i> Caixa de Entrada</button>
-      <button class="btn btn-sm ${caixa === 'andamento' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','andamento')"><i class="ti ti-loader"></i> Em Andamento</button>
+      <button class="btn btn-sm ${caixa === 'panorama' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','panorama')"><i class="ti ti-layout-dashboard"></i> Panorama</button>
+      <button class="btn btn-sm ${caixa === 'entrada' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','entrada')"><i class="ti ti-inbox"></i> Entrada</button>
+      <button class="btn btn-sm ${caixa === 'andamento' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','andamento')"><i class="ti ti-loader"></i> Andamento</button>
       <button class="btn btn-sm ${caixa === 'encaminhados' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','encaminhados')"><i class="ti ti-share"></i> Encaminhados</button>
       <button class="btn btn-sm ${caixa === 'concluidos' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','concluidos')"><i class="ti ti-archive"></i> Concluídos</button>
       <button class="btn btn-sm ${caixa === 'perguntas' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','perguntas')"><i class="ti ti-message-question"></i> Perguntas <span id="badge-perguntas"></span></button>
@@ -511,6 +583,7 @@ async function renderDashboard(caixa = 'entrada') {
     const b = document.getElementById('badge-perguntas');
     if (b && r.ok && r.pendentes > 0) b.innerHTML = `<span style="background:#ffc107; color:#000; padding:0 6px; border-radius:10px; font-size:0.7rem; font-weight:bold;">${r.pendentes}</span>`;
   }).catch(() => {});
+  if (caixa === 'panorama') { await renderPanorama(content, abasHtml); return; }
   if (caixa === 'perguntas') {
     content.innerHTML = abasHtml + '<div id="area-perguntas"><span class="spinner"></span> Carregando perguntas...</div>';
     await renderPerguntasAchados();
