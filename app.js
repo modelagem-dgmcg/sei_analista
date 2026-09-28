@@ -1,10 +1,3 @@
-O erro `fecharModal is not defined` aconteceu porque a função `fecharModal` (e outras funções fundamentais da interface como `criarModal` e `escHtml`) ficou de fora do final do arquivo na última cópia rápida.
-
-Aqui está o seu **`app.js` 100% completo, unificado e corrigido**, contendo todas as funções de suporte da interface, o banner de conferência embutido no Bloco 1, o cronômetro em minutos/segundos e a leitura do Google Drive.
-
-Basta copiar e substituir todo o conteúdo do seu arquivo **`app.js`**:
-
-```javascript
 // ============================================================
 // SEI ANALISTA v21.0 — app.js
 // ============================================================
@@ -12,10 +5,10 @@ Basta copiar e substituir todo o conteúdo do seu arquivo **`app.js`**:
 // ==================== REGISTRO DE AUTORIA ====================
 // © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
-// VERSÃO: atualize BUILD_DATE sempre que entregar un arquivo novo — é o que confirma
+// VERSÃO: atualize BUILD_DATE sempre que entregar um arquivo novo — é o que confirma
 // que o código novo está rodando, sem abrir DevTools.
-const BUILD_VERSION = '2026-09-28 v21.5';
-const BUILD_DATE    = '28/09/2026 15h';
+const BUILD_VERSION = '2026-09-28 v21.6';
+const BUILD_DATE    = '28/09/2026 15h30';
 // matrícula 18515045.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -1161,294 +1154,171 @@ async function salvarNovoProcesso() {
   abrirProcesso(res.processo.numero_sei || String(res.processo.id));
 }
 
-async function salvarNotaEvidencia(referencia, nota) {
-  if (!processoAtual) return;
-  try {
-    await api('notas/salvar', { processo_id: processoAtual.id, referencia, nota, usuario: usuarioAtual.email });
-  } catch (e) {
-    console.warn('Falha ao salvar nota da evidência:', e.message);
+// Funções auxiliares de extração e suporte numérico para a Checagem
+function extrairContexto(texto, termo, raio) {
+  const idx = texto.indexOf(termo);
+  if (idx === -1) return '';
+  return texto.substring(Math.max(0, idx - raio), Math.min(texto.length, idx + termo.length + raio)).replace(/\s+/g, ' ').trim();
+}
+function extrairValoresMonetarios(texto) { return [...new Set(texto.match(/R\$\s?[\d.]+,\d{2}/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
+function extrairDatas(texto) { return [...new Set(texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
+function extrairNumerosProcesso(texto) {
+  const encontrados = [...new Set(texto.match(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g) || [])];
+  return encontrados.slice(0, 10).map(original => ({
+    valor: original.replace(/\s+/g, ''),
+    contexto: extrairContexto(texto, original, 40)
+  }));
+}
+function extrairCEPs(texto) { return [...new Set(texto.match(/\b\d{2}\.?\d{3}-\d{3}\b/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 45) })); }
+
+function dividirPorDocumento(textoIntegral) {
+  const partes = textoIntegral.split(/--- DOC: (.+?) ---/).filter(p => p.trim().length > 0);
+  const docs = [];
+  for (let i = 0; i < partes.length; i += 2) {
+    if (partes[i + 1] !== undefined) docs.push({ nome: partes[i].trim(), texto: partes[i + 1] });
   }
+  return docs;
 }
 
-function abrirPainelEvidencias() {
-  if (painelEvidenciasWin && !painelEvidenciasWin.closed) { painelEvidenciasWin.focus(); return; }
-  painelEvidenciasWin = window.open('', 'PainelEvidencias', 'width=550,height=850,left=2000,top=100');
-  painelEvidenciasWin.document.write(`
-      <html>
-      <head>
-          <title>Painel de Evidências - SEI Analista</title>
-          <style>
-              body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f3f5; color: #212529; padding: 20px; margin: 0; }
-              h2 { font-size: 1.3rem; border-bottom: 3px solid #0dcaf0; padding-bottom: 10px; margin-top: 0; color: #343a40; }
-              .evidencia-card { background: #fff; border-left: 5px solid #0dcaf0; padding: 15px; margin-bottom: 15px; border-radius: 6px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-              .evidencia-tag { font-size: 0.75rem; font-weight: bold; background: #e9ecef; padding: 4px 10px; border-radius: 12px; margin-bottom: 10px; display: inline-block; color: #495057; text-transform: uppercase; letter-spacing: 0.5px;}
-              .evidencia-title { font-weight: bold; font-size: 1rem; margin-bottom: 5px; color: #212529;}
-              .evidencia-doc { font-size: 0.75rem; background: #fff3cd; color: #856404; padding: 4px 8px; border-radius: 4px; margin-bottom: 10px; display: inline-block; border: 1px solid #ffeeba; cursor: pointer;}
-              .evidencia-text { font-size: 0.9rem; line-height: 1.6; color: #495057; white-space: pre-wrap;}
-              .evidencia-nota { width: 100%; border: 1px solid #dee2e6; border-radius: 6px; padding: 8px 10px; font-size: 0.85rem; font-family: inherit; color: #212529; margin-top: 10px; resize: none; overflow: hidden; min-height: 34px; box-sizing: border-box; }
-              .evidencia-nota:focus { outline: none; border-color: #0dcaf0; box-shadow: 0 0 0 2px rgba(13,202,240,0.15); }
-              .evidencia-nota-label { font-size: 0.72rem; color: #868e96; text-transform: uppercase; letter-spacing: 0.4px; margin-top: 10px; display: block; }
-              .watermark { text-align: center; margin-top: 30px; font-size: 0.75rem; color: #adb5bd; border-top: 1px solid #dee2e6; padding-top: 15px; }
-              .btn-remove { background: #ffe3e3; color: #e03131; border: 1px solid #ffc9c9; padding: 6px 12px; border-radius: 4px; cursor: pointer; font-size: 0.75rem; float: right; font-weight: bold; transition: 0.2s;}
-              .btn-remove:hover { background: #fa5252; color: white;}
-          </style>
-      </head>
-      <body>
-          <h2>📌 Painel de Evidências</h2>
-          <p style="font-size: 0.85rem; color: #6c757d; margin-bottom: 20px;">As informações que você alfinetar no Monitor 1 aparecerão aqui. As anotações abaixo de cada card são salvas automaticamente no processo — pode fechar esta janela sem perder nada.</p>
-          <div id="evidencias-container"></div>
-          <div class="watermark">&copy; 2026 SES-PE — DGMCG/GGPCG.<br>Desenvolvido por Cleuton Vieira.</div>
-          <script>
-              function removerEvidencia(id) { var el = document.getElementById(id); if(el) el.remove(); }
-              function copiarDocID(texto) { navigator.clipboard.writeText(texto).then(() => alert('Documento Copiado: ' + texto + '\\n\\nCole na barra de pesquisa do SEI!')); }
-              function ajustarAlturaNota(el) {
-                  el.style.height = 'auto';
-                  el.style.height = (el.scrollHeight) + 'px';
-              }
-              var _debounceNotas = {};
-              function salvarNotaComDebounce(referencia, valor, cardId) {
-                  clearTimeout(_debounceNotas[cardId]);
-                  _debounceNotas[cardId] = setTimeout(function() {
-                      if (window.opener && window.opener.salvarNotaEvidencia) {
-                          window.opener.salvarNotaEvidencia(referencia, valor);
-                      }
-                  }, 800);
-              }
-          </script>
-      </body>
-      </html>
-  `);
-  painelEvidenciasWin.document.close();
+function montarDadosExtraidos(textoIntegral) {
+  const docs = dividirPorDocumento(textoIntegral);
+  if (!docs.length) return '(nenhum documento)';
+  return docs.map(d => {
+    const valores = extrairValoresMonetarios(d.texto);
+    const datas = extrairDatas(d.texto);
+    const numsProcesso = extrairNumerosProcesso(d.texto);
+    const ceps = extrairCEPs(d.texto);
+    let bloco = `\n--- ${d.nome} ---\n`;
+    if (valores.length) bloco += 'VALORES:\n' + valores.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (datas.length) bloco += 'DATAS:\n' + datas.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (numsProcesso.length) bloco += 'Nº PROCESSO:\n' + numsProcesso.map(v => `  • ${v.valor}`).join('\n') + '\n';
+    if (ceps.length) bloco += 'CEP:\n' + ceps.map(v => `  • ${v.valor}  (trecho: "...${v.contexto}...")`).join('\n') + '\n';
+    if (!valores.length && !datas.length && !numsProcesso.length && !ceps.length) bloco += '(nenhum valor/data/nº de processo/CEP detectado)\n';
+    return bloco;
+  }).join('\n');
 }
 
-async function fixarEvidenciaDaMemoria(id) {
-  const dados = window.memoriaEvidencias[id];
-  if (!dados) return alert("Erro: Dados não encontrados na memória.");
-  if (!painelEvidenciasWin || painelEvidenciasWin.closed) abrirPainelEvidencias();
-  const doc = painelEvidenciasWin.document;
-  if (doc.getElementById('ev-' + id)) { painelEvidenciasWin.focus(); return; }
-  const container = doc.getElementById('evidencias-container');
-  if (container) {
-    const referencia = `${dados.tag}: ${dados.titulo}`;
-    const referenciaAttr = escAttr(referencia);
-    let notaExistente = '';
-    try {
-      const resNotas = await api('notas/listar', { processo_id: processoAtual.id });
-      const encontrada = (resNotas.notas || []).find(n => n.referencia === referencia);
-      if (encontrada) notaExistente = encontrada.nota;
-    } catch (e) { console.warn('Falha ao buscar nota existente:', e.message); }
-    let htmlDoc = dados.doc ? `<div class="evidencia-doc" onclick="copiarDocID('${dados.doc}')" title="Clique para copiar">📄 Origem: ${dados.doc}</div>` : '';
-    const html = `
-        <div class="evidencia-card" id="ev-${id}">
-            <button class="btn-remove" onclick="removerEvidencia('ev-${id}')">Remover</button>
-            <div class="evidencia-tag">${dados.tag}</div>
-            <div class="evidencia-title">${dados.titulo}</div>
-            ${htmlDoc}
-            <div class="evidencia-text">${dados.texto}</div>
-            <label class="evidencia-nota-label">Sua anotação (salva automaticamente)</label>
-            <textarea class="evidencia-nota" placeholder="Digite aqui uma observação sobre essa evidência..." rows="1"
-              oninput="ajustarAlturaNota(this); salvarNotaComDebounce('${referenciaAttr}', this.value, '${id}')">${escHtml(notaExistente)}</textarea>
-        </div>`;
-    container.insertAdjacentHTML('afterbegin', html);
-    const textareaNova = doc.getElementById('ev-' + id).querySelector('.evidencia-nota');
-    if (textareaNova) { textareaNova.style.height = 'auto'; textareaNova.style.height = textareaNova.scrollHeight + 'px'; }
-    painelEvidenciasWin.focus();
-  }
+// Funções de conferência por código
+function _numeroBR(txt) {
+  let t = String(txt).replace(/R\$\s?/g, '').replace(/\s+/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else t = t.replace(/\./g, '');
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
 }
 
-const COR_ALERTA   = { vermelho:'#dc3545', amarelo:'#f5c518', laranja:'#fd7e14', azul:'#0dcaf0' };
-const ICONE_ALERTA = { vermelho:'ti-alert-octagon', amarelo:'ti-alert-triangle', laranja:'ti-clock-pause', azul:'ti-file-check' };
+function _formatarBR(n) {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
 
-async function abrirProcesso(identificador) {
-  const content = document.getElementById('content');
-  if (!content) return;
-  content.innerHTML = '<span class="spinner"></span> Carregando processo...';
-  const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
-  if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
-  processoAtual = resProc.processo;
-  api('processos/marcar-lido', { processo_id: resProc.processo.id, usuario: usuarioAtual.email }).catch(()=>{});
-  _ultimoTextoRevisadoHash = null;
-  const [resDocs, resConteudo, resTram] = await Promise.all([
-    api('documentos/listar', { processo_id: processoAtual.id }),
-    api('conteudo/listar', { processo_id: processoAtual.id }),
-    api('tramitacoes/listar', { processo_id: processoAtual.id })
-  ]);
-  const docs = resDocs.documentos || [];
-  const blocos = resConteudo.blocos || [];
-  const tramitacoes = resTram.tramitacoes || [];
-  _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
+function _numerosDaLinha(linha) {
+  const limpa = linha
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
+    .replace(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g, ' ')
+    .replace(/\b\d{2}\.?\d{3}-\d{3}\b/g, ' ');
+  const achados = limpa.match(/\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?/g) || [];
+  return achados.map(_numeroBR).filter(n => n !== null);
+}
 
-  const _prioridadeTipo = nome => {
-    const n = (nome || '').toLowerCase();
-    if (/contrato[\s_-]*(de[\s_-]*gest[aã]o)?|cg[\s_-]*\d|cgm/.test(n)) return 0;
-    if (/aditivo|termo[\s_-]*aditivo/.test(n))                               return 1;
-    if (/apostilamento/.test(n))                                            return 2;
-    if (/anexo[\s_-]*(t[eé]cnico|financeiro|i+\b)/.test(n))                return 3;
-    if (/planilha|excel|xlsx|financ|or[cç]amento/.test(n))                  return 4;
-    if (/nota[\s_-]*t[eé]cnica|parecer|relat[oó]rio/.test(n))              return 5;
-    if (/of[ií]cio/.test(n))                                                return 6;
-    if (/despacho|informa[cç][aã]o|minuta/.test(n))                          return 7;
-    return 8;
-  };
-  const _numSEINoNome = nome => {
-    const m = (nome || '').match(/^\[(\d+)\]/);
-    return m ? parseInt(m[1]) : 999;
-  };
-  const docsOrdenados = [...docs].sort((a, b) => {
-    const pa = _prioridadeTipo(a.nome_arquivo), pb = _prioridadeTipo(b.nome_arquivo);
-    if (pa !== pb) return pa - pb;
-    return _numSEINoNome(a.nome_arquivo) - _numSEINoNome(b.nome_arquivo);
+function _paginaNaPosicao(texto, posicao) {
+  const marcas = [...texto.substring(0, posicao).matchAll(/--- PÁGINA (\d+) ---/g)];
+  return marcas.length ? marcas[marcas.length - 1][1] : null;
+}
+
+function conferirSomasPorCodigo(textoIntegral) {
+  const achados = [];
+  const vistosPorDoc = {};
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    vistosPorDoc[d.nome] = new Set();
+    let achadosNesteDoc = 0;
+    const linhas = d.texto.split('\n');
+    let posicao = 0;
+    const posicaoDaLinha = linhas.map(l => { const p = posicao; posicao += l.length + 1; return p; });
+
+    linhas.forEach((linha, i) => {
+      if (!/\btotal\b/i.test(linha)) return;
+      const numsTotal = _numerosDaLinha(linha);
+      if (!numsTotal.length) return;
+
+      const itens = [];
+      for (let j = i - 1; j >= 0 && itens.length < 40; j--) {
+        const l = linhas[j];
+        if (/--- PÁGINA \d+ ---/.test(l) || /total/i.test(l)) break;
+        const nums = _numerosDaLinha(l);
+        if (!nums.length) break;
+        itens.unshift(nums);
+      }
+      if (itens.length < 2) return;
+
+      const mesmaQtd = itens.every(n => n.length === numsTotal.length);
+      const colunas = mesmaQtd ? numsTotal.map((_, c) => c) : [null];
+      colunas.forEach(c => {
+        const valorTotal = c === null ? numsTotal[numsTotal.length - 1] : numsTotal[c];
+        const soma = itens.reduce((acc, n) => acc + (c === null ? n[n.length - 1] : n[c]), 0);
+        if (Math.abs(soma - valorTotal) <= 0.01) return;
+        if (achadosNesteDoc >= 3) return;
+        const assinatura = `${_formatarBR(soma)}→${_formatarBR(valorTotal)}`;
+        if (vistosPorDoc[d.nome].has(assinatura)) return;
+        vistosPorDoc[d.nome].add(assinatura);
+        achadosNesteDoc++;
+        const pagina = _paginaNaPosicao(d.texto, posicaoDaLinha[i]);
+        achados.push({
+          tag: 'Cálculo', setor: 'SFCG',
+          titulo: 'Soma da tabela não bate com o total informado',
+          evidencia: linha.trim(),
+          explicacao: `As ${itens.length} linhas logo acima do total somam ${_formatarBR(soma)}, mas o total informado é ${_formatarBR(valorTotal)} (diferença de ${_formatarBR(Math.abs(soma - valorTotal))}).`,
+          sugestao: `Refaça a soma das linhas dessa tabela${pagina ? ' (página ' + pagina + ')' : ''} e corrija o valor errado.`,
+          doc_origem: d.nome, pagina, verificar: true, conferido_por_codigo: true
+        });
+      });
+    });
+  });
+  return achados;
+}
+
+function conferirValoresRotuladosPorCodigo(textoIntegral) {
+  const porRotulo = {};
+  const regex = /(valor\s+(?:global|total|mensal|anual|estimado|contratual|do\s+contrato)(?:\s+do\s+contrato)?(?:\s+de\s+gest[aã]o)?)[^\n]{0,60}?(R\$\s?[\d.]+,\d{2})/gi;
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    let m;
+    while ((m = regex.exec(d.texto)) !== null) {
+      const rotulo = m[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+      (porRotulo[rotulo] = porRotulo[rotulo] || []).push({
+        valorTxt: m[2].replace(/\s+/g, ' '), valor: _numeroBR(m[2]), doc: d.nome, pagina: _paginaNaPosicao(d.texto, m.index)
+      });
+    }
+    regex.lastIndex = 0;
   });
 
-  textoIntegralAtual = docsOrdenados.map(d => {
-    const textoDoc = blocos.filter(b => String(b.documento_id) === String(d.id))
-      .sort((a, b) => a.bloco_num - b.bloco_num)
-      .map(b => b.conteudo || '').join('');
-    return `\n\n--- DOC: ${d.nome_arquivo} ---\n` + textoDoc;
-  }).join('');
-  let docsHtml = '<span style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum documento anexado ainda.</span>';
-  if (docs.length > 0) {
-    docsHtml = '<ul style="margin:0; padding-left:20px; font-size:0.85rem; color:#495057; max-height: 120px; overflow-y: auto;">';
-    docs.forEach(d => {
-      let resumoTxt = '';
-      if (d.resumo_sensiveis) {
-        try {
-          const lista = JSON.parse(d.resumo_sensiveis);
-          resumoTxt = lista.length
-            ? ` <span style="color:#b45309; font-size:0.72rem;">(${lista.length} dado(s) sensível(is) coberto(s))</span>`
-            : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
-        } catch (e) { /* ignora */ }
-      }
-      const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO'
-        ? ' <span style="background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600;">✓ VERSÃO ASSINADA</span>' : '';
-      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${seloAssinado}${resumoTxt}</li>`;
+  const achados = [];
+  Object.entries(porRotulo).forEach(([rotulo, ocorrencias]) => {
+    const distintos = [...new Set(ocorrencias.map(o => o.valor))];
+    if (distintos.length < 2) return;
+    const lista = ocorrencias.slice(0, 8)
+      .map(o => `${o.valorTxt} em ${o.doc}${o.pagina ? ' (pág. ' + o.pagina + ')' : ''}`).join('; ');
+    achados.push({
+      tag: 'Cálculo', setor: 'SFCG',
+      titulo: `"${rotulo}" aparece com valores diferentes no processo`,
+      evidencia: lista,
+      explicacao: `O mesmo tipo de valor aparece com ${distintos.length} números diferentes: ${lista}.`,
+      sugestao: 'Confirme se a alteração decorre de aditivo ou apostilamento recente.',
+      doc_origem: ocorrencias[0].doc, pagina: ocorrencias[0].pagina, verificar: true, conferido_por_codigo: true
     });
-    docsHtml += '</ul>';
-  }
-  const p = processoAtual;
-  const sei = p.numero_sei || String(p.id);
-  let html = `
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
-        <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          ${_ultimaTramitacaoRecebida ? `<button class="btn btn-sm" onclick="devolverProcesso()" style="background-color:#d97706; color:#fff; border:none; font-weight:bold;"><i class="ti ti-corner-up-left"></i> Devolver</button>` : ''}
-          <button class="btn btn-sm" onclick="modalEncaminhar()" style="background-color:#495057; color:#fff; border:none; font-weight:bold;"><i class="ti ti-share"></i> Encaminhar</button>
-          <button class="btn btn-sm" onclick="finalizarProcesso()" style="background-color:#16a34a; color:#fff; border:none; font-weight:bold;"><i class="ti ti-check"></i> Finalizar</button>
-          <button class="btn btn-sm" onclick="abrirPainelEvidencias()" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"><i class="ti ti-columns"></i> Abrir Modo Tela Dupla</button>
-        </div>
-    </div>
-    <div style="background:#fff;border-radius:8px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid var(--action-primary);">
-      <h2 style="font-size:1.2rem;color:var(--text-dark); margin-bottom:5px;">${escHtml(sei)}</h2>
-      <p style="font-weight:600; font-size:1.05rem;">${escHtml(p.titulo)}</p>
-      <div style="margin-top:10px;font-size:0.85rem;color:var(--text-muted);">
-        <i class="ti ti-building"></i> Unidade: ${escHtml(p.unidade)} | OSS: ${escHtml(p.oss)}
-        &nbsp;·&nbsp; <i class="ti ti-flag"></i> ${escHtml(p.status)}
-        &nbsp;·&nbsp; <i class="ti ti-user"></i> Com: ${escHtml(p.responsavel_atual)}
-      </div>
-      <div style="margin-top:15px; background:#f8f9fa; border:1px solid #dee2e6; padding:12px; border-radius:6px;">
-        <div style="font-weight:600; font-size:0.85rem; color:var(--text-dark); margin-bottom:8px;"><i class="ti ti-paperclip"></i> Documentos Integrados (${docs.length}):</div>
-        ${docsHtml}
-      </div>
-      <div style="margin-top:15px;display:flex;gap:10px;">
-        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
-        <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
-        <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
-      </div>
-    </div>
+  });
+  return achados;
+}
 
-    <!-- 1. PAINEL DE CHECAGEM -->
-    <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:15px;"><i class="ti ti-microscope"></i> 1. Verificar Processo</h3>
-      <div style="display: flex; align-items: center; gap: 15px; flex-wrap:wrap;">
-          <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
-          <span id="contador-checagem" style="font-weight: bold; font-size: 0.95rem;"></span>
-      </div>
-
-      <!-- BANNER DE CONFERÊNCIA EMBUTIDO NO BLOCO 1 -->
-      <div id="banner-conferindo" class="hidden" style="margin-top:15px; background:var(--alert-bordeaux-light, #f8d7da); border:1px solid var(--alert-bordeaux, #8e1628); border-radius:var(--border-radius, 6px); padding:14px 18px; box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-        <div style="display:flex; align-items:center; gap:8px;">
-          <span style="width:10px; height:10px; border-radius:50%; background:var(--alert-bordeaux, #8e1628); flex-shrink:0;"></span>
-          <strong id="banner-conferindo-titulo" style="color:var(--alert-bordeaux, #8e1626); font-size:0.88rem; letter-spacing:0.2px;">ESTOU CONFERINDO OS DOCUMENTOS...</strong>
-        </div>
-        <div id="banner-conferindo-detalhe" style="font-size:0.8rem; color:#6b1521; margin-top:6px; margin-left:18px;"></div>
-        <div style="font-size:0.78rem; color:#6b1521; margin-top:3px; margin-left:18px; font-weight:600;">Tempo decorrido: <span id="banner-conferindo-timer">0s</span></div>
-      </div>
-
-      <label style="display:block; margin-top:14px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-historico-unidade" checked> "Comparar com contratos antigos da mesma unidade" — A busca é por nome de arquivo na pasta de referência do Google Drive (LEIS E DECRETOS), então pode confundir unidades parecidas. Por isso, o achado sempre vem marcado para você confirmar.
-      </label>
-      <div id="status-fonte-historico" style="margin-top:4px; font-size:0.78rem;"></div>
-      <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-legislacao-jurisprudencia"> "Buscar normas e decisões de tribunais na web (SES-PE, TCE, TCU)" — Pesquisa automática na internet por leis e jurisprudências. Recurso experimental e mais lento; o resultado pode estar desatualizado ou vir de fontes não oficiais, exigindo confirmação rigorosa antes de ser citado em um parecer.
-      </label>
-      <div id="ia-status" style="margin-top:15px;"></div>
-      <div id="painel-cards" style="margin-top:20px;"></div>
-    </div>
-
-    <!-- 2. PERGUNTAS AO PROCESSO -->
-    <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-message-circle"></i> 2. Pergunte ao Processo</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Tire dúvidas específicas sobre os anexos. O sistema investiga os arquivos e aponta o embasamento com precisão cirúrgica.</p>
-      <div id="chat-history" style="margin-bottom: 15px; max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px inset #e9ecef;">
-          <div style="color: #adb5bd; font-size: 0.85rem; text-align: center; font-style: italic;">O histórico do chat aparecerá aqui...</div>
-      </div>
-      <div style="display:flex; gap:10px;">
-         <input type="text" id="chat-input" placeholder="Ex: Qual o índice de reajuste da cláusula 4?" style="flex:1; padding:12px; border:1px solid #ced4da; border-radius:6px; outline:none; font-size: 0.95rem;" onkeypress="if(event.key === 'Enter') fazerPerguntaAoProcesso()">
-         <button class="btn btn-primary" onclick="fazerPerguntaAoProcesso()" id="btn-perguntar"><i class="ti ti-send"></i> Perguntar</button>
-      </div>
-    </div>
-
-    <!-- 3. PAINEL DE REVISÃO E LINGUAGEM SIMPLES -->
-    <div style="background:#f8f9fa; border:1px dashed #adb5bd; padding:20px; border-radius:8px; margin-bottom:30px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Revisão e Auditoria de Parecer</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole seu parecer, nota técnica, ofício ou qualquer minuta abaixo. A IA cruza seu texto com os documentos originais do processo para apontar melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
-      <textarea id="editor-final" placeholder="Cole aqui o texto que você escreveu, pra ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
-      <div style="display: flex; align-items: center; gap: 15px;">
-          <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
-          <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
-          <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
-      </div>
-      <div id="status-revisao" style="margin-top:15px;"></div>
-    </div>
-  `;
-  content.innerHTML = html;
-  if (window._resumoImportacaoPendente) {
-    content.insertAdjacentHTML('afterbegin', window._resumoImportacaoPendente);
-    window._resumoImportacaoPendente = null;
-  }
-  api('consultas/listar', { processo_id: processoAtual.id }).then(resConsultas => {
-    const consultas = resConsultas.consultas || [];
-    if (!consultas.length) return;
-    const historyEl = document.getElementById('chat-history');
-    if (!historyEl) return;
-    historyEl.innerHTML = consultas.map(c => `
-      <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
-          <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(c.pergunta)}
-      </div>
-      <div style="background:#e7f5ff; border: 1px solid #74c0fc; padding:10px 15px; border-radius:15px 15px 0 15px; align-self:flex-end; max-width:85%; font-size: 0.9rem; color: #0b509e;">
-          <strong><i class="ti ti-robot"></i> IA Investigadora:</strong><br>
-          <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(c.resposta)}</div>
-      </div>`).join('');
-    historyEl.insertAdjacentHTML('beforeend', '<div id="chat-divisor" style="border-top:1px dashed #dee2e6; margin:5px 0 2px; font-size:0.7rem; color:#adb5bd; text-align:center;">— perguntas anteriores —</div>');
-    historyEl.scrollTop = historyEl.scrollHeight;
-  }).catch(e => console.warn('Falha ao carregar histórico de consultas:', e.message));
-  api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
-    const auditorias = resAud.auditorias || [];
-    const ultima = auditorias.find(a => a.tipo_checkpoint === 'GERAL' || a.tipo_checkpoint === 'ENTRADA');
-    if (!ultima) return;
-    let achados = [];
-    try { achados = JSON.parse(ultima.achados_json || '[]'); } catch (e) { /* vazio */ }
-    window.achadosAtuais = achados;
-    const contadorEl = document.getElementById('contador-checagem');
-    if (contadorEl) {
-      contadorEl.innerHTML = achados.length > 0
-        ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${achados.length} inconsistência(s)</span>`
-        : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Processo limpo.</span>`;
+function conferirContasPorCodigo(textoIntegral) {
+  try {
+    const todos = [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral)];
+    if (todos.length > 10) {
+      todos[0].explicacao += ` (Atenção: a conferência encontrou ${todos.length} divergências no total; estão sendo mostradas as 10 primeiras).`;
     }
-    renderizarCards(achados);
-    const statusEl = document.getElementById('ia-status');
-    if (statusEl) statusEl.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;"><i class="ti ti-history"></i> Última checagem: ${new Date(ultima.data).toLocaleString('pt-BR')} — execute de novo se os documentos mudaram desde então.</div>`;
-  }).catch(e => console.warn('Falha ao carregar última checagem:', e.message));
+    return todos.slice(0, 10);
+  } catch (e) {
+    console.warn('Conferência de contas por código falhou:', e.message);
+    return [];
+  }
 }
 
 // Formatação do cronômetro em minutos e segundos (ex: "1m 24s")
@@ -2059,5 +1929,3 @@ function verificarIA() {
     txt.innerText = 'Nenhuma IA em nuvem configurada — só Ollama, se estiver rodando';
   }
 }
-
-```
