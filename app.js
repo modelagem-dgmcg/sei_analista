@@ -2986,5 +2986,517 @@ ${textoIntegralAtual}`;
 
       // Tentativa 1: limpar e reparsar
       try {
-        const limpo = jsonStr
-          .replace(/[
+        let limpo = jsonStr.replace(/[\x00-\x1F\x7F]/g, ' ');
+        limpo = limpo.replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+                jsonObj = JSON.parse(limpo);
+        recuperado = true;
+      } catch(_) {}
+
+      // Tentativa 2: extrair cards completos por regex
+      if (!recuperado) {
+        const cardsCompletos = [];
+        const reCard = /"tag"\s*:/gs;
+        let m;
+        while ((m = reCard.exec(jsonStr)) !== null) {
+          // Encontra o { que abre este card
+          let ini = jsonStr.lastIndexOf('{', m.index);
+          if (ini < 0) continue;
+          // Tenta fechar o objeto
+          let depth = 0, fim = -1;
+          for (let i = ini; i < jsonStr.length; i++) {
+            if (jsonStr[i] === '{') depth++;
+            else if (jsonStr[i] === '}') { depth--; if (depth === 0) { fim = i; break; } }
+          }
+          if (fim > ini) {
+            try { cardsCompletos.push(JSON.parse(jsonStr.slice(ini, fim + 1))); } catch(_) {}
+          }
+        }
+        if (cardsCompletos.length) {
+          jsonObj = { cards: cardsCompletos };
+          recuperado = true;
+          st.innerHTML = '<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-bottom:8px;"><i class="ti ti-alert-triangle"></i> A resposta da IA veio com formatação irregular — foram recuperados ' + cardsCompletos.length + ' achado(s). Verifique se fazem sentido.</div>';
+        }
+      }
+
+      if (!recuperado) {
+        throw new Error('A IA respondeu mas o JSON não pôde ser lido (' + e.message.substring(0, 80) + '). Tente de novo ou reduza o número de documentos.');
+      }
+    }
+    const achadosIA = (jsonObj.cards || []).map(c => {
+      // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
+      if (c.baseado_em_fonte_externa) c.verificar = true;
+      return c;
+    });
+    window.achadosAtuais = [...achadosCodigo, ...achadosIA];
+    contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
+    renderizarCards(window.achadosAtuais);
+    st.innerHTML = renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
+    await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
+  } catch (e) {
+    st.innerHTML = renderErroAmigavel(e.message);
+    // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
+    // que ela achou, pra parte financeira nunca ficar sem cobertura.
+    if (achadosCodigo.length) {
+      window.achadosAtuais = achadosCodigo;
+      renderizarCards(achadosCodigo);
+      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta — a análise da IA não rodou</span>`;
+    }
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
+  }
+}
+
+
+function renderizarCards(cards) {
+  const painel = document.getElementById('painel-cards');
+  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
+  let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
+  cards.forEach((c, idx) => {
+    const cardId = `rx-${idx}`;
+    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
+    const ref = `${c.tag}: ${c.titulo}`;
+    // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
+    const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
+    const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
+    const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
+      + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
+    html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
+      <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
+        <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
+      </div>
+      <div class="rx-body">
+        <div style="margin-bottom: 12px;">
+            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
+               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>${c.pagina ? ' — pág. ' + escHtml(c.pagina) : ''}
+            </span>
+        </div>
+        ${c.evidencia ? `<div class="rx-evidence">${escHtml(c.evidencia)}</div>` : ''}
+        <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
+        <p>${escHtml(c.explicacao)}</p>
+        ${c.sugestao ? `
+        <div style="margin-top:10px; background:#e6fcf5; border-left:3px solid #12b886; border-radius:4px; padding:8px 12px;">
+          <div style="font-size:0.72rem; font-weight:700; color:#087f5b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:3px;"><i class="ti ti-bulb"></i> O que fazer</div>
+          <div style="font-size:0.85rem; color:#0b6157;">${escHtml(c.sugestao)}</div>
+        </div>` : ''}
+        <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+          <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
+          <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
+        </div>
+        <div class="status-consulta-achado" style="margin-top:10px;"></div>
+      </div>
+    </div>`;
+  });
+  painel.innerHTML = html;
+  carregarStatusConsultasAchados();
+}
+
+async function modalEncaminharAchado(ref) {
+  const res = await api('usuarios/listar');
+  const usuarios = (res.usuarios || []).filter(u => u.email !== usuarioAtual.email);
+  const opcoes = usuarios.map(u => `<option value="${escAttr(u.email)}">${escHtml(u.nome)}</option>`).join('');
+  criarModal(`<h2 style="margin-bottom:12px; font-size:1.15rem;">Encaminhar Achado</h2>
+    <div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:10px;"><strong>Achado:</strong> ${escHtml(ref)}</div>
+    <input type="hidden" id="enc-ach-referencia" value="${escAttr(ref)}">
+    <label style="font-size:0.85rem;">Encaminhar para</label>
+    <select id="enc-ach-destinatario" style="width:100%;padding:8px;margin-bottom:10px;border:1px solid #ced4da;border-radius:6px;">${opcoes}</select>
+    <label style="font-size:0.85rem;">Sua pergunta</label>
+    <textarea id="enc-ach-mensagem" placeholder="Escreva sua pergunta sobre este achado..." style="width:100%;min-height:70px;padding:8px;margin-bottom:10px;border:1px solid #ced4da;border-radius:6px;"></textarea>
+    <div style="display:flex; gap:10px;">
+      <button class="btn btn-secondary" style="flex:1;" onclick="fecharModal()"><i class="ti ti-x"></i> Cancelar</button>
+      <button class="btn btn-primary" style="flex:1;" onclick="confirmarEncaminharAchado()"><i class="ti ti-send"></i> Enviar</button>
+    </div>`, false);
+}
+
+// ==================== ABA PERGUNTAS ====================
+// Recebidas (com resposta ali mesmo) e enviadas (com a resposta quando chegar), em
+// qualquer processo — o destinatário não precisa ter o processo na caixa dele.
+async function renderPerguntasAchados() {
+  const area = document.getElementById('area-perguntas');
+  const res = await api('achados/meus', { usuario: usuarioAtual.email });
+  if (!res.ok) {
+    area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}. Se falar em rota desconhecida, o Code.gs publicado está desatualizado.</div>`;
+    return;
+  }
+  const recebidas = (res.recebidas || []).sort((a, b) => (a.resposta ? 1 : 0) - (b.resposta ? 1 : 0));
+  const enviadas = res.enviadas || [];
+  const linkProcesso = q => `<a href="#" onclick="abrirProcesso('${escAttr(q.numero_sei || q.processo_id)}'); return false;">${escHtml(q.numero_sei || 'processo ' + q.processo_id)}</a>${q.titulo_processo ? ' — ' + escHtml(q.titulo_processo) : ''}`;
+  const cartao = (q, tipo) => {
+    const pendente = !q.resposta;
+    const cor = pendente ? (tipo === 'recebida' ? '#fff9db; border-left:3px solid #f5c518' : '#f8f9fa; border-left:3px solid #adb5bd') : '#e7f5ff; border-left:3px solid #339af0';
+    const quem = tipo === 'recebida' ? `De <strong>${escHtml(q.de_usuario)}</strong>` : `Para <strong>${escHtml(q.para_usuario)}</strong>`;
+    const quando = q.data_envio ? ` · há ${_tempoDecorridoDesde(q.data_envio)}` : '';
+    const resposta = q.resposta
+      ? `<div style="margin-top:6px; color:#1864ab;"><strong>Resposta:</strong> ${escHtml(q.resposta)}</div>`
+      : (tipo === 'recebida'
+          ? `<textarea id="resp-caixa-${q.id}" placeholder="Sua resposta..." style="width:100%; margin-top:8px; padding:6px; border:1px solid #ced4da; border-radius:4px; min-height:50px;"></textarea>
+             <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderPerguntaNaCaixa(${q.id})">Responder</button>`
+          : `<div style="margin-top:6px; color:var(--text-muted);"><i class="ti ti-clock"></i> Aguardando resposta.</div>`);
+    return `<div style="background:${cor}; padding:10px 14px; border-radius:6px; margin-bottom:10px; font-size:0.85rem;">
+      <div style="font-size:0.78rem; color:var(--text-muted);">${quem}${quando} · Processo ${linkProcesso(q)}</div>
+      <div style="margin-top:4px;"><strong>Achado:</strong> ${escHtml(q.achado_referencia)}</div>
+      <div style="margin-top:4px;"><strong>Pergunta:</strong> ${escHtml(q.mensagem || '(sem mensagem)')}</div>
+      ${resposta}
+    </div>`;
+  };
+  area.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:10px;">Recebidas</h3>
+    ${recebidas.length ? recebidas.map(q => cartao(q, 'recebida')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta recebida.</p>'}
+    <h3 style="font-size:1rem; margin:20px 0 10px;">Enviadas</h3>
+    ${enviadas.length ? enviadas.map(q => cartao(q, 'enviada')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta enviada.</p>'}`;
+}
+
+async function responderPerguntaNaCaixa(id) {
+  const campo = document.getElementById('resp-caixa-' + id);
+  const resposta = (campo?.value || '').trim();
+  if (!resposta) return alert('Escreva a resposta antes de enviar.');
+  const res = await api('achados/responder', { id, resposta });
+  if (!res.ok) return alert('A resposta NÃO foi enviada: ' + (res.erro || 'erro desconhecido'));
+  mostrarToast('Resposta enviada.');
+  renderPerguntasAchados();
+}
+
+async function confirmarEncaminharAchado() {
+  const referencia = document.getElementById('enc-ach-referencia').value;
+  const destinatario = document.getElementById('enc-ach-destinatario').value;
+  const mensagem = document.getElementById('enc-ach-mensagem').value.trim();
+  if (!mensagem) return alert('Escreva a pergunta antes de enviar.');
+  const res = await api('achados/encaminhar', { processo_id: processoAtual.id, achado_referencia: referencia, de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem });
+  // Antes, a janela fechava mesmo se o envio falhasse — a pergunta sumia sem ninguém saber.
+  if (!res.ok) { alert('A pergunta NÃO foi enviada: ' + (res.erro || 'erro desconhecido') + '\n\nSe o erro falar em rota desconhecida, o Code.gs publicado está desatualizado.'); return; }
+  fecharModal();
+  mostrarToast('Pergunta enviada. Ela aparece na aba "Perguntas" de quem recebeu.');
+  carregarStatusConsultasAchados();
+}
+
+async function carregarStatusConsultasAchados() {
+  if (!processoAtual) return;
+  try {
+    const res = await api('achados/listar', { processo_id: processoAtual.id });
+    const consultas = res.consultas || [];
+    document.querySelectorAll('[data-referencia-achado]').forEach(cardDiv => {
+      const ref = cardDiv.getAttribute('data-referencia-achado');
+      const statusEl = cardDiv.querySelector('.status-consulta-achado');
+      if (!statusEl) return;
+      const consulta = consultas.find(c => c.achado_referencia === ref);
+      if (!consulta) return;
+      if (consulta.resposta) {
+        statusEl.innerHTML = `<div style="background:#e7f5ff;padding:8px;border-radius:4px;"><strong>Resposta:</strong> ${escHtml(consulta.resposta)}</div>`;
+      } else if (String(consulta.para_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase()) {
+        statusEl.innerHTML = `<div style="background:#fff9db;padding:8px;border-radius:4px;"><strong>Pergunta de ${escHtml(consulta.de_usuario)}:</strong> "${escHtml(consulta.mensagem)}"<textarea id="resp-${consulta.id}" style="width:100%;margin-top:5px;"></textarea><button class="btn btn-sm btn-primary" onclick="responderConsultaAchado(${consulta.id})">Responder</button></div>`;
+      }
+    });
+  } catch (e) {}
+}
+
+async function responderConsultaAchado(id) {
+  const resp = document.getElementById('resp-' + id).value.trim();
+  if (!resp) return;
+  await api('achados/responder', { id, resposta: resp });
+  carregarStatusConsultasAchados();
+}
+
+// Filtra o texto integral pra só os parágrafos que contêm palavra-chave da pergunta —
+// usado apenas quando o texto acumulado é grande (ver LIMIAR_FILTRAGEM no chamador).
+// Sem isso, processo muito grande podia demorar demais ou estourar limite da IA.
+function extrairTrechosRelevantes(textoIntegral, pergunta) {
+  const palavrasChave = pergunta.toLowerCase()
+    .replace(/[^\w\sáéíóúâêîôûãõç]/g, '')
+    .split(/\s+/)
+    .filter(p => p.length > 3);
+  if (!palavrasChave.length) return textoIntegral.substring(0, 15000);
+
+  const trechosDocumento = textoIntegral.split('--- DOC: ');
+  let blocosRelevantes = [];
+  trechosDocumento.forEach(docTexto => {
+    if (!docTexto.trim()) return;
+    const linhas = docTexto.split('\n');
+    const nomeDoc = linhas[0] || 'Desconhecido';
+    const corpo = linhas.slice(1).join('\n');
+    corpo.split(/\n\s*\n/).forEach(par => {
+      const parLower = par.toLowerCase();
+      const score = palavrasChave.reduce((s, pal) => s + (parLower.includes(pal) ? 1 : 0), 0);
+      if (score > 0) blocosRelevantes.push({ doc: nomeDoc, texto: par, score });
+    });
+  });
+  blocosRelevantes.sort((a, b) => b.score - a.score);
+  if (!blocosRelevantes.length) return textoIntegral.substring(0, 20000); // nada bateu — melhor mandar algo do que nada
+
+  return 'TRECHOS MAIS RELEVANTES ENCONTRADOS NOS DOCUMENTOS PARA ESTA PERGUNTA:\n' +
+    blocosRelevantes.slice(0, 8).map((b, i) => `\n[${i + 1}] Documento: ${b.doc}\nTrecho: "${b.texto.trim()}"\n`).join('');
+}
+
+async function fazerPerguntaAoProcesso() {
+  const input = document.getElementById('chat-input');
+  const history = document.getElementById('chat-history');
+  const btn = document.getElementById('btn-perguntar');
+  const pergunta = input.value.trim();
+  if (!pergunta) return;
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) {
+    history.innerHTML += `<div style="color:#c92a2a; font-size:0.85rem;">Nenhum documento importado neste processo ainda — importe antes de perguntar.</div>`;
+    return;
+  }
+
+  if (history.innerHTML.includes('O histórico do chat aparecerá aqui')) history.innerHTML = '';
+  history.innerHTML += `
+      <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
+          <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(pergunta)}
+      </div>`;
+  input.value = '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Localizando nos documentos...'; }
+  history.scrollTop = history.scrollHeight;
+
+  // Por padrão manda o texto INTEIRO — o objetivo da ferramenta é não deixar passar
+  // inconsistência nenhuma. O filtro por relevância só entra em volume realmente grande,
+  // como válvula de escape, não como economia de rotina.
+  const LIMIAR_FILTRAGEM = 400000;
+  const contextoDocs = textoIntegralAtual.length > LIMIAR_FILTRAGEM
+    ? extrairTrechosRelevantes(textoIntegralAtual, pergunta)
+    : textoIntegralAtual;
+
+  const prompt = `Você é um assistente investigativo sênior. O usuário fará uma pergunta sobre o processo em anexo.
+Responda EXCLUSIVAMENTE com base nos documentos. Se a resposta não estiver clara nos documentos, diga
+"A informação não foi encontrada nos documentos anexados."
+
+MUITO IMPORTANTE — INFORMAÇÃO MAIS RECENTE:
+Os documentos podem incluir o contrato original e vários aditivos/apostilamentos ao longo do tempo, cada
+um podendo alterar o que veio antes. Ao responder:
+1. Se mais de um documento tratar do mesmo dado com informações diferentes, use APENAS o documento com
+   a data mais recente como resposta — nunca misture ou faça média entre versões.
+2. Diga explicitamente qual documento e qual data você usou como base.
+3. Se o documento mais recente que você tem acesso parecer antigo e a pergunta assumir que existe algo
+   mais novo ainda não importado, avise isso explicitamente.
+
+Seja analítico, claro e vá direto ao ponto. Sempre cite o NOME DO ARQUIVO que você usou para responder.
+
+PERGUNTA DO USUÁRIO: "${pergunta}"
+
+DOCUMENTOS:
+${contextoDocs}`;
+
+  try {
+    const resposta = await invocarIAComFallback(prompt, true);
+    const respId = `chat-${Date.now()}`;
+    window.memoriaEvidencias[respId] = { tag: 'Investigação', titulo: `P: ${pergunta}`, texto: resposta, doc: 'Resposta do Chat' };
+    history.innerHTML += `
+        <div style="background:#e7f5ff; border: 1px solid #74c0fc; padding:10px 15px; border-radius:15px 15px 0 15px; align-self:flex-end; max-width:85%; font-size: 0.9rem; color: #0b509e;">
+            <strong><i class="ti ti-robot"></i> IA Investigadora:</strong><br>
+            <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(resposta)}</div>
+            <div style="text-align:right; margin-top:10px;">
+                <button class="btn btn-sm" style="background-color:#0dcaf0; color:#000; border:none; font-size:0.75rem; font-weight:bold; padding:4px 8px; border-radius:4px;" onclick="fixarEvidenciaDaMemoria('${respId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
+            </div>
+        </div>`;
+    api('consultas/salvar', { processo_id: processoAtual.id, pergunta, resposta, usuario: usuarioAtual.email })
+      .catch(e => console.warn('Falha ao salvar consulta no histórico:', e.message));
+  } catch (e) {
+    history.innerHTML += `<div style="max-width:85%; align-self:flex-end;">${renderErroAmigavel(e.message)}</div>`;
+  }
+  if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Perguntar'; }
+  history.scrollTop = history.scrollHeight;
+}
+
+async function rodarRevisaoFinal() {
+  const st = document.getElementById('status-revisao');
+  const contadorEl = document.getElementById('contador-revisao');
+  contadorEl.innerHTML = '';
+  const txtAnalista = document.getElementById('editor-final').value.trim();
+  if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Cole o seu parecer na caixa de texto primeiro.</div>';
+  const p = processoAtual;
+  st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
+
+  _garantirEstiloPulso();
+  const banner = document.getElementById('banner-conferindo');
+  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
+  const bannerTimer = document.getElementById('banner-conferindo-timer');
+  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
+  let segundosDecorridos = 0;
+  let intervaloTimer = null;
+  if (banner) {
+    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU REVISANDO O PARECER...';
+    if (bannerDetalhe) bannerDetalhe.textContent = `${Math.round(txtAnalista.length / 1000)} mil caracteres no parecer`;
+    banner.classList.remove('hidden');
+    if (bannerTimer) {
+      bannerTimer.textContent = '0s';
+      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
+    }
+  }
+
+  const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
+apenas aponta pontos de atenção para o analista decidir. Avalie o texto (parecer, nota técnica ou ofício)
+elaborado pelo analista seguindo três frentes obrigatórias:
+
+1. REVISÃO DE MÉRITO: verifique se o analista avaliou corretamente as regras (Unidade: ${p.unidade} | OSS: ${p.oss}).
+   Para cada crítica de mérito, cite a cláusula/trecho exato do texto e do documento original a que ela se refere.
+2. REVISÃO GRAMATICAL: aponte falhas ortográficas específicas (não generalidades).
+3. ADEQUAÇÃO À LINGUAGEM SIMPLES: verifique se há excesso de juridiquês.
+
+Se não houver nenhuma crítica real em determinada frente, não invente uma só para preencher a resposta.
+
+Retorne EXCLUSIVAMENTE um objeto JSON válido, com esta estrutura exata (NÃO inclua campo de aprovação/veredito):
+{
+  "criticas": ["Crítica específica, citando o trecho exato do texto e/ou do documento original: ..."],
+  "sugestao_linguagem_simples": "Uma versão em parágrafo único sugerindo como reescrever com clareza, ou string vazia se não houver necessidade."
+}
+
+DOCUMENTOS ORIGINAIS:
+${textoIntegralAtual}
+------------------------------------------------
+TEXTO DO ANALISTA:
+${txtAnalista}`;
+
+  try {
+    const jsonStr = await invocarIAComFallback(prompt, false, st);
+    const rev = JSON.parse(jsonStr);
+    const qtdCriticas = (rev.criticas || []).length;
+
+    contadorEl.innerHTML = qtdCriticas > 0
+      ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${qtdCriticas} ponto(s) de atenção</span>`
+      : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Sem críticas nesta revisão.</span>`;
+
+    let htmlResultado = '';
+    if (qtdCriticas > 0) {
+      const criticasHtml = rev.criticas.map(c => `<li style="margin-bottom:6px;">${escHtml(c)}</li>`).join('');
+      htmlResultado += `<div class="alert alert-danger" style="background:#f8d7da; color:#842029; margin-bottom:15px;"><strong>Pontos de atenção (a decisão final é sua):</strong><ul style="margin-top:8px; margin-left:20px;">${criticasHtml}</ul></div>`;
+    } else {
+      htmlResultado += `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; margin-bottom:15px;"><strong>✓ Nenhum ponto de atenção identificado nesta revisão.</strong></div>`;
+    }
+    if (rev.sugestao_linguagem_simples) {
+      htmlResultado += `<div style="background:#fff; border:1px solid #ced4da; padding:15px; border-radius:6px;">
+        <h4 style="color:#d97706; font-size:0.95rem; margin-bottom:8px;"><i class="ti ti-bulb"></i> Sugestão de Linguagem Simples:</h4>
+        <p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p>
+      </div>`;
+    }
+    st.innerHTML = htmlResultado + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
+
+    // Registra no histórico — sem isso, a Revisão Final não deixava rastro nenhum.
+    const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
+    await api('auditorias/salvar', {
+      processo_id: p.id, tipo_checkpoint: 'SAIDA',
+      achados_json: JSON.stringify(achadosRevisao), raw_ia: jsonStr, executado_por: usuarioAtual.email
+    });
+
+    _ultimoTextoRevisadoHash = await sha256(txtAnalista);
+  } catch (e) {
+    st.innerHTML = renderErroAmigavel(e.message);
+  } finally {
+    if (intervaloTimer) clearInterval(intervaloTimer);
+    if (banner) banner.classList.add('hidden');
+  }
+}
+
+// Traduz o erro de UM serviço numa expressão curta. A Kimi tem três tipos de 429,
+// com causas e soluções diferentes, por isso vêm separados.
+function _motivoCurtoProvedor(m) {
+  if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
+  if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia do nível da conta';
+  if (/exceeded_current_quota|insufficient/i.test(m)) return 'saldo insuficiente';
+  if (/HTTP 429/.test(m)) return 'limite de uso atingido';
+  if (/HTTP 40[13]|API key not valid|API_KEY_INVALID|invalid.*(api.?key|authentication)/i.test(m)) return 'chave inválida';
+  if (/não respondeu em|aborted/i.test(m)) return 'demorou demais para responder';
+  if (/Failed to fetch|falha de rede|não foi possível conectar/i.test(m)) return 'sem conexão (se for o Ollama, ele não está aberto)';
+  if (/HTTP 5\d\d/.test(m)) return 'serviço fora do ar';
+  if (/HTTP 400/.test(m)) return 'pedido recusado pelo serviço';
+  return 'erro não identificado';
+}
+
+function _mensagemErroAmigavel(msg) {
+  msg = String(msg || '');
+  // Vem ANTES das outras regras: quando todos falham, cada um pode ter falhado por um
+  // motivo diferente — resumir numa frase só ("limite atingido") escondia o resto.
+  if (/Todos os provedores de IA falharam/i.test(msg)) {
+    const porServico = msg.split('\n').slice(1).filter(l => l.includes(':')).map(l => {
+      const i = l.indexOf(':');
+      return `${l.slice(0, i).trim()}: ${_motivoCurtoProvedor(l.slice(i + 1))}`;
+    });
+    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: porServico.join(' · ') || 'Confira a configuração em "Motor de IA".' };
+  }
+  if (/Nenhum serviço de IA está habilitado/i.test(msg)) {
+    return { titulo: 'Nenhum serviço de IA está ligado.', sugestao: 'Vá em "Motor de IA", cole uma chave e marque "Habilitado".' };
+  }
+  if (/HTTP 503/.test(msg) || /sobrecarregad[oa]/i.test(msg)) {
+    return { titulo: 'O serviço de IA está sobrecarregado no momento.', sugestao: 'Isso costuma passar rápido — aguarde um minuto e tente de novo.' };
+  }
+  if (/HTTP 429/.test(msg)) {
+    return { titulo: 'O limite de uso da IA foi atingido por agora.', sugestao: 'Aguarde alguns minutos antes de tentar de novo.' };
+  }
+  if (/não respondeu em \d+s/.test(msg)) {
+    return { titulo: 'A IA demorou demais para responder.', sugestao: 'Se o processo for muito grande, isso pode ser normal — tente de novo, e se persistir, verifique sua conexão.' };
+  }
+  if (/Todos os provedores de IA falharam/i.test(msg)) {
+    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: 'Tente de novo em alguns minutos. Se persistir, confira a configuração em "Motor de IA".' };
+  }
+  if (/chave.*não configurada/i.test(msg)) {
+    return { titulo: 'Nenhuma IA está configurada.', sugestao: 'Vá em "Motor de IA" no menu lateral e cole uma chave válida.' };
+  }
+  if (/não foi possível conectar/i.test(msg) || /falha de rede/i.test(msg)) {
+    return { titulo: 'Não foi possível conectar ao serviço de IA.', sugestao: 'Verifique sua conexão com a internet e tente de novo.' };
+  }
+  if (/resposta vazia|resposta válida/i.test(msg)) {
+    return { titulo: 'A IA respondeu de um jeito inesperado.', sugestao: 'Normalmente resolve na segunda tentativa — tente executar de novo.' };
+  }
+  return { titulo: 'Algo deu errado ao processar essa etapa.', sugestao: 'Tente novamente em alguns instantes.' };
+}
+
+function renderErroAmigavel(mensagemTecnica) {
+  const { titulo, sugestao } = _mensagemErroAmigavel(mensagemTecnica);
+  const detalheId = 'detalhe-erro-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
+  return `
+    <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:16px 18px;">
+      <div style="display:flex; gap:12px; align-items:flex-start;">
+        <i class="ti ti-cloud-exclamation" style="font-size:1.3rem; color:#c2410c; flex-shrink:0; margin-top:1px;"></i>
+        <div style="flex:1; min-width:0;">
+          <div style="font-weight:600; color:#7c2d12; font-size:0.9rem;">${escHtml(titulo)}</div>
+          <div style="font-size:0.83rem; color:#9a3412; margin-top:4px;">${escHtml(sugestao)}</div>
+          <a href="#" onclick="document.getElementById('${detalheId}').classList.toggle('hidden'); return false;" style="font-size:0.72rem; color:#c2410c; display:inline-block; margin-top:8px;">Ver detalhe técnico</a>
+          <div id="${detalheId}" class="hidden" style="margin-top:8px; font-size:0.7rem; color:#78716c; font-family:monospace; white-space:pre-wrap; background:#fffbeb; padding:8px; border-radius:6px;">${escHtml(mensagemTecnica)}</div>
+        </div>
+      </div>
+    </div>`;
+}
+function _garantirEstiloPulso() {
+  if (document.getElementById('estilo-pulso-conferindo')) return;
+  const style = document.createElement('style');
+  style.id = 'estilo-pulso-conferindo';
+  style.textContent = `
+    @keyframes pulseConferindo { 0%,100% { box-shadow: 0 0 0 0 rgba(142,22,40,0.30); } 50% { box-shadow: 0 0 0 8px rgba(142,22,40,0); } }
+    #banner-conferindo:not(.hidden) { animation: pulseConferindo 1.6s infinite; }
+  `;
+  document.head.appendChild(style);
+}
+function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+function criarModal(h, comRodapePadrao = true) {
+  fecharModal();
+  const m = document.createElement('div');
+  m.className = 'modal-overlay'; m.id = 'modal-ov';
+  // Estilo inline, forçado por JS — sobrescreve qualquer z-index/position que o CSS
+  // tenha, pra garantir que o aviso apareça por cima de TUDO, inclusive da tela de
+  // login (que tem sua própria camada e estava escondendo o modal atrás dela).
+  m.style.position = 'fixed';
+  m.style.top = '0'; m.style.left = '0'; m.style.right = '0'; m.style.bottom = '0';
+  m.style.zIndex = '99999';
+  m.style.display = 'flex';
+  m.style.alignItems = 'center';
+  m.style.justifyContent = 'center';
+  m.innerHTML = `<div class="modal">${h}${comRodapePadrao ? '<button onclick="fecharModal()">Fechar</button>' : ''}</div>`;
+  document.body.appendChild(m);
+}
+function fecharModal() { document.getElementById('modal-ov')?.remove(); }
+function verificarIA() {
+  const dot = document.getElementById('ai-dot');
+  const txt = document.getElementById('ai-status-txt');
+  if (!dot || !txt) return;
+  const provedoresNuvem = [];
+  if (GEMINI_KEY && GEMINI_KEY.trim() && GEMINI_ATIVO) provedoresNuvem.push('Gemini');
+  if (GROQ_KEY && GROQ_KEY.trim() && GROQ_ATIVO) provedoresNuvem.push('Groq');
+  if (KIMI_KEY && KIMI_KEY.trim() && KIMI_ATIVO) provedoresNuvem.push('Kimi');
+  if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
+  if (DEEPSEEK_KEY   && DEEPSEEK_KEY.trim()   && DEEPSEEK_ATIVO)   provedoresNuvem.push('DeepSeek');
+  if (provedoresNuvem.length) {
+    dot.className = 'ai-dot on';
+    txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
+  } else {
+    dot.className = 'ai-dot off';
+    txt.innerText = 'Nenhuma IA em nuvem configurada — só Ollama, se estiver rodando';
+  }
+}
