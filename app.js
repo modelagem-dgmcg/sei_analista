@@ -1425,18 +1425,57 @@ async function abrirProcesso(identificador) {
     <!-- 1. PAINEL DE CHECAGEM -->
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:15px;"><i class="ti ti-microscope"></i> 1. Verificar Processo</h3>
-      <div style="display: flex; align-items: center; gap: 15px; flex-wrap:wrap;">
-          <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
-          <span id="contador-checagem" style="font-weight: bold; font-size: 0.95rem;"></span>
+      <!-- Fontes de análise -->
+      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
+
+        <!-- Camada 1: sempre ativa -->
+        <div style="border:0.5px solid var(--border); border-radius:var(--radius); padding:10px 14px; background:var(--surface-2); display:flex; align-items:flex-start; gap:10px;">
+          <div style="width:32px;height:32px;border-radius:6px;background:var(--bg-accent);color:var(--text-accent);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-file-text" aria-hidden="true"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text-dark);display:flex;align-items:center;gap:6px;">
+              Documentos do processo
+              <span style="font-size:0.68rem;background:var(--bg-success,#dcfce7);color:var(--text-success,#166534);padding:2px 7px;border-radius:10px;">Sempre ativo</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;line-height:1.4;">Contrato, aditivos, ofícios e despachos importados do SEI — lidos na ordem estruturante. Conferência de contas por código roda antes da IA.</div>
+          </div>
+        </div>
+
+        <!-- Camada 2: Drive -->
+        <div id="card-drive" style="border:0.5px solid var(--border-accent); border-radius:var(--radius); padding:10px 14px; background:var(--bg-accent); display:flex; align-items:flex-start; gap:10px; cursor:pointer;" onclick="toggleFonte('drive')">
+          <div style="width:16px;height:16px;border-radius:4px;border:0.5px solid var(--border-strong);background:var(--fill-accent,#2563eb);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;" id="chk-drive-box"><span style="color:#fff;font-size:10px;">✓</span></div>
+          <input type="checkbox" id="chk-historico-unidade" checked style="display:none;">
+          <div style="width:32px;height:32px;border-radius:6px;background:#e2f5ea;color:#166534;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-brand-google-drive" aria-hidden="true"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text-dark);display:flex;align-items:center;gap:6px;">
+              Histórico da unidade
+              <span style="font-size:0.68rem;background:#e2f5ea;color:#166534;padding:2px 7px;border-radius:10px;">Google Drive</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;line-height:1.4;">Busca o contrato de referência na pasta LEIS E DECRETOS pelo nome da unidade. Pode confundir unidades com nomes parecidos — achados sempre marcados para confirmar.</div>
+          </div>
+        </div>
+        <div id="status-fonte-historico" style="font-size:0.75rem; padding-left:14px;"></div>
+
+        <!-- Camada 3: Web -->
+        <div id="card-web" style="border:0.5px solid var(--border); border-radius:var(--radius); padding:10px 14px; background:var(--surface-2); display:flex; align-items:flex-start; gap:10px; cursor:pointer;" onclick="toggleFonte('web')">
+          <div style="width:16px;height:16px;border-radius:4px;border:0.5px solid var(--border-strong);background:var(--surface-2);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;" id="chk-web-box"></div>
+          <input type="checkbox" id="chk-legislacao-jurisprudencia" style="display:none;">
+          <div style="width:32px;height:32px;border-radius:6px;background:var(--bg-warning,#fef3c7);color:var(--text-warning,#92400e);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-world" aria-hidden="true"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:var(--text-dark);display:flex;align-items:center;gap:6px;">
+              Busca jurídica na web
+              <span style="font-size:0.68rem;background:var(--bg-warning,#fef3c7);color:var(--text-warning,#92400e);padding:2px 7px;border-radius:10px;">Experimental · mais lento</span>
+            </div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;line-height:1.4;">Pesquisa em fontes públicas abertas: Diário Oficial, legislação federal e estadual, decisões de tribunais de contas (TCU, TCE-PE, TCM-PE) e tribunais superiores (STJ, STF, AGU). O resultado depende do que os buscadores encontrarem — pode vir de fonte não oficial ou estar desatualizado. Confirme a fonte antes de citar em parecer.</div>
+          </div>
+        </div>
+
       </div>
-      <label style="display:block; margin-top:10px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-historico-unidade" checked> "Comparar com contratos antigos da mesma unidade" — A busca é por nome de arquivo, então pode confundir unidades parecidas. Por isso, o achado sempre vem marcado para você confirmar.
-      </label>
-      <div id="status-fonte-historico" style="margin-top:4px; font-size:0.78rem;"></div>
-      <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-legislacao-jurisprudencia"> "Buscar normas e decisões de tribunais na web (SES-PE, TCE, TCU)" — Pesquisa automática na internet por leis e jurisprudências. Recurso experimental e mais lento; o resultado pode estar desatualizado ou vir de fontes não oficiais, exigindo confirmação rigorosa antes de ser citado em um parecer.
-      </label>
-      <div id="ia-status" style="margin-top:15px;"></div>
+
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
+        <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
+      </div>
+      <div id="ia-status" style="margin-top:6px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
     </div>
 
@@ -2752,6 +2791,49 @@ function montarDadosExtraidos(textoIntegral) {
   }).join('\n');
 }
 
+function toggleFonte(tipo) {
+  if (tipo === 'drive') {
+    const chk = document.getElementById('chk-historico-unidade');
+    const box = document.getElementById('chk-drive-box');
+    const card = document.getElementById('card-drive');
+    chk.checked = !chk.checked;
+    if (chk.checked) {
+      box.innerHTML = '<span style="color:#fff;font-size:10px;">✓</span>';
+      box.style.background = 'var(--fill-accent,#2563eb)';
+      card.style.borderColor = 'var(--border-accent)';
+      card.style.background = 'var(--bg-accent)';
+    } else {
+      box.innerHTML = '';
+      box.style.background = 'var(--surface-2)';
+      card.style.borderColor = 'var(--border)';
+      card.style.background = 'var(--surface-2)';
+    }
+  } else {
+    const chk = document.getElementById('chk-legislacao-jurisprudencia');
+    const box = document.getElementById('chk-web-box');
+    const card = document.getElementById('card-web');
+    chk.checked = !chk.checked;
+    if (chk.checked) {
+      box.innerHTML = '<span style="color:#fff;font-size:10px;">✓</span>';
+      box.style.background = 'var(--fill-warning,#d97706)';
+      card.style.borderColor = 'var(--border-warning,#d97706)';
+      card.style.background = 'var(--bg-warning,#fef3c7)';
+    } else {
+      box.innerHTML = '';
+      box.style.background = 'var(--surface-2)';
+      card.style.borderColor = 'var(--border)';
+      card.style.background = 'var(--surface-2)';
+    }
+  }
+}
+
+function _atualizarBannerChecagem(titulo, detalhe) {
+  const t = document.getElementById('banner-conferindo-titulo');
+  const d = document.getElementById('banner-conferindo-detalhe');
+  if (t) t.textContent = titulo;
+  if (d) d.textContent = detalhe;
+}
+
 async function rodarRaioX() {
   const st = document.getElementById('ia-status');
   const contadorEl = document.getElementById('contador-checagem');
@@ -2893,7 +2975,33 @@ Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
 ${achadosCodigo.length ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n' : ''}TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
 ${textoIntegralAtual}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
-    const jsonObj = JSON.parse(jsonStr);
+    // JSON truncado (resposta cortada pelo limite de tokens de saída do modelo):
+    // tenta recuperar os cards completos que vieram antes do corte.
+    let jsonObj;
+    try {
+      jsonObj = JSON.parse(jsonStr);
+    } catch (e) {
+      if (e.message.includes('Unterminated') || e.message.includes('position')) {
+        // Extrai todos os objetos de card completos antes do corte
+        const cardsCompletos = [];
+        const reCard = /\{[^{}]*"tag"[^{}]*"titulo"[^{}]*"evidencia"[^{}]*\}/gs;
+        let m;
+        while ((m = reCard.exec(jsonStr)) !== null) {
+          try { cardsCompletos.push(JSON.parse(m[0])); } catch(_) {}
+        }
+        if (cardsCompletos.length) {
+          jsonObj = { cards: cardsCompletos };
+          st.innerHTML = `<div style="background:#fff3cd; color:#664d03; padding:8px 12px; border-radius:6px; font-size:0.82rem; margin-bottom:8px;">
+            <i class="ti ti-alert-triangle"></i> A resposta da IA foi cortada no meio (processo grande demais para uma resposta completa).
+            Foram recuperados ${cardsCompletos.length} achado(s) antes do corte. Para análise completa, tente com menos documentos.
+          </div>`;
+        } else {
+          throw new Error('A IA respondeu mas o JSON veio truncado e não foi possível recuperar nenhum achado. Processo provavelmente grande demais para uma resposta completa.');
+        }
+      } else {
+        throw e;
+      }
+    }
     const achadosIA = (jsonObj.cards || []).map(c => {
       // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
       if (c.baseado_em_fonte_externa) c.verificar = true;
