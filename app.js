@@ -7,8 +7,8 @@
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
 // VERSÃO: atualize BUILD_DATE sempre que entregar um arquivo novo — é o que confirma
 // que o código novo está rodando, sem abrir DevTools.
-const BUILD_VERSION = '2026-09-25 v21';
-const BUILD_DATE    = '25/09/2026 20h';
+const BUILD_VERSION = '2026-09-28 v22';
+const BUILD_DATE    = '28/09/2026 18h';
 // matrícula 18515045.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -495,16 +495,15 @@ function _renderAlertasSidebar() {
   const area = document.getElementById('area-alertas-sidebar');
   if (!area) return;
   if (!_alertasCache.length) { area.innerHTML = ''; return; }
-  const cor   = a => COR_ALERTA[a.cor]   || '#868e96';
-  const icone = a => ICONE_ALERTA[a.cor] || 'ti-bell';
-  area.innerHTML = _alertasCache.slice(0,5).map(a =>
-    `<a href='#' onclick="abrirProcesso('${escAttr(a.numero_sei||String(a.processo_id))}'); return false;"
-       style='display:block;padding:6px 10px;margin-bottom:3px;border-left:3px solid ${cor(a)};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;text-decoration:none;color:inherit;'>
-      <div style='font-size:0.72rem;font-weight:600;color:${cor(a)};'><i class='ti ${icone(a)}'></i> ${escHtml(a.mensagem)}</div>
-      <div style='font-size:0.7rem;color:#adb5bd;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>${a.numero_sei ? `<span style='opacity:.7'>${escHtml(a.numero_sei)}</span> — ` : ''}${escHtml(a.titulo||'')}</div>
-    </a>`).join('');
-  if (_alertasCache.length > 5)
-    area.insertAdjacentHTML('beforeend',`<div style='font-size:0.7rem;color:#adb5bd;padding:3px 10px;'>+${_alertasCache.length-5} alerta(s)</div>`);
+  const cores = ['vermelho','amarelo','laranja','azul'];
+  const corMaisUrgente = cores.find(c => _alertasCache.some(a => a.cor === c)) || 'azul';
+  const cor = COR_ALERTA[corMaisUrgente] || '#868e96';
+  area.innerHTML = `<a href="#" onclick="showView('dashboard','panorama'); return false;"
+    style="display:flex;align-items:center;gap:6px;padding:5px 10px 5px 12px;text-decoration:none;
+           border-left:3px solid ${cor};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;margin:0 0 4px;">
+    <i class="ti ti-bell" style="color:${cor};font-size:13px;"></i>
+    <span style="font-size:0.72rem;color:${cor};font-weight:600;">${_alertasCache.length} alerta(s) — ver Panorama</span>
+  </a>`;
 }
 
 let _intervaloMonitoramento = null;
