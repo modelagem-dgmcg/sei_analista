@@ -7,19 +7,19 @@
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
 // VERSÃO: atualize BUILD_DATE sempre que entregar um arquivo novo — é o que confirma
 // que o código novo está rodando, sem abrir DevTools.
-const BUILD_VERSION = '2026-09-25 v21';
-const BUILD_DATE    = '25/09/2026 20h';
+const BUILD_VERSION = '2026-09-28 v21.1';
+const BUILD_DATE    = '28/09/2026 11h';
 // matrícula 18515045.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
 
-let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
-let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
-let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
-let OPENROUTER_KEY  = localStorage.getItem('sei_openrouter_key')  || '';
-let DEEPSEEK_KEY    = localStorage.getItem('sei_deepseek_key')    || '';
-let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
-let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
+let GEMINI_KEY     = localStorage.getItem('sei_gemini_key')     || '';
+let GROQ_KEY       = localStorage.getItem('sei_groq_key')       || '';
+let KIMI_KEY       = localStorage.getItem('sei_kimi_key')       || '';
+let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
+let DEEPSEEK_KEY   = localStorage.getItem('sei_deepseek_key')   || '';
+let OLLAMA_URL     = localStorage.getItem('sei_ollama_url')     || 'http://localhost:11434';
+let OLLAMA_MODEL   = localStorage.getItem('sei_ollama_model')   || 'qwen2.5:7b';
 
 // Habilitado/desabilitado — SEPARADO da chave, de propósito. Desligar um provedor não
 // apaga a chave dele (pra não precisar colar tudo de novo depois); só faz o motor pular
@@ -28,17 +28,15 @@ function _lerHabilitado(chaveStorage) {
   const v = localStorage.getItem(chaveStorage);
   return v === null ? true : v === 'true';
 }
-let GEMINI_ATIVO = _lerHabilitado('sei_gemini_ativo');
-let GROQ_ATIVO = _lerHabilitado('sei_groq_ativo');
-let KIMI_ATIVO = _lerHabilitado('sei_kimi_ativo');
+let GEMINI_ATIVO     = _lerHabilitado('sei_gemini_ativo');
+let GROQ_ATIVO       = _lerHabilitado('sei_groq_ativo');
+let KIMI_ATIVO       = _lerHabilitado('sei_kimi_ativo');
 let OPENROUTER_ATIVO = _lerHabilitado('sei_openrouter_ativo');
 let DEEPSEEK_ATIVO   = _lerHabilitado('sei_deepseek_ativo');
 let OLLAMA_ATIVO     = _lerHabilitado('sei_ollama_ativo');
 
-// Ordem de tentativa dos provedores — cada pessoa pode reordenar (tela "Motor de IA"),
-// porque o provedor que funciona rápido pra uma pessoa pode não ser o mesmo pra outra
-// (rede, cota, região). Padrão de fábrica: Gemini primeiro, igual sempre foi.
-let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","deepseek","ollama"]');
+// Ordem de tentativa dos provedores — inclui o DeepSeek na liderança padrão de fábrica
+let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["deepseek","gemini","groq","kimi","openrouter","ollama"]');
 
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
@@ -67,8 +65,6 @@ function injetarMarcaDagua() {
 }
 
 // ==================== "O QUE É ISSO?" NA TELA DE LOGIN ====================
-// Texto final, decantado ao longo de várias rodadas de revisão — prosa corrida, sem
-// lista com negrito (evita o padrão de texto gerado por IA), em linguagem simples.
 const TEXTO_SOBRE_FERRAMENTA = `
   <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
   <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
@@ -135,8 +131,6 @@ function abrirSobreFerramenta() {
   criarModal(`<div style="max-height:70vh; overflow-y:auto; padding-right:6px;">${TEXTO_SOBRE_FERRAMENTA}</div>`);
 }
 
-// Injeta o botão "?" dentro da caixa de login, sem precisar tocar no index.html —
-// mesmo padrão já usado pra rodapé/marca d'água.
 function injetarBotaoSobre() {
   const loginBox = document.querySelector('#login-screen .login-box');
   if (!loginBox || document.getElementById('link-sobre-ferramenta')) return;
@@ -186,7 +180,6 @@ async function fazerLogin() {
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
-      // Garante que a área de alertas exista na sidebar
       if (!document.getElementById('area-alertas-sidebar')) {
         const sn = document.getElementById('sidebar-nome');
         if (sn?.parentElement) {
@@ -201,7 +194,6 @@ async function fazerLogin() {
       iniciarMonitoramentoNovosItens();
       carregarAlertasSidebar();
       setInterval(carregarAlertasSidebar, 300000);
-      // Mostra versão do backend no rodapé — confirma que o Code.gs publicado é o novo
       api('versao', {}).then(r => {
         const tag = document.getElementById('build-tag');
         if (tag && r.versao) tag.textContent = `app v${BUILD_VERSION} · backend v${r.versao}`;
@@ -230,6 +222,7 @@ async function showView(v, subCaixa = 'entrada') {
     if (navItem) navItem.classList.add('active');
   }
   const titulos = {
+    dashboard_panorama: 'Panorama Geral',
     dashboard_entrada: 'Caixa de Entrada',
     dashboard_andamento: 'Processos em Andamento',
     dashboard_encaminhados: 'Processos Encaminhados (Acompanhamento)',
@@ -254,7 +247,7 @@ async function showView(v, subCaixa = 'entrada') {
              onclick="document.getElementById('np-arquivo').click()" style="margin-bottom:20px; padding:24px;">
           <i class="ti ti-wand" style="font-size:1.8rem; color:var(--action-primary); margin-bottom:6px;"></i><br>
           <strong style="font-size:0.9rem;">Solte um documento aqui pra preencher os campos automaticamente</strong><br>
-          <span style="font-size:0.8rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md, .pptx, .html (despacho SEI GOV), .png, .jpg ou .zip. Foto de documento/página escaneada é lida por OCR (mais lento). Confira tudo antes de salvar; a IA sugere, não afirma.</span>
+          <span style="font-size:0.80rem; color:var(--text-muted);">Opcional — .pdf, .docx, .xlsx, .txt, .csv, .md, .pptx, .html (despacho SEI GOV), .png, .jpg ou .zip. Foto de documento/página escaneada é lida por OCR (mais lento). Confira tudo antes de salvar; a IA sugere, não afirma.</span>
         </div>
         <input type="file" id="np-arquivo" accept=".pdf,.docx,.doc,.xlsx,.xls,.txt,.csv,.md,.pptx,.ppt,.png,.jpg,.jpeg,.html,.htm,.zip" style="display:none" onchange="prePreencherDeArquivo(this.files[0])">
         <div id="np-status-preenchimento" style="margin-bottom:15px;"></div>
@@ -276,10 +269,7 @@ async function showView(v, subCaixa = 'entrada') {
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
   } else if (v === 'config') {
-    // Número que aparece pré-selecionado em cada seletor = posição atual de cada
-    // provedor na ordem salva — assim a tela sempre reflete o que está configurado
-    // agora, não um valor fixo de fábrica.
-    const opcoesPrioridade = (id) => [1, 2, 3, 4, 5].map(n =>
+    const opcoesPrioridade = (id) => [1, 2, 3, 4, 5, 6].map(n =>
       `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id) + 1 === n ? 'selected' : ''}>${n}</option>`
     ).join('');
     const checkboxAtivo = (id, ativo) => `
@@ -294,34 +284,31 @@ async function showView(v, subCaixa = 'entrada') {
       <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
           O número ao lado de cada provedor é a ordem de tentativa — 1 é tentado primeiro, e só passa
-          pro próximo se o anterior der erro de verdade. Pode repetir número — nesse caso, a ordem entre
-          eles fica a de sempre (Gemini, Groq, Kimi, OpenRouter, Ollama). "Habilitado" desliga o provedor
-          sem apagar a chave — útil se ele estiver com problema por ora e você não quiser ter que colar
-          a chave de novo depois. Ollama, por rodar local, continua exigindo estar instalado e aberto na
-          sua máquina.
+          pro próximo se o anterior der erro de verdade. "Habilitado" desliga o provedor
+          sem apagar a chave.
         </p>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-gemini" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('gemini')}</select>
+          <select id="prio-deepseek" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('deepseek')}</select>
+          <div class="form-group" style="flex:1; margin-bottom:0;"><label>DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com...">${checkboxAtivo('deepseek', DEEPSEEK_ATIVO)}</div>
+        </div>
+        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
+          <select id="prio-gemini" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('gemini')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;"><label>Gemini</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio...">${checkboxAtivo('gemini', GEMINI_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-groq" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('groq')}</select>
+          <select id="prio-groq" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('groq')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;"><label>Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com...">${checkboxAtivo('groq', GROQ_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-kimi" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('kimi')}</select>
+          <select id="prio-kimi" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('kimi')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;"><label>Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai...">${checkboxAtivo('kimi', KIMI_ATIVO)}</div>
         </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-openrouter" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
+          <select id="prio-openrouter" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys...">${checkboxAtivo('openrouter', OPENROUTER_ATIVO)}</div>
         </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-deepseek" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('deepseek')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys...">${checkboxAtivo('deepseek', DEEPSEEK_ATIVO)}</div>
-        </div>
         <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:16px;">
-          <select id="prio-ollama" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
+          <select id="prio-ollama" title="Ordem" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
           <div class="form-group" style="flex:1; margin-bottom:0;">
             <label>Ollama (local, opcional)</label>
             <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
@@ -335,7 +322,7 @@ async function showView(v, subCaixa = 'entrada') {
   }
 }
 
-let caixaAtualAtiva = 'entrada';
+let caixaAtualAtiva = 'panorama';
 
 async function atualizarContagensSidebar() {
   if (!usuarioAtual) return;
@@ -422,7 +409,7 @@ async function abrirListaContatos() {
 
 async function abrirConversa(conversaId, nome, tipo) {
   _msgConversaAtual = conversaId;
-  const listaEl   = document.getElementById('msg-lista-contatos');
+  const listaEl  = document.getElementById('msg-lista-contatos');
   const convEl    = document.getElementById('msg-conversa');
   const nomeEl    = document.getElementById('msg-conversa-nome');
   const histEl    = document.getElementById('msg-historico');
@@ -464,7 +451,6 @@ async function enviarMensagem() {
   input.value = '';
   const res = await api('mensagens/enviar', { de_usuario: usuarioAtual.email, conversa_id: _msgConversaAtual, texto });
   if (!res.ok) { mostrarToast('Erro ao enviar mensagem: ' + (res.erro || '')); return; }
-  // Recarrega o histórico
   const hist = await api('mensagens/listar', { conversa_id: _msgConversaAtual, usuario: usuarioAtual.email });
   if (hist.ok) _renderMensagens(hist.mensagens || []);
 }
@@ -475,11 +461,6 @@ function voltarListaContatos() {
   document.getElementById('msg-conversa').style.display = 'none';
 }
 
-// ==================== AVISO DE CHEGADA (processo novo / achado pendente) ====================
-// Checagem periódica discreta — o backend (Apps Script) não sustenta conexão aberta,
-// então isso não é "em tempo real", é "a cada X segundos". Pra esse tipo de aviso,
-// imperceptível na prática. Não usa a cor de alerta de achado (bordô) de propósito —
-// aqui é só "chegou algo", não "achamos um problema".
 const INTERVALO_MONITORAMENTO_MS = 45000;
 let _alertasCache = [];
 
@@ -495,11 +476,11 @@ function _renderAlertasSidebar() {
   const area = document.getElementById('area-alertas-sidebar');
   if (!area) return;
   if (!_alertasCache.length) { area.innerHTML = ''; return; }
-  const cor   = a => COR_ALERTA[a.cor]   || '#868e96';
+  const cor    = a => COR_ALERTA[a.cor]   || '#868e96';
   const icone = a => ICONE_ALERTA[a.cor] || 'ti-bell';
   area.innerHTML = _alertasCache.slice(0,5).map(a =>
     `<a href='#' onclick="abrirProcesso('${escAttr(a.numero_sei||String(a.processo_id))}'); return false;"
-       style='display:block;padding:6px 10px;margin-bottom:3px;border-left:3px solid ${cor(a)};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;text-decoration:none;color:inherit;'>
+        style='display:block;padding:6px 10px;margin-bottom:3px;border-left:3px solid ${cor(a)};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;text-decoration:none;color:inherit;'>
       <div style='font-size:0.72rem;font-weight:600;color:${cor(a)};'><i class='ti ${icone(a)}'></i> ${escHtml(a.mensagem)}</div>
       <div style='font-size:0.7rem;color:#adb5bd;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'>${escHtml(a.titulo||a.numero_sei||'')}</div>
     </a>`).join('');
@@ -535,7 +516,6 @@ function pulsarElemento(id) {
   const el = document.getElementById(id);
   if (!el) return;
   el.classList.remove('pulso-chegada');
-  // Força reflow pra reiniciar a animação, caso já tenha rodado antes.
   void el.offsetWidth;
   el.classList.add('pulso-chegada');
   setTimeout(() => el.classList.remove('pulso-chegada'), 2600);
@@ -562,7 +542,7 @@ function mostrarToast(mensagem) {
 function iniciarMonitoramentoNovosItens() {
   if (_intervaloMonitoramento) clearInterval(_intervaloMonitoramento);
   _ultimaContagemEntrada = null; _ultimaContagemAchadosPendentes = null;
-  _verificarNovosItens(); // primeira leitura só define a base — o guard "!== null" impede aviso aqui
+  _verificarNovosItens();
   _intervaloMonitoramento = setInterval(_verificarNovosItens, INTERVALO_MONITORAMENTO_MS);
 }
 
@@ -600,7 +580,6 @@ async function _verificarNovosItens() {
 }
 
 async function renderPanorama(content, abasHtml) {
-  // Busca os contadores das 4 caixas em paralelo — não bloqueia nada
   const [resEntrada, resAndamento, resEnc, resConc, resPerguntas, resAlertas] = await Promise.all([
     api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'entrada' }),
     api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'andamento' }),
@@ -654,11 +633,12 @@ async function renderPanorama(content, abasHtml) {
     <div style="margin-bottom:20px;">
       <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px;">Panorama — ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}</div>
       <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:18px;">
-        ${bloco('ti-inbox',       'Na caixa de entrada',   qtdEntrada,      'entrada',      '#0b509e', qtdEntrada > 0)}
-        ${bloco('ti-loader',      'Em andamento',          qtdAndamento,    'andamento',    '#6f42c1', false)}
-        ${bloco('ti-share',       'Encaminhados',          qtdEncaminhados, 'encaminhados', '#0d6efd', false)}
-        ${bloco('ti-archive',     'Concluídos',            qtdConcluidos,   'concluidos',   '#198754', false)}
-        ${bloco('ti-message-question', 'Perguntas pendentes', qtdPerguntas, 'perguntas',   '#fd7e14', qtdPerguntas > 0)}
+        ${bloco('ti-layout-dashboard', 'Panorama geral',  qtdEntrada+qtdAndamento, 'panorama', '#343a40', false)}
+        ${bloco('ti-inbox',        'Na caixa de entrada',    qtdEntrada,      'entrada',     '#0b509e', qtdEntrada > 0)}
+        ${bloco('ti-loader',       'Em andamento',           qtdAndamento,    'andamento',   '#6f42c1', false)}
+        ${bloco('ti-share',        'Encaminhados',           qtdEncaminhados, 'encaminhados','#0d6efd', false)}
+        ${bloco('ti-archive',      'Concluídos',             qtdConcluidos,   'concluidos',  '#198754', false)}
+        ${bloco('ti-message-question', 'Perguntas pendentes', qtdPerguntas,   'perguntas',   '#fd7e14', qtdPerguntas > 0)}
       </div>
       ${qtdAlertas ? `
         <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">Alertas ativos (${qtdAlertas})</div>
@@ -670,7 +650,7 @@ async function renderPanorama(content, abasHtml) {
     </div>`;
 }
 
-async function renderDashboard(caixa = 'entrada') {
+async function renderDashboard(caixa = 'panorama') {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando...';
   await atualizarContagensSidebar();
@@ -683,7 +663,6 @@ async function renderDashboard(caixa = 'entrada') {
       <button class="btn btn-sm ${caixa === 'concluidos' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','concluidos')"><i class="ti ti-archive"></i> Concluídos</button>
       <button class="btn btn-sm ${caixa === 'perguntas' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','perguntas')"><i class="ti ti-message-question"></i> Perguntas <span id="badge-perguntas"></span></button>
     </div>`;
-  // Contador de perguntas esperando resposta — não segura a tela carregando
   api('achados/contar-pendentes', { usuario: usuarioAtual.email }).then(r => {
     const b = document.getElementById('badge-perguntas');
     if (b && r.ok && r.pendentes > 0) b.innerHTML = `<span style="background:#ffc107; color:#000; padding:0 6px; border-radius:10px; font-size:0.7rem; font-weight:bold;">${r.pendentes}</span>`;
@@ -834,7 +813,6 @@ async function abrirRegistroConcluido(id) {
   ]);
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">${escHtml(resProc.erro)}</div>`; return; }
   const proc = resProc.processo;
-  // Necessário pra importar a versão assinada daqui mesmo (salvarDocumentoNoBackend usa processoAtual)
   processoAtual = proc;
   const assinados = (resDocs.documentos || []).filter(d => d.tipo_documento === 'FINAL_ASSINADO');
   const assinadosHtml = assinados.length
@@ -870,7 +848,7 @@ async function abrirRegistroConcluido(id) {
       <h2 style="font-size:1.2rem;margin-bottom:5px;">${escHtml(proc.numero_sei || proc.id)}</h2>
       <p style="font-weight:600; font-size:1.05rem;">${escHtml(proc.titulo)}</p>
       <div style="font-size:0.85rem;color:var(--text-muted);margin-top:6px;">
-        Unidade: ${escHtml(proc.unidade)} | OSS: ${escHtml(proc.oss)} | Concluído em: ${proc.atualizado_em ? new Date(proc.atualizado_em).toLocaleString('pt-BR') : '—'}
+        Unidade: ${escHtml(proc.unidade)} | OSS: ${escHtml(proc.oss)} | Concluído em: ${proc.atualizado_em ? new Date(proc.atualizado_em).toLocaleDateString('pt-BR') : '—'}
       </div>
     </div>
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
@@ -905,17 +883,13 @@ function formatarSEI(input) {
   input.value = val;
 }
 
-// Testa UM provedor específico direto, sem passar pela fila de fallback (não faz
-// sentido testar Gemini e, se falhar, o teste "vazar" pro Groq — a pessoa quer saber
-// exatamente SE AQUELE ali funciona). Usa o valor que está no campo agora, mesmo que
-// ainda não tenha clicado "Salvar" — não devia precisar salvar só pra testar.
 async function testarConexaoProvedor(id) {
   const resultadoEl = document.getElementById('teste-' + id);
   if (resultadoEl) resultadoEl.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span> Testando...';
 
-  if (id === 'gemini') GEMINI_KEY = (document.getElementById('cfg-gemini')?.value || '').trim();
-  if (id === 'groq') GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
-  if (id === 'kimi') KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
+  if (id === 'gemini')     GEMINI_KEY     = (document.getElementById('cfg-gemini')?.value     || '').trim();
+  if (id === 'groq')       GROQ_KEY       = (document.getElementById('cfg-groq')?.value       || '').trim();
+  if (id === 'kimi')       KIMI_KEY       = (document.getElementById('cfg-kimi')?.value       || '').trim();
   if (id === 'openrouter') OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
   if (id === 'deepseek')   DEEPSEEK_KEY   = (document.getElementById('cfg-deepseek')?.value   || '').trim();
   if (id === 'ollama') {
@@ -934,9 +908,6 @@ async function testarConexaoProvedor(id) {
   }
 }
 
-// ==================== FONTES OFICIAIS DE DADOS ====================
-// Dados públicos, sem chave. Este espaço mostra para que cada fonte serve e testa a
-// conexão. Nenhuma delas entra na Checagem ainda — são propostas registradas.
 const FONTES_OFICIAIS_INFO = [
   { id: 'ibge_ipca', nome: 'IBGE — Índices de preço (IPCA)', testavel: true,
     serve: 'Conferir se o percentual de reajuste aplicado nos aditivos bate com o índice oficial do período.' },
@@ -979,40 +950,35 @@ async function testarFonteOficial(id) {
 }
 
 function salvarConfig() {
-  const inputEl = document.getElementById('cfg-gemini');
-  if (!inputEl) return;
-  GEMINI_KEY = inputEl.value.trim();
+  GEMINI_KEY     = (document.getElementById('cfg-gemini')?.value     || '').trim();
   localStorage.setItem('sei_gemini_key', GEMINI_KEY);
-  GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
+  GROQ_KEY       = (document.getElementById('cfg-groq')?.value       || '').trim();
   localStorage.setItem('sei_groq_key', GROQ_KEY);
-  KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
+  KIMI_KEY       = (document.getElementById('cfg-kimi')?.value       || '').trim();
   localStorage.setItem('sei_kimi_key', KIMI_KEY);
   OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
   localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
-  OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
+  DEEPSEEK_KEY   = (document.getElementById('cfg-deepseek')?.value   || '').trim();
+  localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
+  OLLAMA_URL     = (document.getElementById('cfg-ollama-url')?.value     || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
-  OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
+  OLLAMA_MODEL   = (document.getElementById('cfg-ollama-model')?.value   || '').trim() || 'qwen2.5:7b';
   localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
 
-  GEMINI_ATIVO = !!document.getElementById('ativo-gemini')?.checked;
+  GEMINI_ATIVO     = !!document.getElementById('ativo-gemini')?.checked;
   localStorage.setItem('sei_gemini_ativo', String(GEMINI_ATIVO));
-  GROQ_ATIVO = !!document.getElementById('ativo-groq')?.checked;
+  GROQ_ATIVO       = !!document.getElementById('ativo-groq')?.checked;
   localStorage.setItem('sei_groq_ativo', String(GROQ_ATIVO));
-  KIMI_ATIVO = !!document.getElementById('ativo-kimi')?.checked;
+  KIMI_ATIVO       = !!document.getElementById('ativo-kimi')?.checked;
   localStorage.setItem('sei_kimi_ativo', String(KIMI_ATIVO));
   OPENROUTER_ATIVO = !!document.getElementById('ativo-openrouter')?.checked;
   localStorage.setItem('sei_openrouter_ativo', String(OPENROUTER_ATIVO));
-  DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
-  localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
-  DEEPSEEK_ATIVO = !!document.getElementById('ativo-deepseek')?.checked;
+  DEEPSEEK_ATIVO   = !!document.getElementById('ativo-deepseek')?.checked;
   localStorage.setItem('sei_deepseek_ativo', String(DEEPSEEK_ATIVO));
-  OLLAMA_ATIVO = !!document.getElementById('ativo-ollama')?.checked;
+  OLLAMA_ATIVO     = !!document.getElementById('ativo-ollama')?.checked;
   localStorage.setItem('sei_ollama_ativo', String(OLLAMA_ATIVO));
 
-  // Ordena pelo número escolhido em cada seletor — em caso de empate, o sort estável do
-  // JS preserva a ordem de partida abaixo (a ordem de fábrica), então empate nunca é
-  // ambíguo, sempre cai de volta no padrão de sempre entre os que empataram.
-  const idsBase = ['gemini', 'groq', 'kimi', 'openrouter', 'ollama'];
+  const idsBase = ['deepseek', 'gemini', 'groq', 'kimi', 'openrouter', 'ollama'];
   const comPrioridade = idsBase.map(id => ({ id, prioridade: Number(document.getElementById('prio-' + id)?.value) || 99 }));
   comPrioridade.sort((a, b) => a.prioridade - b.prioridade);
   ORDEM_PROVEDORES_IDS = comPrioridade.map(p => p.id);
@@ -1022,15 +988,9 @@ function salvarConfig() {
   verificarIA();
 }
 
-// Escolhe o nº do processo com critério, em vez de pegar o primeiro que aparecer (que
-// pode ser um processo apenas CITADO num documento). Ordem: 1) nome do arquivo exportado
-// do SEI; 2) o número que mais se repete nos documentos (o do próprio processo costuma
-// estar no cabeçalho ou rodapé de tudo). Devolve a origem e os outros candidatos.
 const REGEX_NUM_PROCESSO = /(\d{4,})\s*\.\s*(\d{5,6})\s*[\/_]\s*(\d{4})\s*-\s*(\d{2})/g;
 
 function escolherNumeroProcesso(nomeArquivo, arquivosLidos) {
-  // Nome do ZIP exportado pelo SEI: aceita ponto, sublinhado, hífen, barra ou espaço
-  // entre as partes (2300002773.000116_2026-49, 2300002773_000116_2026_49...).
   const m = String(nomeArquivo || '').match(/(\d{4,})[.\s_-]?(\d{6})[\s_\/-](\d{4})[\s_-](\d{2})(?!\d)/);
   const contagem = {}, docsPorNumero = {};
   arquivosLidos.forEach(a => {
@@ -1043,7 +1003,6 @@ function escolherNumeroProcesso(nomeArquivo, arquivosLidos) {
   const ranking = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
   if (m) {
     const doNome = `${m[1]}.${m[2]}/${m[3]}-${m[4]}`;
-    // Número do nome do ZIP é o do processo — não compete com números citados nos documentos.
     return { valor: doNome, origem: 'tirado do nome do arquivo exportado do SEI', outros: [] };
   }
   if (!ranking.length) return null;
@@ -1055,14 +1014,12 @@ function escolherNumeroProcesso(nomeArquivo, arquivosLidos) {
   };
 }
 
-// Conferência da importação: compara o que chegou com o que ficou gravado no processo,
-// perguntando ao backend (não confia só na contagem feita na tela).
 async function conferirImportacao(processoId, docsAntes, recebidos, falhas) {
   let noProcesso = null;
   try {
     const r = await api('documentos/listar', { processo_id: processoId });
     if (r.ok) noProcesso = (r.documentos || []).length - docsAntes;
-  } catch (e) { /* sem confirmação do backend — o resumo avisa */ }
+  } catch (e) { /* sem confirmação do backend */ }
   return { recebidos, salvos: noProcesso, falhas };
 }
 
@@ -1084,7 +1041,7 @@ async function prePreencherDeArquivo(file) {
   const status = document.getElementById('np-status-preenchimento');
   status.innerHTML = '<span class="spinner"></span> Lendo o documento...';
   try {
-    let arquivosLidos; // sempre uma lista — [{nome, texto}] — mesmo pra 1 arquivo só, evita caso especial
+    let arquivosLidos;
     if (file.name.toLowerCase().endsWith('.zip')) {
       const { arquivos, avisos, total } = await abrirZipEExtrairArquivos(file, (nome) => {
         status.innerHTML = `<span class="spinner"></span> Lendo ${escHtml(nome.substring(0, 40))}...`;
@@ -1110,8 +1067,6 @@ async function prePreencherDeArquivo(file) {
     }
 
     status.innerHTML = '<span class="spinner"></span> Identificando título, unidade e OSS...';
-    // Amostra pra IA: concatena o início de cada arquivo, até um limite total —
-    // suficiente pra achar título/unidade/OSS sem mandar o processo inteiro nessa etapa.
     const LIMITE_AMOSTRA_TOTAL = 8000;
     let amostra = '';
     for (const a of arquivosLidos) {
@@ -1132,30 +1087,23 @@ ${amostra}`;
     let avisoIA = '';
     try {
       const jsonStr = await invocarIAComFallback(prompt, false, null);
-      // Alguns serviços devolvem texto em volta do JSON — pega só o objeto.
       const bloco = String(jsonStr).match(/\{[\s\S]*\}/);
       if (!bloco) throw new Error('A IA respondeu sem o formato esperado.');
       const sugestao = JSON.parse(bloco[0]);
       if (sugestao.titulo)  { const el = document.getElementById('np-titulo');  el.value = sugestao.titulo;  _marcarComoSugerido(el); }
       if (sugestao.unidade) { const el = document.getElementById('np-unidade'); el.value = sugestao.unidade; _marcarComoSugerido(el); }
       if (sugestao.oss)     { const el = document.getElementById('np-oss');     el.value = sugestao.oss;     _marcarComoSugerido(el); }
-      if (!sugestao.titulo && !sugestao.unidade && !sugestao.oss) {
-        avisoIA = 'A IA não encontrou título, unidade nem OSS claramente escritos no início dos documentos. Preencha manualmente.';
-      }
     } catch (e) {
       const { sugestao } = _mensagemErroAmigavel(e.message);
       avisoIA = `Não consegui sugerir título, unidade e OSS (${sugestao}). Preencha manualmente.`;
     }
     const nomesLidos = arquivosLidos.map(a => a.nome).join(', ');
     const avisoSemNumero = !achouNumeroProcesso
-      ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> Não achei um número de processo no formato SEI (ex: 2300002.104000/2022-91) — preencha o campo manualmente.</div>`
-      : `<div style="margin-top:6px;">Nº do processo: ${escHtml(escolha.origem)}.${escolha.outros.length ? ` Outros números citados nos documentos: ${escHtml(escolha.outros.join(', '))} — confira se o escolhido é o certo.` : ''}</div>`;
-    const blocoAvisoIA = avisoIA ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> ${escHtml(avisoIA)}</div>` : '';
-    const blocoNaoLidos = (window._importacaoInfo?.avisos || []).length
-      ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> ${window._importacaoInfo.avisos.length} arquivo(s) do ZIP não serão importados: ${escHtml(window._importacaoInfo.avisos.join('; '))}</div>` : '';
+      ? `<div style="margin-top:6px; color:#856404;"><i class="ti ti-alert-triangle"></i> Não achei um número de processo no formato SEI — preencha o campo manualmente.</div>`
+      : `<div style="margin-top:6px;">Nº do processo: ${escHtml(escolha.origem)}.</div>`;
     status.innerHTML = `<div style="background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:0.82rem;">
-      <i class="ti ti-check"></i> ${arquivosLidos.length > 1 ? `${arquivosLidos.length} arquivos lidos (${escHtml(nomesLidos)})` : escHtml(nomesLidos)}. Confira os campos destacados abaixo antes de salvar.
-      ${avisoSemNumero}${blocoAvisoIA}${blocoNaoLidos}
+      <i class="ti ti-check"></i> ${arquivosLidos.length > 1 ? `${arquivosLidos.length} arquivos lidos` : escHtml(nomesLidos)}. Confira os campos abaixo.
+      ${avisoSemNumero}
     </div>`;
   } catch (e) {
     _arquivoPrePreenchido = null;
@@ -1173,8 +1121,6 @@ function _marcarComoSugerido(el) {
 async function salvarNovoProcesso() {
   const sei = document.getElementById('np-sei').value.trim();
   const titulo = document.getElementById('np-titulo').value.trim();
-  // Sem valor padrão: preencher "HRA"/"ISG" por conta própria gravava processo de outra
-  // unidade como HRA, e a comparação com o histórico buscava a unidade errada.
   const unidade = document.getElementById('np-unidade').value.trim();
   const oss = document.getElementById('np-oss').value.trim();
   const gerencia      = document.getElementById('np-gerencia').value.trim();
@@ -1331,22 +1277,17 @@ async function abrirProcesso(identificador) {
   const tramitacoes = resTram.tramitacoes || [];
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
 
-  // Ordem de leitura da IA: documentos estruturantes primeiro (contrato, aditivos),
-  // depois os de referência (planilhas, ofícios), por último os de trâmite (despachos).
-  // Dentro de cada grupo, mantém a ordem original do SEI (número no nome do arquivo).
-  // Isso garante que a IA lê a base contratual primeiro — e, em processos grandes que
-  // precisam ser cortados por limite de tokens, o que cai fora são os menos relevantes.
   const _prioridadeTipo = nome => {
     const n = (nome || '').toLowerCase();
     if (/contrato[\s_-]*(de[\s_-]*gest[aã]o)?|cg[\s_-]*\d|cgm/.test(n)) return 0;
-    if (/aditivo|termo[\s_-]*aditivo/.test(n))                             return 1;
-    if (/apostilamento/.test(n))                                           return 2;
-    if (/anexo[\s_-]*(t[eé]cnico|financeiro|i+\b)/.test(n))               return 3;
-    if (/planilha|excel|xlsx|financ|or[cç]amento/.test(n))                 return 4;
-    if (/nota[\s_-]*t[eé]cnica|parecer|relat[oó]rio/.test(n))             return 5;
-    if (/of[ií]cio/.test(n))                                               return 6;
-    if (/despacho|informa[cç][aã]o|minuta/.test(n))                        return 7;
-    return 8; // outros
+    if (/aditivo|termo[\s_-]*aditivo/.test(n))                               return 1;
+    if (/apostilamento/.test(n))                                            return 2;
+    if (/anexo[\s_-]*(t[eé]cnico|financeiro|i+\b)/.test(n))                return 3;
+    if (/planilha|excel|xlsx|financ|or[cç]amento/.test(n))                  return 4;
+    if (/nota[\s_-]*t[eé]cnica|parecer|relat[oó]rio/.test(n))              return 5;
+    if (/of[ií]cio/.test(n))                                                return 6;
+    if (/despacho|informa[cç][aã]o|minuta/.test(n))                          return 7;
+    return 8;
   };
   const _numSEINoNome = nome => {
     const m = (nome || '').match(/^\[(\d+)\]/);
@@ -1375,7 +1316,7 @@ async function abrirProcesso(identificador) {
           resumoTxt = lista.length
             ? ` <span style="color:#b45309; font-size:0.72rem;">(${lista.length} dado(s) sensível(is) coberto(s))</span>`
             : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
-        } catch (e) { /* resumo antigo ou inválido — só não mostra */ }
+        } catch (e) { /* ignora */ }
       }
       const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO'
         ? ' <span style="background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600;">✓ VERSÃO ASSINADA</span>' : '';
@@ -1485,8 +1426,6 @@ async function abrirProcesso(identificador) {
           <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(c.resposta)}</div>
       </div>`).join('');
     historyEl.insertAdjacentHTML('beforeend', '<div id="chat-divisor" style="border-top:1px dashed #dee2e6; margin:5px 0 2px; font-size:0.7rem; color:#adb5bd; text-align:center;">— perguntas anteriores —</div>');
-    const contador = document.getElementById('chat-contador');
-    if (contador) contador.textContent = `(${consultas.length} pergunta${consultas.length !== 1 ? 's' : ''} salva${consultas.length !== 1 ? 's' : ''})`;
     historyEl.scrollTop = historyEl.scrollHeight;
   }).catch(e => console.warn('Falha ao carregar histórico de consultas:', e.message));
   api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
@@ -1581,10 +1520,6 @@ async function finalizarProcesso() {
   showView('dashboard', 'concluidos');
 }
 
-// ==================== TABELA DE DADOS DO PROCESSO ====================
-// Monta uma tabela com valores, datas, nº de processo e CEP extraídos POR CÓDIGO dos
-// documentos — nenhum número é escrito pela IA. Cada linha diz de qual documento e
-// página veio, pra quem for usar a tabela num parecer poder conferir na fonte.
 function montarLinhasTabelaDados() {
   const linhas = [];
   dividirPorDocumento(textoIntegralAtual).forEach(d => {
@@ -1602,9 +1537,6 @@ function montarLinhasTabelaDados() {
   return linhas;
 }
 
-// Estado da tabela personalizada — vive enquanto o modal está aberto.
-// Os VALORES nunca são editáveis aqui (vêm da extração por código); o que a pessoa
-// ajusta é recorte, colunas, título e as observações que ela mesma escreve.
 const COLUNAS_TABELA = [
   { id: 'doc', nome: 'Documento' },
   { id: 'pagina', nome: 'Pág.' },
@@ -1675,8 +1607,6 @@ function abrirTabelaDadosProcesso() {
   _atualizarTabelaDados();
 }
 
-// Linhas que passam nos filtros (tipo, documento, busca). A caixinha de cada linha
-// decide se ela entra na tabela copiada.
 function _linhasVisiveis() {
   const { linhas, cfg } = window._tab;
   const busca = cfg.busca.trim().toLowerCase();
@@ -1707,8 +1637,6 @@ function _atualizarTabelaDados() {
   </table>`;
 }
 
-// Copia como HTML (mantém a tabela ao colar no Word/SEI) e como texto separado por
-// tabulação (fallback pra onde não aceitar HTML). Só as linhas marcadas.
 async function copiarTabelaDados() {
   const { cfg } = window._tab;
   const linhas = _linhasVisiveis().filter(l => l.incluida);
@@ -1736,16 +1664,13 @@ async function copiarTabelaDados() {
   }
 }
 
-// ==================== VERSÃO ASSINADA (volta do SEI) ====================
-// Depois de assinar no SEI, a pessoa importa o documento oficial de volta. É ELE que
-// compõe o banco de dados — o rascunho revisado aqui pode ter mudado antes da assinatura.
 let _origemVersaoAssinada = 'processo';
 
 function modalImportarVersaoAssinada(origem) {
   _origemVersaoAssinada = origem || 'processo';
   criarModal(`
     <h2 style="margin-bottom:8px; font-size:1.15rem;">Importar versão assinada (SEI)</h2>
-    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">Depois de assinar no SEI, exporte o documento (o SEI gera .html ou .pdf) e importe aqui. Ele fica marcado como a versão oficial deste processo.</p>
+    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">Depois de assinar no SEI, exporte o documento e importe aqui. Ele fica marcado como a versão oficial deste processo.</p>
     <input type="file" id="arquivo-versao-assinada" accept=".html,.htm,.pdf,.docx,.doc" onchange="processarVersaoAssinada(this.files[0])">
     <div id="status-versao-assinada" style="margin-top:12px;"></div>`);
 }
@@ -1772,9 +1697,6 @@ async function processarVersaoAssinada(file) {
   }
 }
 
-// ==================== CRIAR DOCUMENTO (aguardando modelos padrão) ====================
-// O botão já existe; os modelos (nota técnica, parecer, minuta, ofício) serão montados a
-// partir de exemplos reais já assinados pela equipe, quando forem catalogados.
 function abrirCriarDocumento() {
   criarModal(`
     <h2 style="margin-bottom:8px; font-size:1.15rem;">Criar documento</h2>
@@ -1792,7 +1714,7 @@ function modalUploadZIP() {
          onclick="document.getElementById('file-up').click()">
       <i class="ti ti-cloud-download" style="font-size:2.5rem; margin-bottom:10px; color:var(--action-primary);"></i><br>
       <strong>Arraste um ou mais arquivos aqui</strong><br>
-      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD, PPTX, HTML (despacho SEI GOV), PNG ou JPG — pode soltar vários juntos, sem precisar zipar antes. Foto de documento/página escaneada é lida por OCR (mais lento).</span>
+      <span style="font-size:0.85rem;">ZIP, PDF, DOCX, XLSX, TXT, CSV, MD, PPTX, HTML, PNG ou JPG — pode soltar vários juntos, sem precisar zipar antes.</span>
     </div>
     <input type="file" id="file-up" multiple style="display:none" onchange="processarUploadZIP(this.files)">
     <div id="up-status" style="margin-top:15px;"></div>
@@ -1811,21 +1733,12 @@ async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis, tipoDocum
 
 const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.ppt', '.png', '.jpg', '.jpeg', '.html', '.htm'];
 
-// ==================== OCR (leitura de imagem/PDF escaneado) ====================
-// Usa Tesseract.js — roda no navegador, sem precisar de servidor. É lento (alguns
-// segundos por página), então só entra como PLANO B: pra imagem solta (.png/.jpg), é
-// o único jeito de ler; pra página de PDF, só roda quando a extração normal de texto
-// não encontrou quase nada (indício de página escaneada/foto, não texto real).
 async function ocrImagem(fonte) {
-  if (typeof Tesseract === 'undefined') throw new Error('Biblioteca de OCR (Tesseract.js) não carregada no index.html — necessária pra ler imagem ou PDF escaneado.');
+  if (typeof Tesseract === 'undefined') throw new Error('Biblioteca de OCR (Tesseract.js) não carregada no index.html.');
   const resultado = await Tesseract.recognize(fonte, 'por');
   return (resultado?.data?.text) || '';
 }
 
-// Converte o despacho em HTML do SEI em texto que a IA lê bem e com poucos tokens:
-// tabela continua tabela (formato Markdown, colunas separadas por "|"), cada parágrafo
-// vira uma linha, e estilo, script e marcação somem. Antes, parágrafos colavam um no
-// outro e as tabelas viravam texto corrido, sem dar pra saber o que era linha ou coluna.
 function htmlParaTextoEstruturado(doc) {
   const body = doc.body;
   if (!body) return '';
@@ -1854,33 +1767,28 @@ async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
   const nome = nomeArquivo.toLowerCase();
   if (nome.endsWith('.pdf')) return extrairTextoPDF(buf, onProgresso);
   if (nome.endsWith('.docx') || nome.endsWith('.doc')) {
-    if (typeof mammoth === 'undefined') throw new Error('Biblioteca de leitura de Word (mammoth) não carregada no index.html.');
+    if (typeof mammoth === 'undefined') throw new Error('Biblioteca de leitura de Word (mammoth) não carregada.');
     const resultado = await mammoth.extractRawText({ arrayBuffer: buf });
     return resultado.value || '';
   }
   if (nome.endsWith('.xlsx') || nome.endsWith('.xls')) {
-    if (typeof XLSX === 'undefined') throw new Error('Biblioteca de leitura de Excel (SheetJS/XLSX) não carregada no index.html.');
+    if (typeof XLSX === 'undefined') throw new Error('Biblioteca de leitura de Excel (SheetJS/XLSX) não carregada.');
     const wb = XLSX.read(buf, { type: 'array' });
     return wb.SheetNames.map(nomeAba => `--- Planilha: ${nomeAba} ---\n` + XLSX.utils.sheet_to_csv(wb.Sheets[nomeAba])).join('\n\n');
   }
   if (nome.endsWith('.txt') || nome.endsWith('.csv') || nome.endsWith('.md')) {
     return new TextDecoder('utf-8', { fatal: false }).decode(buf);
   }
-  // Despacho exportado direto do SEI GOV vem em .html — usa o interpretador de HTML
-  // nativo do navegador (DOMParser) pra tirar só o texto legível, sem tag nenhuma
-  // sobrando no meio (senão a IA ficaria lendo "<div>" e "<span>" junto do conteúdo).
   if (nome.endsWith('.html') || nome.endsWith('.htm')) {
     const htmlBruto = new TextDecoder('utf-8', { fatal: false }).decode(buf);
-    if (typeof DOMParser === 'undefined') throw new Error('Leitor de HTML não disponível neste navegador.');
+    if (typeof DOMParser === 'undefined') throw new Error('Leitor de HTML não disponível.');
     const doc = new DOMParser().parseFromString(htmlBruto, 'text/html');
     const texto = htmlParaTextoEstruturado(doc);
     if (!texto.length) throw new Error('Nenhum texto legível encontrado nesse HTML.');
     return texto;
   }
-  // Imagem solta (foto de documento, print de tela) — só dá pra ler via OCR, não tem
-  // texto embutido nenhum pra extrair.
   if (nome.endsWith('.png') || nome.endsWith('.jpg') || nome.endsWith('.jpeg')) {
-    if (onProgresso) onProgresso('Lendo imagem via OCR (pode levar alguns segundos)...');
+    if (onProgresso) onProgresso('Lendo imagem via OCR...');
     const mime = nome.endsWith('.png') ? 'image/png' : 'image/jpeg';
     const blob = new Blob([buf], { type: mime });
     const texto = await ocrImagem(blob);
@@ -1888,7 +1796,7 @@ async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
     return texto;
   }
   if (nome.endsWith('.pptx')) {
-    if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada — necessária pra abrir .pptx.');
+    if (typeof JSZip === 'undefined') throw new Error('Biblioteca JSZip não carregada.');
     const zip = await JSZip.loadAsync(buf);
     const slideFiles = Object.keys(zip.files)
       .filter(k => /^ppt\/slides\/slide\d+\.xml$/.test(k))
@@ -1912,16 +1820,10 @@ function _decodeXmlEntities(s) {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
-// Abre um .zip e extrai texto de cada arquivo suportado dentro dele — reutilizada tanto
-// no upload de arquivos dentro de um processo já criado quanto no pré-preenchimento da
-// tela "Importar Processo" (antes, só o primeiro sabia abrir ZIP; os dois divergiam e foi
-// exatamente isso que quebrou ao soltar um ZIP na tela de importar processo).
 async function abrirZipEExtrairArquivos(file, onProgresso) {
   const resultado = { arquivos: [], avisos: [], total: 0 };
   const zip = new JSZip();
   const contents = await zip.loadAsync(file);
-  // Arquivos de sistema que o Mac/Windows põem dentro do ZIP não são documentos — não
-  // entram na contagem, senão a conferência acusaria "faltando" o que nunca foi documento.
   const todosArquivos = Object.keys(contents.files).filter(k => !contents.files[k].dir
     && !k.startsWith('__MACOSX/') && !k.split('/').pop().startsWith('.'));
   resultado.total = todosArquivos.length;
@@ -1945,8 +1847,6 @@ async function abrirZipEExtrairArquivos(file, onProgresso) {
   return resultado;
 }
 
-// Uma linha da lista progressiva de importação — mostra o que já foi coberto nesse
-// arquivo específico, sem esperar o restante do lote terminar.
 function _linhaProgressoArquivo(nome, sensiveis) {
   const resumo = sensiveis && sensiveis.length
     ? `${sensiveis.length} dado(s) sensível(is): ` + sensiveis.map(s => `${s.tipo}${s.pagina ? ' pág.' + s.pagina : ''}`).join(', ')
@@ -1962,13 +1862,12 @@ async function processarUploadZIP(files) {
   if (!listaArquivos.length) return;
   const avisos = [];
   let importados = 0;
-  let recebidos = 0; // arquivos soltos + arquivos de dentro de cada ZIP
-  // Quantos documentos o processo já tinha — base pra conferir quantos entraram agora.
+  let recebidos = 0;
   let docsAntes = 0;
   try {
     const r = await api('documentos/listar', { processo_id: processoAtual.id });
     if (r.ok) docsAntes = (r.documentos || []).length;
-  } catch (e) { /* segue; a conferência avisa se não conseguir confirmar */ }
+  } catch (e) { /* segue */ }
   for (const file of listaArquivos) {
     const nomeLower = file.name.toLowerCase();
     if (nomeLower.endsWith('.zip')) {
@@ -2009,8 +1908,6 @@ async function processarUploadZIP(files) {
       avisos.push(`${file.name}: tipo não suportado — NÃO importado`);
     }
   }
-  // Conferência: pergunta ao backend quantos documentos o processo ganhou, e mostra o
-  // resumo no topo da tela do processo (fica lá até a pessoa fechar, não some sozinho).
   status.innerHTML = '<span class="spinner"></span> Conferindo a importação...';
   const conf = await conferirImportacao(processoAtual.id, docsAntes, recebidos, avisos);
   window._resumoImportacaoPendente = htmlResumoImportacao(conf);
@@ -2027,11 +1924,9 @@ async function extrairTextoPDF(buf, onProgresso) {
     const content = await page.getTextContent();
     let textoPagina = _reconstruirLinhasPDF(content.items);
 
-    // Página sem texto extraível de verdade — indício forte de página escaneada/foto,
-    // não texto real. Tenta OCR como plano B (mais lento, por isso só entra aqui).
     if (textoPagina.trim().length < 15) {
       try {
-        if (onProgresso) onProgresso(`Página ${i}/${pdf.numPages} sem texto — lendo via OCR (pode ser lento)...`);
+        if (onProgresso) onProgresso(`Página ${i}/${pdf.numPages} sem texto — lendo via OCR...`);
         const viewport = page.getViewport({ scale: 2 });
         const canvas = document.createElement('canvas');
         canvas.width = viewport.width;
@@ -2044,27 +1939,12 @@ async function extrairTextoPDF(buf, onProgresso) {
         console.warn(`OCR falhou na página ${i}:`, e.message);
       }
     }
-
     paginas.push(textoPagina);
   }
-  // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
-  // documentos) de propósito, pra dividirPorDocumento() continuar funcionando sem confundir
-  // "página" com "documento". Serve pra localizar onde um dado apareceu.
   return removerRepeticoesDePagina(paginas)
     .map((t, i) => `\n--- PÁGINA ${i + 1} ---\n` + t + '\n').join('');
 }
 
-// Cabeçalho, rodapé, numeração de página e timbre se repetem em toda página e vão para a
-// IA a cada página, sem acrescentar nada — gastam tokens e deixam a checagem mais lenta.
-// Regras, todas conservadoras, porque apagar conteúdo real é pior que gastar token:
-// 1) Só as 3 primeiras e as 3 últimas linhas de cada página são candidatas (é onde ficam
-//    cabeçalho e rodapé). O meio da página nunca é tocado.
-// 2) A linha precisa ser IDÊNTICA em pelo menos 3 páginas e em 60% ou mais delas. Números
-//    só são ignorados quando a linha TERMINA em numeração de página ("Página 3 de 10",
-//    "pg. 4", "fls. 12"), pra essas contarem como a mesma linha.
-// 3) Nunca sai: linha curta (menos de 8 caracteres), linha com "total" e linha com valor
-//    em R$ — é delas que a conferência de contas depende.
-// Fica sempre a primeira ocorrência.
 const REGEX_NUMERACAO_PAGINA = /(p[áa]g(ina)?\.?|pg\.|fls?\.|folha)\s*\d+(\s*(de|\/)\s*\d+)?\s*$/i;
 const LINHAS_BORDA_PAGINA = 3;
 
@@ -2076,7 +1956,6 @@ function removerRepeticoesDePagina(paginas) {
     return n;
   };
   const protegida = l => l.trim().length < 8 || /\btotal\b/i.test(l) || /R\$/.test(l);
-  // Índices das linhas de borda (topo e pé) de cada página, ignorando linhas vazias
   const bordas = paginas.map(t => {
     const idx = t.split('\n').map((l, i) => l.trim() ? i : -1).filter(i => i >= 0);
     return new Set([...idx.slice(0, LINHAS_BORDA_PAGINA), ...idx.slice(-LINHAS_BORDA_PAGINA)]);
@@ -2163,14 +2042,14 @@ async function invocarGeminiPremium(prompt, isChat = false, statusEl = null) {
 }
 
 const PROVEDOR_TIMEOUT_MS = 60000;
-// Metadados de cada provedor — usado tanto pra montar o painel visual quanto pro motor
-// de fallback. A ORDEM em que tenta é ORDEM_PROVEDORES_IDS (configurável), não esta lista.
+
+// ==================== CONFIGURAÇÃO DOS PROVEDORES (DeepSeek como 1ª opção padrão) ====================
 const PROVEDORES_INFO = {
+  deepseek:   { nome: 'DeepSeek',   temChave: () => !!DEEPSEEK_KEY && DEEPSEEK_ATIVO,       invocar: invocarDeepSeek },
   gemini:     { nome: 'Gemini',     temChave: () => !!GEMINI_KEY && GEMINI_ATIVO,         invocar: invocarGeminiPremium },
   groq:       { nome: 'Groq',       temChave: () => !!GROQ_KEY && GROQ_ATIVO,             invocar: invocarGroq },
   kimi:       { nome: 'Kimi',       temChave: () => !!KIMI_KEY && KIMI_ATIVO,             invocar: invocarKimi },
   openrouter: { nome: 'OpenRouter', temChave: () => !!OPENROUTER_KEY && OPENROUTER_ATIVO, invocar: invocarOpenRouter },
-  deepseek:   { nome: 'DeepSeek',   temChave: () => !!DEEPSEEK_KEY && DEEPSEEK_ATIVO,     invocar: invocarDeepSeek },
   ollama:     { nome: 'Ollama',     temChave: () => OLLAMA_ATIVO,                         invocar: invocarOllama }
 };
 
@@ -2199,9 +2078,6 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
     ${mensagem ? `<div style="font-size:0.82rem; color:var(--text-muted);">${escHtml(mensagem)}</div>` : ''}`;
 }
 
-// Acha, dentro do texto ANTES de um dado ponto, o último "--- DOC: nome ---" e o último
-// "--- PÁGINA N ---" que apareceram — é assim que sabemos de qual documento/página um
-// dado mascarado veio, sem precisar mudar a estrutura do texto que já existia.
 function _localizarOrigem(textoAntes) {
   const docMatches = [...textoAntes.matchAll(/--- DOC: (.+?) ---/g)];
   const pagMatches = [...textoAntes.matchAll(/--- PÁGINA (\d+) ---/g)];
@@ -2211,10 +2087,6 @@ function _localizarOrigem(textoAntes) {
   };
 }
 
-// Duas camadas: 1) bloco de qualificação (nome+CPF+RG juntos, achado por frase-âncora
-// de contrato); 2) regex de formato conhecido pro que sobrar fora dos blocos.
-// "detalhes" (novo) guarda, pra cada item mascarado, tipo + de onde veio — é o que
-// alimenta o painel visual "O que foi mascarado" mostrado depois da Checagem/Revisão.
 function mascararBlocosQualificacao(texto) {
   const mapa = new Map();
   const detalhes = [];
@@ -2265,8 +2137,6 @@ function mascararDadosSensiveis(texto) {
   function substituir(regex, tipo) {
     const marcadorPorValor = new Map();
     textoMascarado = textoMascarado.replace(regex, (match, ...args) => {
-      // Os últimos 2 argumentos do replace são sempre (offset, textoCompleto) —
-      // pega-os pela posição a partir do fim, já que args também inclui grupos de captura.
       const offset = args[args.length - 2];
       const textoCompleto = args[args.length - 1];
       if (marcadorPorValor.has(match)) return marcadorPorValor.get(match);
@@ -2279,8 +2149,6 @@ function mascararDadosSensiveis(texto) {
       return marcador;
     });
   }
-  // Ordem importa: CPF (com pontuação) primeiro, pra não ser "roubado" pela regex
-  // mais genérica de telefone antes de ter a chance de casar.
   substituir(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, 'CPF');
   substituir(/\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g, 'RG');
   substituir(/[\w.+-]+@[\w-]+\.[\w.-]+/g, 'EMAIL');
@@ -2289,10 +2157,6 @@ function mascararDadosSensiveis(texto) {
   return { textoMascarado, mapa, totalMascarado: mapa.size, detalhes };
 }
 
-// Detecta dados sensíveis num arquivo recém-lido, ANTES mesmo de existir Checagem —
-// reaproveita o mesmo motor de mascararDadosSensiveis (mesmos padrões, mesma forma de
-// achar página) só que aqui é puramente informativo: não mascara nada, só lista o que
-// tem, pra já aparecer na importação em vez de só depois que a Checagem rodar.
 function detectarSensiveisDoArquivo(texto, nomeArquivo) {
   const { detalhes } = mascararDadosSensiveis(texto);
   return detalhes.map(d => ({ tipo: d.tipo, doc: nomeArquivo, pagina: d.pagina }));
@@ -2305,8 +2169,6 @@ function desmascararTexto(texto, mapa) {
   return resultado;
 }
 
-// Monta o HTML do painel "O que foi mascarado" — chamado depois de qualquer chamada de
-// IA que tenha mascarado algo, pra nunca deixar isso invisível pro analista.
 function renderPainelMascaramento(detalhes) {
   if (!detalhes || !detalhes.length) return '';
   const rotulos = { CPF: 'CPF', RG: 'RG', EMAIL: 'E-mail', TELEFONE: 'Telefone', BANCARIO: 'Dado bancário', QUALIFICACAO: 'Bloco de qualificação (nome+documento)' };
@@ -2324,7 +2186,6 @@ function renderPainelMascaramento(detalhes) {
     </details>`;
 }
 
-
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
   const estados = {};
@@ -2334,20 +2195,14 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   });
 
   const { textoMascarado: promptMascarado, mapa, totalMascarado, detalhes } = mascararDadosSensiveis(prompt);
-  // Exposto globalmente pra quem chamou (rodarRaioX, rodarRevisaoFinal) poder montar o
-  // painel "o que foi mascarado" depois que a chamada terminar — o Ollama (local) não
-  // mascara nada, mas se ele for usado DEPOIS de uma tentativa em nuvem que já mascarou,
-  // esse registro do que teria sido mascarado continua valendo (foi calculado antes).
   window._ultimoMascaramentoDetalhes = detalhes;
 
   for (const id of ORDEM_PROVEDORES_IDS) {
     const info = PROVEDORES_INFO[id];
-    if (!info || !info.temChave()) continue; // Ollama sempre "tem chave" (não precisa de uma)
+    if (!info || !info.temChave()) continue;
     estados[id] = 'tentando';
     renderPainelProvedores(statusEl, estados, `Chamando ${info.nome}...`);
     try {
-      // Ollama roda local — usa o prompt ORIGINAL, sem máscara (não há por quê mascarar
-      // pra si mesmo). Todo o resto (nuvem) usa a versão mascarada.
       const promptDesteProvedor = id === 'ollama' ? prompt : promptMascarado;
       const r = await info.invocar(promptDesteProvedor, isChat, statusEl);
       estados[id] = 'ok';
@@ -2362,7 +2217,6 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   if (!erros.length) throw new Error('Nenhum serviço de IA está habilitado com chave. Vá em "Motor de IA" e ligue ao menos um.');
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
-
 
 async function invocarGroq(prompt, isChat, statusEl) {
   const controller = new AbortController();
@@ -2380,13 +2234,6 @@ async function invocarGroq(prompt, isChat, statusEl) {
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
-// Kimi (Moonshot AI) — mesmo padrão compatível com a API da OpenAI que Groq/OpenRouter
-// já usam. Endpoint e modelo confirmados na documentação oficial da Moonshot.
-// Tempo de espera próprio pra Kimi — bem maior que os outros. Ela é um modelo "de
-// raciocínio" (pensa antes de responder) e, com processo grande (documento com muitos
-// tokens), isso pode levar minutos — confirmado na prática: um teste real gastou tempo
-// suficiente pra estourar os 60s padrão, mesmo a Kimi tendo respondido (o pedido aparece
-// cobrado no painel da Moonshot), só que depois do nosso limite já ter cortado a conexão.
 const KIMI_TIMEOUT_MS = 240000;
 
 async function invocarKimi(prompt, isChat, statusEl) {
@@ -2401,10 +2248,7 @@ async function invocarKimi(prompt, isChat, statusEl) {
       body: JSON.stringify(body), signal: controller.signal
     });
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error(`A Kimi não respondeu em ${KIMI_TIMEOUT_MS / 1000}s — com documento grande, o modelo de raciocínio dela pode levar mais tempo. Tente de novo.`);
-    if (/model token limit|token limit/i.test(e.message)) {
-      throw new Error(`Kimi: processo grande demais para uma chamada (limite de ${(262144).toLocaleString('pt-BR')} tokens). A conferência por código já rodou e está acima. Para a análise por IA, tente com menos documentos ou aguarde a divisão em lotes, que ainda não foi implementada.`);
-    }
+    if (e.name === 'AbortError') throw new Error(`A Kimi não respondeu em ${KIMI_TIMEOUT_MS / 1000}s.`);
     throw new Error('Falha de rede ao chamar a Kimi: ' + e.message);
   } finally {
     clearTimeout(timer);
@@ -2495,10 +2339,6 @@ async function buscarJurisprudencia(p) {
   return { texto, fontes };
 }
 
-// Acha, dentro do texto de um achado (título/explicação/evidência), qualquer coisa que
-// pareça dado pessoal — reaproveita os mesmos padrões do mascaramento, mas aqui é só
-// DETECÇÃO (não mascara nada): o objetivo é avisar antes do dado sair da ferramenta
-// dentro de um arquivo exportado, não impedir que o analista veja o valor real.
 function _escanearDadosPessoais(texto) {
   const achados = [];
   const testes = [
@@ -2514,17 +2354,12 @@ function _escanearDadosPessoais(texto) {
 
 function exportarRelatorioAchados() {
   if (!window.achadosAtuais || window.achadosAtuais.length === 0) return alert('Nenhum achado para exportar.');
-
-  // Varre título+explicação+evidência de cada achado — é o que efetivamente vai pro
-  // arquivo .doc que sai da ferramenta (e-mail, pen-drive, etc.), então é aqui que o
-  // aviso importa, não na tela de trabalho.
   const avisos = [];
   window.achadosAtuais.forEach((c, idx) => {
     const textoJunto = [c.titulo, c.explicacao, c.evidencia, c.sugestao].filter(Boolean).join(' — ');
     const tipos = _escanearDadosPessoais(textoJunto);
     tipos.forEach(tipo => avisos.push({ tipo, achadoNum: idx + 1, titulo: c.titulo, doc: c.doc_origem || 'não identificado' }));
   });
-
   const painel = document.getElementById('painel-cards');
   if (avisos.length && painel) {
     const linhas = avisos.map(a => `<li style="margin-bottom:3px;"><strong>${escHtml(a.tipo)}</strong> — achado ${a.achadoNum} ("${escHtml(a.titulo)}"), doc. ${escHtml(a.doc)}</li>`).join('');
@@ -2542,7 +2377,6 @@ function exportarRelatorioAchados() {
     document.getElementById(idAviso).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
-
   _gerarArquivoRelatorioAchados();
 }
 
@@ -2569,9 +2403,6 @@ function extrairContexto(texto, termo, raio) {
 function extrairValoresMonetarios(texto) { return [...new Set(texto.match(/R\$\s?[\d.]+,\d{2}/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
 function extrairDatas(texto) { return [...new Set(texto.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || [])].slice(0, 25).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 55) })); }
 function extrairNumerosProcesso(texto) {
-  // Tolera espaço solto ao redor de ".", "/" e "-" — a extração de PDF junta trechos de
-  // texto separados com espaço simples, e o número do processo pode vir fragmentado em
-  // pedaços assim, principalmente em PDF escaneado ou gerado por certos sistemas.
   const encontrados = [...new Set(texto.match(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g) || [])];
   return encontrados.slice(0, 10).map(original => ({
     valor: original.replace(/\s+/g, ''),
@@ -2589,13 +2420,6 @@ function dividirPorDocumento(textoIntegral) {
   return docs;
 }
 
-// ==================== CONFERÊNCIA DE CONTAS POR CÓDIGO ====================
-// Faz a conta com regra fixa, como uma calculadora — não depende da IA "notar". É a
-// parte que mais pesa pro erário, então tem cobertura garantida em toda Checagem,
-// mesmo que a IA falhe. LIMITE: só confere o que reconhece como tabela com linha de
-// "Total" ou como valor com rótulo claro. Não substitui a IA, soma a ela.
-
-// Converte número no formato brasileiro ("1.200", "17.292.449,28", "R$ 5,00") em número.
 function _numeroBR(txt) {
   let t = String(txt).replace(/R\$\s?/g, '').replace(/\s+/g, '');
   if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
@@ -2608,8 +2432,6 @@ function _formatarBR(n) {
   return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 
-// Todos os números "de valor" de uma linha, da esquerda pra direita — ignora data, nº de
-// processo e CEP, que têm dígitos mas não entram em soma.
 function _numerosDaLinha(linha) {
   const limpa = linha
     .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
@@ -2624,15 +2446,8 @@ function _paginaNaPosicao(texto, posicao) {
   return marcas.length ? marcas[marcas.length - 1][1] : null;
 }
 
-// 1) Tabelas com linha "Total": soma as linhas logo acima e compara com o total informado.
-// Se todas as linhas têm a mesma quantidade de números, confere coluna por coluna; se
-// não, confere só o último número de cada linha.
 function conferirSomasPorCodigo(textoIntegral) {
   const achados = [];
-  // Assinaturas já vistas, por documento — mesmo par (soma,total) em documentos diferentes
-  // é achado real (estrutura igual, contrato diferente). Dentro do mesmo documento, a mesma
-  // divergência na mesma linha de total é ruído (tabela repetida entre páginas ou extração
-  // que duplicou).
   const vistosPorDoc = {};
   dividirPorDocumento(textoIntegral).forEach(d => {
     vistosPorDoc[d.nome] = new Set();
@@ -2662,8 +2477,6 @@ function conferirSomasPorCodigo(textoIntegral) {
         const valorTotal = c === null ? numsTotal[numsTotal.length - 1] : numsTotal[c];
         const soma = itens.reduce((acc, n) => acc + (c === null ? n[n.length - 1] : n[c]), 0);
         if (Math.abs(soma - valorTotal) <= 0.01) return;
-        // Limite por documento: muitas divergências no mesmo arquivo indicam falso-positivo
-        // (ex.: tabela de rateio com "Total" em cada bloco não é uma soma cumulativa).
         if (achadosNesteDoc >= 3) return;
         const assinatura = `${_formatarBR(soma)}→${_formatarBR(valorTotal)}`;
         if (vistosPorDoc[d.nome].has(assinatura)) return;
@@ -2675,7 +2488,7 @@ function conferirSomasPorCodigo(textoIntegral) {
           titulo: 'Soma da tabela não bate com o total informado',
           evidencia: linha.trim(),
           explicacao: `As ${itens.length} linhas logo acima do total somam ${_formatarBR(soma)}, mas o total informado é ${_formatarBR(valorTotal)} (diferença de ${_formatarBR(Math.abs(soma - valorTotal))}). Conta feita por código, não pela IA.`,
-          sugestao: `Refaça a soma das linhas dessa tabela${pagina ? ' (página ' + pagina + ')' : ''} e corrija o valor errado — pode ser o total ou uma das linhas. Antes, confira se a tabela não continua em outra página: tabela quebrada entre páginas pode enganar a conferência.`,
+          sugestao: `Refaça a soma das linhas dessa tabela${pagina ? ' (página ' + pagina + ')' : ''} e corrija o valor errado.`,
           doc_origem: d.nome, pagina, verificar: true, conferido_por_codigo: true
         });
       });
@@ -2684,9 +2497,6 @@ function conferirSomasPorCodigo(textoIntegral) {
   return achados;
 }
 
-// 2) Mesmo valor rotulado ("valor global", "valor mensal"...) com números diferentes
-// dentro do processo. Pode ser alteração legítima por aditivo — por isso sai sempre
-// como "verificar", e a sugestão manda confirmar qual documento é o mais recente.
 function conferirValoresRotuladosPorCodigo(textoIntegral) {
   const porRotulo = {};
   const regex = /(valor\s+(?:global|total|mensal|anual|estimado|contratual|do\s+contrato)(?:\s+do\s+contrato)?(?:\s+de\s+gest[aã]o)?)[^\n]{0,60}?(R\$\s?[\d.]+,\d{2})/gi;
@@ -2711,8 +2521,8 @@ function conferirValoresRotuladosPorCodigo(textoIntegral) {
       tag: 'Cálculo', setor: 'SFCG',
       titulo: `"${rotulo}" aparece com valores diferentes no processo`,
       evidencia: lista,
-      explicacao: `O mesmo tipo de valor aparece com ${distintos.length} números diferentes: ${lista}. Conferência feita por código, não pela IA.`,
-      sugestao: 'Se um documento mais recente (aditivo, apostilamento) alterou esse valor, a diferença é esperada — confirme qual é o documento mais recente e se ele cita a alteração. Se nenhum documento explica a mudança, corrija o valor divergente.',
+      explicacao: `O mesmo tipo de valor aparece com ${distintos.length} números diferentes: ${lista}.`,
+      sugestao: 'Confirme se a alteração decorre de aditivo ou apostilamento recente.',
       doc_origem: ocorrencias[0].doc, pagina: ocorrencias[0].pagina, verificar: true, conferido_por_codigo: true
     });
   });
@@ -2722,10 +2532,8 @@ function conferirValoresRotuladosPorCodigo(textoIntegral) {
 function conferirContasPorCodigo(textoIntegral) {
   try {
     const todos = [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral)];
-    // Mais de 10 achados de código num único processo é sinal de que a regra disparou
-    // em estrutura que não é uma tabela de soma real. Mostra os 10 mais relevantes e avisa.
     if (todos.length > 10) {
-      todos[0].explicacao += ` (Atenção: a conferência encontrou ${todos.length} divergências no total; estão sendo mostradas as 10 primeiras. Confirme manualmente se a tabela é de soma ou de distribuição — tabelas de distribuição percentual têm "Total 100%" que não é soma dos outros números.)`;
+      todos[0].explicacao += ` (Atenção: a conferência encontrou ${todos.length} divergências no total; estão sendo mostradas as 10 primeiras).`;
     }
     return todos.slice(0, 10);
   } catch (e) {
@@ -2761,9 +2569,6 @@ async function rodarRaioX() {
     return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
   }
 
-  // Aviso fixo e visível durante toda a checagem, com números REAIS (não é barra de
-  // "página X de Y" fingida — o sistema manda o texto numa única chamada, não tem como
-  // saber "em que página" está). O cronômetro sim é real, conta segundo a segundo.
   _garantirEstiloPulso();
   const banner = document.getElementById('banner-conferindo');
   const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
@@ -2787,11 +2592,8 @@ async function rodarRaioX() {
   let achadosCodigo = [];
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
-    // Contas conferidas por código ANTES da IA — cobertura garantida, mesmo se a IA falhar.
     achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
 
-    // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
-    // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
     let historicoUnidadeBloco = '';
     const historicoUnidadeAtivo = document.getElementById('chk-historico-unidade')?.checked;
     const statusFonteEl = document.getElementById('status-fonte-historico');
@@ -2807,10 +2609,6 @@ async function rodarRaioX() {
         if (resHist.ok && resHist.encontrado) {
           const nomes = resHist.arquivos.map(a => a.nome).join(', ');
           if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Encontrado: <strong>${escHtml(nomes)}</strong></span>`;
-          // Usa o texto integral das guias (contrato + todos os aditivos/apostilamentos),
-          // não só valores/datas/CEP extraídos. Isso dá à IA o contexto real do contrato
-          // de referência da unidade, com a mesma profundidade de análise dos documentos
-          // importados manualmente.
           historicoUnidadeBloco = '\n\nREFERÊNCIA CONTRATUAL DA UNIDADE (fonte: Google Drive, pasta LEIS E DECRETOS)\n' +
             'IMPORTANTE: use este bloco para comparar cláusulas, valores, metas e datas com os documentos do processo atual.\n' +
             resHist.arquivos.map(a => {
@@ -2818,7 +2616,6 @@ async function rodarRaioX() {
               if (a.texto) {
                 bloco += a.texto;
               } else {
-                // Fallback para versão antiga sem texto completo
                 if (a.valores?.length) bloco += 'VALORES: ' + a.valores.map(v => v.valor).join(', ') + '\n';
                 if (a.datas?.length)   bloco += 'DATAS: '   + a.datas.map(v => v.valor).join(', ')   + '\n';
                 if (a.cep?.length)     bloco += 'CEP: '     + a.cep.map(v => v.valor).join(', ')     + '\n';
@@ -2835,8 +2632,6 @@ async function rodarRaioX() {
       }
     }
 
-    // Checkbox 2 — legislação + jurisprudência unificadas. Desligado por padrão
-    // (é busca automática na web, mais lenta, e todo achado baseado nela sai "verificar").
     let externasBloco = '';
     const legislacaoJurisprudenciaAtiva = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
     if (legislacaoJurisprudenciaAtiva) {
@@ -2895,7 +2690,6 @@ ${textoIntegralAtual}`;
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     const jsonObj = JSON.parse(jsonStr);
     const achadosIA = (jsonObj.cards || []).map(c => {
-      // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
       if (c.baseado_em_fonte_externa) c.verificar = true;
       return c;
     });
@@ -2906,8 +2700,6 @@ ${textoIntegralAtual}`;
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
-    // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
-    // que ela achou, pra parte financeira nunca ficar sem cobertura.
     if (achadosCodigo.length) {
       window.achadosAtuais = achadosCodigo;
       renderizarCards(achadosCodigo);
@@ -2919,7 +2711,6 @@ ${textoIntegralAtual}`;
   }
 }
 
-
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
   if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
@@ -2928,7 +2719,6 @@ function renderizarCards(cards) {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
-    // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
     const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
     const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
     const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
@@ -2980,14 +2770,11 @@ async function modalEncaminharAchado(ref) {
     </div>`, false);
 }
 
-// ==================== ABA PERGUNTAS ====================
-// Recebidas (com resposta ali mesmo) e enviadas (com a resposta quando chegar), em
-// qualquer processo — o destinatário não precisa ter o processo na caixa dele.
 async function renderPerguntasAchados() {
   const area = document.getElementById('area-perguntas');
   const res = await api('achados/meus', { usuario: usuarioAtual.email });
   if (!res.ok) {
-    area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}. Se falar em rota desconhecida, o Code.gs publicado está desatualizado.</div>`;
+    area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}.</div>`;
     return;
   }
   const recebidas = (res.recebidas || []).sort((a, b) => (a.resposta ? 1 : 0) - (b.resposta ? 1 : 0));
@@ -2997,7 +2784,6 @@ async function renderPerguntasAchados() {
     const pendente = !q.resposta;
     const cor = pendente ? (tipo === 'recebida' ? '#fff9db; border-left:3px solid #f5c518' : '#f8f9fa; border-left:3px solid #adb5bd') : '#e7f5ff; border-left:3px solid #339af0';
     const quem = tipo === 'recebida' ? `De <strong>${escHtml(q.de_usuario)}</strong>` : `Para <strong>${escHtml(q.para_usuario)}</strong>`;
-    const quando = q.data_envio ? ` · há ${_tempoDecorridoDesde(q.data_envio)}` : '';
     const resposta = q.resposta
       ? `<div style="margin-top:6px; color:#1864ab;"><strong>Resposta:</strong> ${escHtml(q.resposta)}</div>`
       : (tipo === 'recebida'
@@ -3005,7 +2791,7 @@ async function renderPerguntasAchados() {
              <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderPerguntaNaCaixa(${q.id})">Responder</button>`
           : `<div style="margin-top:6px; color:var(--text-muted);"><i class="ti ti-clock"></i> Aguardando resposta.</div>`);
     return `<div style="background:${cor}; padding:10px 14px; border-radius:6px; margin-bottom:10px; font-size:0.85rem;">
-      <div style="font-size:0.78rem; color:var(--text-muted);">${quem}${quando} · Processo ${linkProcesso(q)}</div>
+      <div style="font-size:0.78rem; color:var(--text-muted);">${quem} · Processo ${linkProcesso(q)}</div>
       <div style="margin-top:4px;"><strong>Achado:</strong> ${escHtml(q.achado_referencia)}</div>
       <div style="margin-top:4px;"><strong>Pergunta:</strong> ${escHtml(q.mensagem || '(sem mensagem)')}</div>
       ${resposta}
@@ -3034,10 +2820,9 @@ async function confirmarEncaminharAchado() {
   const mensagem = document.getElementById('enc-ach-mensagem').value.trim();
   if (!mensagem) return alert('Escreva a pergunta antes de enviar.');
   const res = await api('achados/encaminhar', { processo_id: processoAtual.id, achado_referencia: referencia, de_usuario: usuarioAtual.email, para_usuario: destinatario, mensagem });
-  // Antes, a janela fechava mesmo se o envio falhasse — a pergunta sumia sem ninguém saber.
-  if (!res.ok) { alert('A pergunta NÃO foi enviada: ' + (res.erro || 'erro desconhecido') + '\n\nSe o erro falar em rota desconhecida, o Code.gs publicado está desatualizado.'); return; }
+  if (!res.ok) { alert('A pergunta NÃO foi enviada: ' + (res.erro || 'erro desconhecido')); return; }
   fecharModal();
-  mostrarToast('Pergunta enviada. Ela aparece na aba "Perguntas" de quem recebeu.');
+  mostrarToast('Pergunta enviada.');
   carregarStatusConsultasAchados();
 }
 
@@ -3068,9 +2853,6 @@ async function responderConsultaAchado(id) {
   carregarStatusConsultasAchados();
 }
 
-// Filtra o texto integral pra só os parágrafos que contêm palavra-chave da pergunta —
-// usado apenas quando o texto acumulado é grande (ver LIMIAR_FILTRAGEM no chamador).
-// Sem isso, processo muito grande podia demorar demais ou estourar limite da IA.
 function extrairTrechosRelevantes(textoIntegral, pergunta) {
   const palavrasChave = pergunta.toLowerCase()
     .replace(/[^\w\sáéíóúâêîôûãõç]/g, '')
@@ -3092,7 +2874,7 @@ function extrairTrechosRelevantes(textoIntegral, pergunta) {
     });
   });
   blocosRelevantes.sort((a, b) => b.score - a.score);
-  if (!blocosRelevantes.length) return textoIntegral.substring(0, 20000); // nada bateu — melhor mandar algo do que nada
+  if (!blocosRelevantes.length) return textoIntegral.substring(0, 20000);
 
   return 'TRECHOS MAIS RELEVANTES ENCONTRADOS NOS DOCUMENTOS PARA ESTA PERGUNTA:\n' +
     blocosRelevantes.slice(0, 8).map((b, i) => `\n[${i + 1}] Documento: ${b.doc}\nTrecho: "${b.texto.trim()}"\n`).join('');
@@ -3118,9 +2900,6 @@ async function fazerPerguntaAoProcesso() {
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Localizando nos documentos...'; }
   history.scrollTop = history.scrollHeight;
 
-  // Por padrão manda o texto INTEIRO — o objetivo da ferramenta é não deixar passar
-  // inconsistência nenhuma. O filtro por relevância só entra em volume realmente grande,
-  // como válvula de escape, não como economia de rotina.
   const LIMIAR_FILTRAGEM = 400000;
   const contextoDocs = textoIntegralAtual.length > LIMIAR_FILTRAGEM
     ? extrairTrechosRelevantes(textoIntegralAtual, pergunta)
@@ -3240,7 +3019,6 @@ ${txtAnalista}`;
     }
     st.innerHTML = htmlResultado + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
 
-    // Registra no histórico — sem isso, a Revisão Final não deixava rastro nenhum.
     const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
     await api('auditorias/salvar', {
       processo_id: p.id, tipo_checkpoint: 'SAIDA',
@@ -3256,8 +3034,6 @@ ${txtAnalista}`;
   }
 }
 
-// Traduz o erro de UM serviço numa expressão curta. A Kimi tem três tipos de 429,
-// com causas e soluções diferentes, por isso vêm separados.
 function _motivoCurtoProvedor(m) {
   if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
   if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia do nível da conta';
@@ -3273,8 +3049,6 @@ function _motivoCurtoProvedor(m) {
 
 function _mensagemErroAmigavel(msg) {
   msg = String(msg || '');
-  // Vem ANTES das outras regras: quando todos falham, cada um pode ter falhado por um
-  // motivo diferente — resumir numa frase só ("limite atingido") escondia o resto.
   if (/Todos os provedores de IA falharam/i.test(msg)) {
     const porServico = msg.split('\n').slice(1).filter(l => l.includes(':')).map(l => {
       const i = l.indexOf(':');
@@ -3293,9 +3067,6 @@ function _mensagemErroAmigavel(msg) {
   }
   if (/não respondeu em \d+s/.test(msg)) {
     return { titulo: 'A IA demorou demais para responder.', sugestao: 'Se o processo for muito grande, isso pode ser normal — tente de novo, e se persistir, verifique sua conexão.' };
-  }
-  if (/Todos os provedores de IA falharam/i.test(msg)) {
-    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: 'Tente de novo em alguns minutos. Se persistir, confira a configuração em "Motor de IA".' };
   }
   if (/chave.*não configurada/i.test(msg)) {
     return { titulo: 'Nenhuma IA está configurada.', sugestao: 'Vá em "Motor de IA" no menu lateral e cole uma chave válida.' };
@@ -3325,6 +3096,7 @@ function renderErroAmigavel(mensagemTecnica) {
       </div>
     </div>`;
 }
+
 function _garantirEstiloPulso() {
   if (document.getElementById('estilo-pulso-conferindo')) return;
   const style = document.createElement('style');
@@ -3335,15 +3107,14 @@ function _garantirEstiloPulso() {
   `;
   document.head.appendChild(style);
 }
+
 function escHtml(s) { return String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
 function escAttr(s) { return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
 function criarModal(h, comRodapePadrao = true) {
   fecharModal();
   const m = document.createElement('div');
   m.className = 'modal-overlay'; m.id = 'modal-ov';
-  // Estilo inline, forçado por JS — sobrescreve qualquer z-index/position que o CSS
-  // tenha, pra garantir que o aviso apareça por cima de TUDO, inclusive da tela de
-  // login (que tem sua própria camada e estava escondendo o modal atrás dela).
   m.style.position = 'fixed';
   m.style.top = '0'; m.style.left = '0'; m.style.right = '0'; m.style.bottom = '0';
   m.style.zIndex = '99999';
@@ -3353,17 +3124,19 @@ function criarModal(h, comRodapePadrao = true) {
   m.innerHTML = `<div class="modal">${h}${comRodapePadrao ? '<button onclick="fecharModal()">Fechar</button>' : ''}</div>`;
   document.body.appendChild(m);
 }
+
 function fecharModal() { document.getElementById('modal-ov')?.remove(); }
+
 function verificarIA() {
   const dot = document.getElementById('ai-dot');
   const txt = document.getElementById('ai-status-txt');
   if (!dot || !txt) return;
   const provedoresNuvem = [];
-  if (GEMINI_KEY && GEMINI_KEY.trim() && GEMINI_ATIVO) provedoresNuvem.push('Gemini');
-  if (GROQ_KEY && GROQ_KEY.trim() && GROQ_ATIVO) provedoresNuvem.push('Groq');
-  if (KIMI_KEY && KIMI_KEY.trim() && KIMI_ATIVO) provedoresNuvem.push('Kimi');
-  if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
   if (DEEPSEEK_KEY   && DEEPSEEK_KEY.trim()   && DEEPSEEK_ATIVO)   provedoresNuvem.push('DeepSeek');
+  if (GEMINI_KEY     && GEMINI_KEY.trim()     && GEMINI_ATIVO)     provedoresNuvem.push('Gemini');
+  if (GROQ_KEY       && GROQ_KEY.trim()       && GROQ_ATIVO)       provedoresNuvem.push('Groq');
+  if (KIMI_KEY       && KIMI_KEY.trim()       && KIMI_ATIVO)       provedoresNuvem.push('Kimi');
+  if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
   if (provedoresNuvem.length) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
