@@ -1318,6 +1318,8 @@ async function abrirProcesso(identificador) {
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
   api('processos/marcar-lido', { processo_id: resProc.processo.id, usuario: usuarioAtual.email }).catch(()=>{});
+  // Botões de mudança de status — o usuário controla o andamento do processo
+  _renderBotoesStatus(resProc.processo.status);
   _ultimoTextoRevisadoHash = null;
   const [resDocs, resConteudo, resTram] = await Promise.all([
     api('documentos/listar', { processo_id: processoAtual.id }),
@@ -1417,6 +1419,7 @@ async function abrirProcesso(identificador) {
         <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
         <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
         <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
+        <div id="btn-status-processo" style="display:inline-flex;gap:6px;align-items:center;"></div>
       </div>
     </div>
 
@@ -2825,6 +2828,36 @@ function toggleFonte(tipo) {
   }
 }
 
+const _FLUXO_STATUS = [
+  { de: 'Aguardando Revisão Inicial', para: 'Em Análise',             label: 'Iniciar análise',       icone: 'ti-player-play',    cor: '#0b509e' },
+  { de: 'Em Análise',                 para: 'Aguardando Revisão Final', label: 'Enviar para revisão', icone: 'ti-send',           cor: '#6f42c1' },
+  { de: 'Aguardando Revisão Final',   para: 'Pronto para Assinar no SEI', label: 'Aprovar para assinar', icone: 'ti-circle-check', cor: '#2b8a3e' },
+];
+
+function _renderBotoesStatus(statusAtual) {
+  const el = document.getElementById('btn-status-processo');
+  if (!el) return;
+  const acao = _FLUXO_STATUS.find(f => f.de === statusAtual);
+  const badge = `<span style="font-size:0.72rem;background:var(--surface-1);border:0.5px solid var(--border);padding:3px 10px;border-radius:10px;color:var(--text-secondary);">${escHtml(statusAtual)}</span>`;
+  if (!acao) { el.innerHTML = badge; return; }
+  el.innerHTML = badge + `
+    <button class="btn btn-sm" style="background:${acao.cor};color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;"
+      onclick="avancarStatusProcesso('${escAttr(acao.para)}','${escAttr(acao.label)}')">
+      <i class="ti ${acao.icone}"></i> ${escHtml(acao.label)}
+    </button>`;
+}
+
+async function avancarStatusProcesso(novoStatus, label) {
+  if (!processoAtual) return;
+  if (!confirm(`Mover processo para "${novoStatus}"?`)) return;
+  const res = await api('processos/atualizar-status', { id: processoAtual.id, status: novoStatus });
+  if (!res.ok) return alert('Erro ao atualizar: ' + (res.erro || ''));
+  processoAtual.status = novoStatus;
+  _renderBotoesStatus(novoStatus);
+  mostrarToast(`Processo movido para "${novoStatus}".`);
+  await atualizarContagensSidebar();
+}
+
 function _atualizarBannerChecagem(titulo, detalhe) {
   const t = document.getElementById('banner-conferindo-titulo');
   const d = document.getElementById('banner-conferindo-detalhe');
@@ -3048,11 +3081,34 @@ ${textoIntegralAtual}`;
 }
 
 
+function _separadorCamada(titulo, qtd, cor) {
+  return `<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;">
+    <div style="flex:1;height:1px;background:var(--border);"></div>
+    <span style="font-size:0.72rem;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">
+      ${titulo} — ${qtd} achado(s)
+    </span>
+    <div style="flex:1;height:1px;background:var(--border);"></div>
+  </div>`;
+}
+
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
   if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
   let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
-  cards.forEach((c, idx) => {
+
+  // Separar por origem
+  const codigo  = cards.filter(c => c.conferido_por_codigo);
+  const drive   = cards.filter(c => c.baseado_em_fonte_externa && c.doc_origem === 'Drive');
+  const web     = cards.filter(c => c.baseado_em_fonte_externa && c.doc_origem === 'Web');
+  const processo = cards.filter(c => !c.conferido_por_codigo && !c.baseado_em_fonte_externa);
+
+  if (codigo.length)   html += _separadorCamada('🔢 Conferência de contas por código', codigo.length, '#1864ab');
+  if (processo.length) html += _separadorCamada('📄 Documentos do processo', processo.length, '#495057');
+  if (drive.length)    html += _separadorCamada('📂 Histórico da unidade (Drive)', drive.length, '#2b8a3e');
+  if (web.length)      html += _separadorCamada('🌐 Busca jurídica na web', web.length, '#e67700');
+
+  const ordenados = [...codigo, ...processo, ...drive, ...web];
+  ordenados.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
