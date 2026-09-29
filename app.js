@@ -281,7 +281,6 @@ async function renderDashboard(caixa = 'entrada') {
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
         : '';
 
-
       const botaoAssumirHtml = caixa === 'entrada'
         ? '<div style="margin-top:10px; border-top:1px dashed #dee2e6; padding-top:8px;"><button class="btn btn-sm" style="width:100%; font-size:0.75rem; background:var(--action-primary); color:#fff;" onclick="assumirProcesso(event,' + p.id + ')"><i class="ti ti-hand-stop"></i> Assumir para análise</button></div>'
         : '';
