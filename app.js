@@ -28,6 +28,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
 let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
+let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
+let DEEPSEEK_KEY = localStorage.getItem('sei_deepseek_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
@@ -170,13 +172,15 @@ async function showView(v, subCaixa = 'entrada') {
     content.innerHTML = `
       <div style="max-width:600px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-          Ordem de uso: Gemini primeiro; se falhar, tenta Groq; se falhar, tenta OpenRouter (grátis); se
-          falhar, tenta Ollama local. Cada etapa só é usada se a anterior der erro de verdade.
+          Ordem de tentativa: Gemini → Groq → Kimi → OpenRouter → DeepSeek → Ollama.
+          Cada provedor só entra se o anterior falhar de verdade.
         </p>
         <div class="form-group"><label>1. Gemini (principal)</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
-        <div class="form-group"><label>2. Groq (fallback em nuvem — opcional)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
-        <div class="form-group"><label>3. OpenRouter (fallback em nuvem — opcional)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
-        <div class="form-group"><label>4. Ollama (fallback local — opcional)</label>
+        <div class="form-group"><label>2. Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
+        <div class="form-group"><label>3. Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai..."></div>
+        <div class="form-group"><label>4. OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
+        <div class="form-group"><label>5. DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys..."></div>
+        <div class="form-group"><label>6. Ollama (local — opcional)</label>
           <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
           <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
         </div>
@@ -281,9 +285,6 @@ async function renderDashboard(caixa = 'entrada') {
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
         : '';
 
-      const botaoAssumirHtml = caixa === 'entrada'
-        ? '<div style="margin-top:10px; border-top:1px dashed #dee2e6; padding-top:8px;"><button class="btn btn-sm" style="width:100%; font-size:0.75rem; background:var(--action-primary); color:#fff;" onclick="assumirProcesso(event,' + p.id + ')"><i class="ti ti-hand-stop"></i> Assumir para análise</button></div>'
-        : '';
       html += `
       <div class="process-card" style="position:relative;">
         <div onclick="abrirProcesso('${escAttr(p.numero_sei || p.id)}')" style="cursor:pointer;">
@@ -296,24 +297,12 @@ async function renderDashboard(caixa = 'entrada') {
           <div style="font-size:0.75rem;color:#6c757d; margin-top:2px;"><i class="ti ti-user"></i> Com: ${escHtml(p.responsavel_atual)}</div>
           ${infoTramitacao}
         </div>
-        ${botaoAssumirHtml}
         ${botaoParar}
         ${botaoExcluir}
       </div>`;
     });
   }
   content.innerHTML = html + '</div>';
-}
-
-async function assumirProcesso(e, id) {
-  e.stopPropagation();
-  const res = await api('processos/encaminhar', {
-    processo_id: id, de: usuarioAtual.email, para: usuarioAtual.email, observacao: 'Assumido para análise'
-  });
-  if (!res.ok) { alert('Erro ao assumir: ' + res.erro); return; }
-  await api('processos/atualizar-status', { id, status: 'Em Análise' });
-  await api('log/registrar', { usuario: usuarioAtual.email, acao: 'ASSUMIR', processo_id: id, detalhes: 'Processo assumido da entrada' });
-  showView('dashboard', 'andamento');
 }
 
 async function pararAcompanhamento(e, id) {
@@ -474,6 +463,10 @@ function salvarConfig() {
 
   OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
   localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
+  KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
+  localStorage.setItem('sei_kimi_key', KIMI_KEY);
+  DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
+  localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
 
   OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
@@ -1209,7 +1202,9 @@ const PROVEDOR_TIMEOUT_MS = 60000;
 const ORDEM_PROVEDORES = [
   { id: 'gemini', nome: 'Gemini' },
   { id: 'groq', nome: 'Groq' },
+  { id: 'kimi', nome: 'Kimi' },
   { id: 'openrouter', nome: 'OpenRouter' },
+  { id: 'deepseek', nome: 'DeepSeek' },
   { id: 'ollama', nome: 'Ollama' }
 ];
 function renderPainelProvedores(statusEl, estados, mensagem) {
@@ -1348,6 +1343,8 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   if (!GEMINI_KEY) estados.gemini = 'pulado';
   if (!GROQ_KEY) estados.groq = 'pulado';
   if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
+  if (!KIMI_KEY) estados.kimi = 'pulado';
+  if (!DEEPSEEK_KEY) estados.deepseek = 'pulado';
 
   // Mascara só uma vez, reaproveitado nas 3 tentativas em nuvem — o Ollama (local)
   // usa o "prompt" original, sem máscara, mais abaixo.
@@ -1402,6 +1399,38 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
     }
   } else {
     erros.push('OpenRouter: chave não configurada');
+  }
+
+  if (KIMI_KEY) {
+    estados.kimi = 'tentando';
+    renderPainelProvedores(statusEl, estados, 'Chamando Kimi...');
+    try {
+      const r = await invocarKimi(promptMascarado, isChat, statusEl);
+      estados.kimi = 'ok';
+      renderPainelProvedores(statusEl, estados, 'Concluído.');
+      return desmascararTexto(r, mapa);
+    } catch (e) {
+      estados.kimi = 'falhou';
+      erros.push('Kimi: ' + e.message);
+    }
+  } else {
+    erros.push('Kimi: chave não configurada');
+  }
+
+  if (DEEPSEEK_KEY) {
+    estados.deepseek = 'tentando';
+    renderPainelProvedores(statusEl, estados, 'Chamando DeepSeek...');
+    try {
+      const r = await invocarDeepSeek(promptMascarado, isChat, statusEl);
+      estados.deepseek = 'ok';
+      renderPainelProvedores(statusEl, estados, 'Concluído.');
+      return desmascararTexto(r, mapa);
+    } catch (e) {
+      estados.deepseek = 'falhou';
+      erros.push('DeepSeek: ' + e.message);
+    }
+  } else {
+    erros.push('DeepSeek: chave não configurada');
   }
 
   // Ollama é local — usa o texto ORIGINAL, sem máscara (não há por quê mascarar pra si mesmo).
@@ -1487,6 +1516,52 @@ async function invocarOpenRouter(prompt, isChat, statusEl) {
   const json = await resposta.json();
   const txt = json.choices?.[0]?.message?.content;
   if (!txt) throw new Error('resposta vazia');
+  return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+const KIMI_TIMEOUT_MS = 240000;
+
+async function invocarKimi(prompt, isChat, statusEl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), KIMI_TIMEOUT_MS);
+  const body = { model: 'kimi-k2.6', messages: [{ role: 'user', content: prompt }] };
+  if (!isChat) body.response_format = { type: 'json_object' };
+  let resp;
+  try {
+    resp = await fetch('https://api.moonshot.ai/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + KIMI_KEY },
+      body: JSON.stringify(body), signal: controller.signal
+    });
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('A Kimi não respondeu em ' + (KIMI_TIMEOUT_MS/1000) + 's — modelo de raciocínio pode demorar mais. Tente de novo.');
+    throw new Error('Falha de rede ao chamar a Kimi: ' + e.message);
+  } finally { clearTimeout(timer); }
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + (await resp.text()).substring(0, 200));
+  const json = await resp.json();
+  const txt = json.choices?.[0]?.message?.content;
+  if (!txt) throw new Error('Kimi não devolveu conteúdo.');
+  return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
+}
+
+async function invocarDeepSeek(prompt, isChat, statusEl) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PROVEDOR_TIMEOUT_MS);
+  const body = { model: 'deepseek-chat', messages: [{ role: 'user', content: prompt }], temperature: 0.3 };
+  if (!isChat) body.response_format = { type: 'json_object' };
+  let resp;
+  try {
+    resp = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + DEEPSEEK_KEY },
+      body: JSON.stringify(body), signal: controller.signal
+    });
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('DeepSeek não respondeu no tempo esperado.');
+    throw new Error('Falha de rede ao chamar o DeepSeek: ' + e.message);
+  } finally { clearTimeout(timer); }
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + (await resp.text()).substring(0, 200));
+  const json = await resp.json();
+  const txt = json.choices?.[0]?.message?.content;
+  if (!txt) throw new Error('DeepSeek não devolveu conteúdo.');
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
@@ -2409,9 +2484,11 @@ function verificarIA() {
   if (GEMINI_KEY && GEMINI_KEY.trim()) provedoresAtivos.push('Gemini');
   if (GROQ_KEY && GROQ_KEY.trim()) provedoresAtivos.push('Groq');
   if (OPENROUTER_KEY && OPENROUTER_KEY.trim()) provedoresAtivos.push('OpenRouter');
+  if (KIMI_KEY && KIMI_KEY.trim()) provedoresAtivos.push('Kimi');
+  if (DEEPSEEK_KEY && DEEPSEEK_KEY.trim()) provedoresAtivos.push('DeepSeek');
   if (OLLAMA_URL) provedoresAtivos.push('Ollama'); // sempre "configurado" (URL tem padrão), só não garante que está rodando
 
-  if (GEMINI_KEY || GROQ_KEY || OPENROUTER_KEY) {
+  if (GEMINI_KEY || GROQ_KEY || OPENROUTER_KEY || KIMI_KEY || DEEPSEEK_KEY) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresAtivos.filter(p => p !== 'Ollama').join(' + ') + ')';
   } else {
