@@ -152,29 +152,30 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 #versao-cidade-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  letter-spacing: 0.4px;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   cursor: help;
-  padding: 3px 8px;
-  border-radius: 20px;
+  border-radius: 50%;
   border: 1px solid transparent;
-  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  transition: border-color 0.2s ease, background 0.2s ease;
   user-select: none;
 }
 #versao-cidade-badge:hover {
-  border-color: rgba(142, 22, 40, 0.35);
-  color: var(--alert-bordeaux);
+  border-color: rgba(142, 22, 40, 0.3);
   background: rgba(142, 22, 40, 0.04);
 }
 #versao-cidade-badge .versao-ponto {
-  width: 4px;
-  height: 4px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--action-amber);
-  opacity: 0.7;
+  opacity: 0.55;
   flex-shrink: 0;
+  transition: opacity 0.2s ease;
+}
+#versao-cidade-badge:hover .versao-ponto {
+  opacity: 1;
 }
 
 /* Tooltip flutuante — injetado no <body> via JS, position:fixed */
