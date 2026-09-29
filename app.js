@@ -27,11 +27,24 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
 let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
-let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
+let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
 let DEEPSEEK_KEY = localStorage.getItem('sei_deepseek_key') || '';
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
+
+function _lerHabilitado(chave) {
+  const v = localStorage.getItem(chave);
+  return v === null ? true : v === 'true';
+}
+let GEMINI_ATIVO     = _lerHabilitado('sei_gemini_ativo');
+let GROQ_ATIVO       = _lerHabilitado('sei_groq_ativo');
+let KIMI_ATIVO       = _lerHabilitado('sei_kimi_ativo');
+let OPENROUTER_ATIVO = _lerHabilitado('sei_openrouter_ativo');
+let DEEPSEEK_ATIVO   = _lerHabilitado('sei_deepseek_ativo');
+let OLLAMA_ATIVO     = _lerHabilitado('sei_ollama_ativo');
+
+let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","deepseek","ollama"]');
 
 // URL do Backend (Apps Script) — planilha compartilhada:
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
@@ -169,20 +182,69 @@ async function showView(v, subCaixa = 'entrada') {
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
   } else if (v === 'config') {
+    const opcoesPrioridade = (id) => [1,2,3,4,5,6].map(n =>
+      `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id)+1 === n ? 'selected' : ''}>${n}</option>`
+    ).join('');
+    const checkboxAtivo = (id, ativo) => `
+      <div style="display:flex;align-items:center;gap:10px;margin-top:6px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:4px;font-size:0.72rem;color:var(--text-muted);cursor:pointer;white-space:nowrap;">
+          <input type="checkbox" id="ativo-${id}" ${ativo ? 'checked' : ''} style="cursor:pointer;"> Habilitado
+        </label>
+        <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:2px 10px;" onclick="testarConexaoProvedor('${id}')">Testar conexão</button>
+        <span id="teste-${id}" style="font-size:0.75rem;"></span>
+      </div>`;
+    const linha = (id, num, label, campo, placeholder, extra) => `
+      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+        <select id="prio-${id}" title="Ordem de tentativa" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade(id)}</select>
+        <div class="form-group" style="flex:1;margin-bottom:0;">
+          <label>${label}</label>
+          <input type="password" id="${campo}" value="${eval(campo.replace('cfg-','').replace('-','_').toUpperCase().replace('GEMINI','GEMINI_KEY').replace('GROQ','GROQ_KEY').replace('KIMI','KIMI_KEY').replace('OPENROUTER','OPENROUTER_KEY').replace('DEEPSEEK','DEEPSEEK_KEY'))}" placeholder="${placeholder}">
+          ${extra || ''}
+          \${checkboxAtivo('${id}', ${id.toUpperCase()}_ATIVO)}
+        </div>
+      </div>`;
     content.innerHTML = `
-      <div style="max-width:600px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-          Ordem de tentativa: Gemini → Groq → Kimi → OpenRouter → DeepSeek → Ollama.
-          Cada provedor só entra se o anterior falhar de verdade.
+      <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:16px;">
+          O número ao lado é a ordem de tentativa — 1 é tentado primeiro. "Habilitado" desliga o provedor
+          sem apagar a chave. Ollama exige estar instalado e aberto na máquina.
         </p>
-        <div class="form-group"><label>1. Gemini (principal)</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio..."></div>
-        <div class="form-group"><label>2. Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com..."></div>
-        <div class="form-group"><label>3. Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai..."></div>
-        <div class="form-group"><label>4. OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys..."></div>
-        <div class="form-group"><label>5. DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys..."></div>
-        <div class="form-group"><label>6. Ollama (local — opcional)</label>
-          <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
-          <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+          <select id="prio-gemini" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('gemini')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>Gemini</label>
+            <input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio...">
+            ${checkboxAtivo('gemini', GEMINI_ATIVO)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+          <select id="prio-groq" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('groq')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>Groq (grátis)</label>
+            <input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com...">
+            ${checkboxAtivo('groq', GROQ_ATIVO)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+          <select id="prio-kimi" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('kimi')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>Kimi (Moonshot AI)</label>
+            <input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai...">
+            ${checkboxAtivo('kimi', KIMI_ATIVO)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+          <select id="prio-openrouter" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('openrouter')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>OpenRouter (grátis)</label>
+            <input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys...">
+            ${checkboxAtivo('openrouter', OPENROUTER_ATIVO)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
+          <select id="prio-deepseek" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('deepseek')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>DeepSeek</label>
+            <input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys...">
+            ${checkboxAtivo('deepseek', DEEPSEEK_ATIVO)}</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:16px;">
+          <select id="prio-ollama" title="Ordem" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade('ollama')}</select>
+          <div class="form-group" style="flex:1;margin-bottom:0;"><label>Ollama (local — opcional)</label>
+            <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
+            <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
+            ${checkboxAtivo('ollama', OLLAMA_ATIVO)}</div>
         </div>
         <button class="btn btn-primary" onclick="salvarConfig()"><i class="ti ti-check"></i> Salvar</button>
       </div>`;
@@ -457,25 +519,67 @@ function salvarConfig() {
   if (!inputEl) return;
   GEMINI_KEY = inputEl.value.trim();
   localStorage.setItem('sei_gemini_key', GEMINI_KEY);
-
   GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
   localStorage.setItem('sei_groq_key', GROQ_KEY);
-
-  OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
-  localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
   KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
   localStorage.setItem('sei_kimi_key', KIMI_KEY);
+  OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
+  localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
   DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
   localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
-
   OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
   localStorage.setItem('sei_ollama_url', OLLAMA_URL);
-
   OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
   localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
 
+  // Salvar flags habilitado/desabilitado
+  GEMINI_ATIVO = !!document.getElementById('ativo-gemini')?.checked;
+  localStorage.setItem('sei_gemini_ativo', String(GEMINI_ATIVO));
+  GROQ_ATIVO = !!document.getElementById('ativo-groq')?.checked;
+  localStorage.setItem('sei_groq_ativo', String(GROQ_ATIVO));
+  KIMI_ATIVO = !!document.getElementById('ativo-kimi')?.checked;
+  localStorage.setItem('sei_kimi_ativo', String(KIMI_ATIVO));
+  OPENROUTER_ATIVO = !!document.getElementById('ativo-openrouter')?.checked;
+  localStorage.setItem('sei_openrouter_ativo', String(OPENROUTER_ATIVO));
+  DEEPSEEK_ATIVO = !!document.getElementById('ativo-deepseek')?.checked;
+  localStorage.setItem('sei_deepseek_ativo', String(DEEPSEEK_ATIVO));
+  OLLAMA_ATIVO = !!document.getElementById('ativo-ollama')?.checked;
+  localStorage.setItem('sei_ollama_ativo', String(OLLAMA_ATIVO));
+
+  // Salvar ordem de prioridade
+  const ids = ['gemini','groq','kimi','openrouter','deepseek','ollama'];
+  const comPrioridade = ids.map(id => ({ id, p: Number(document.getElementById('prio-'+id)?.value) || 99 }));
+  comPrioridade.sort((a,b) => a.p - b.p);
+  ORDEM_PROVEDORES_IDS = comPrioridade.map(x => x.id);
+  localStorage.setItem('sei_ordem_provedores', JSON.stringify(ORDEM_PROVEDORES_IDS));
+
   alert('Configurações de IA salvas!');
   verificarIA();
+}
+
+async function testarConexaoProvedor(id) {
+  const el = document.getElementById('teste-' + id);
+  if (el) el.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span> Testando...';
+  // Lê o valor atual do campo antes de testar (sem precisar salvar antes)
+  if (id === 'gemini')     GEMINI_KEY     = (document.getElementById('cfg-gemini')?.value     || '').trim();
+  if (id === 'groq')       GROQ_KEY       = (document.getElementById('cfg-groq')?.value       || '').trim();
+  if (id === 'kimi')       KIMI_KEY       = (document.getElementById('cfg-kimi')?.value       || '').trim();
+  if (id === 'openrouter') OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
+  if (id === 'deepseek')   DEEPSEEK_KEY   = (document.getElementById('cfg-deepseek')?.value   || '').trim();
+  if (id === 'ollama') {
+    OLLAMA_URL   = (document.getElementById('cfg-ollama-url')?.value   || '').trim() || 'http://localhost:11434';
+    OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
+  }
+  const fns = {
+    gemini: invocarGeminiPremium, groq: invocarGroq, kimi: invocarKimi,
+    openrouter: invocarOpenRouter, deepseek: invocarDeepSeek, ollama: invocarOllama
+  };
+  try {
+    await fns[id]('Responda só a palavra: ok', true, null);
+    if (el) el.innerHTML = '<span style="color:#2b8a3e;font-weight:600;"><i class="ti ti-check"></i> Conectado!</span>';
+  } catch(e) {
+    if (el) el.innerHTML = '<span style="color:#c92a2a;"><i class="ti ti-x"></i> ' + escHtml(e.message.substring(0,80)) + '</span>';
+  }
 }
 
 // Lê um documento ANTES de o processo existir — extrai o nº SEI por regex (determinístico,
@@ -769,24 +873,58 @@ async function abrirProcesso(identificador) {
     <!-- 1. PAINEL DE CHECAGEM -->
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:15px;"><i class="ti ti-microscope"></i> 1. Verificar Processo</h3>
-      <div style="display: flex; align-items: center; gap: 15px; flex-wrap:wrap;">
-          <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
-          <span id="contador-checagem" style="font-weight: bold; font-size: 0.95rem;"></span>
+
+      <!-- Fontes de análise — três cartões clicáveis -->
+      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
+
+        <!-- Camada 1: sempre ativa -->
+        <div style="border:0.5px solid #dee2e6; border-radius:8px; padding:10px 14px; background:#f8f9fa; display:flex; align-items:flex-start; gap:10px;">
+          <div style="width:32px;height:32px;border-radius:6px;background:#e7f5ff;color:#1c7ed6;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-file-text"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;">
+              Documentos do processo
+              <span style="font-size:0.68rem;background:#d1e7dd;color:#0f5132;padding:2px 7px;border-radius:10px;">Sempre ativo</span>
+            </div>
+            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Contrato, aditivos, ofícios e despachos importados do SEI — lidos na ordem estruturante. Conferência de contas por código roda antes da IA.</div>
+          </div>
+        </div>
+
+        <!-- Camada 2: Drive — ligado por padrão -->
+        <div id="card-drive" style="border:0.5px solid #a3cfbb; border-radius:8px; padding:10px 14px; background:#e8f5e9; display:flex; align-items:flex-start; gap:10px; cursor:pointer;" onclick="toggleFonte('drive')">
+          <div style="width:16px;height:16px;border-radius:4px;border:0.5px solid #adb5bd;background:#2563eb;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;" id="chk-drive-box"><span style="color:#fff;font-size:10px;">✓</span></div>
+          <input type="checkbox" id="chk-historico-unidade" checked style="display:none;">
+          <div style="width:32px;height:32px;border-radius:6px;background:#d1fae5;color:#065f46;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-brand-google-drive"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;">
+              Histórico da unidade
+              <span style="font-size:0.68rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;">Google Drive</span>
+            </div>
+            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Busca o contrato de referência na pasta LEIS E DECRETOS pelo nome da unidade. Achados sempre marcados para confirmar.</div>
+          </div>
+        </div>
+        <div id="status-fonte-historico" style="font-size:0.75rem; padding-left:14px;"></div>
+
+        <!-- Camada 3: Web — desligado por padrão -->
+        <div id="card-web" style="border:0.5px solid #dee2e6; border-radius:8px; padding:10px 14px; background:#f8f9fa; display:flex; align-items:flex-start; gap:10px; cursor:pointer;" onclick="toggleFonte('web')">
+          <div style="width:16px;height:16px;border-radius:4px;border:0.5px solid #adb5bd;background:#f8f9fa;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;" id="chk-web-box"></div>
+          <input type="checkbox" id="chk-legislacao-jurisprudencia" style="display:none;">
+          <div style="width:32px;height:32px;border-radius:6px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-world"></i></div>
+          <div style="flex:1;">
+            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;">
+              Busca jurídica na web
+              <span style="font-size:0.68rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:10px;">Experimental · mais lento</span>
+            </div>
+            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Pesquisa em fontes públicas: Diário Oficial, legislação federal e estadual, TCU, TCE-PE, TCM-PE, STJ, STF, AGU. Confirme a fonte antes de citar em parecer.</div>
+          </div>
+        </div>
+
       </div>
-      <label style="display:block; margin-top:10px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-historico-unidade" checked> Cruzar com histórico contratual da unidade (pasta Drive "LEIS E DECRETOS") —
-        fonte curada, mas o casamento é por nome de arquivo, então achados aqui também saem marcados "verificar"
-      </label>
-      <div id="status-fonte-historico" style="margin-top:4px; font-size:0.78rem;"></div>
-      <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-busca-externa"> Buscar normas externas na web (leis/decretos/portarias da SES-PE) —
-        <strong>experimental</strong>: mais lento, e todo achado baseado nisso é sempre marcado como "verificar" (a busca pode trazer versão desatualizada ou não oficial)
-      </label>
-      <label style="display:block; margin-top:6px; font-size:0.82rem; color:var(--text-muted);">
-        <input type="checkbox" id="chk-jurisprudencia"> Cruzar com jurisprudência (TCE-PE, TCU) —
-        <strong>experimental</strong>: mesmo aviso da busca de normas — é busca automática, não substitui confirmar a decisão de verdade antes de citar num parecer
-      </label>
-      <div id="ia-status" style="margin-top:15px;"></div>
+
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:10px;">
+        <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
+        <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
+      </div>
+      <div id="ia-status" style="margin-top:6px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
     </div>
 
@@ -1339,12 +1477,14 @@ function desmascararTexto(texto, mapa) {
 
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
-  const estados = { gemini: 'pendente', groq: 'pendente', openrouter: 'pendente', ollama: 'pendente' };
-  if (!GEMINI_KEY) estados.gemini = 'pulado';
-  if (!GROQ_KEY) estados.groq = 'pulado';
-  if (!OPENROUTER_KEY) estados.openrouter = 'pulado';
-  if (!KIMI_KEY) estados.kimi = 'pulado';
-  if (!DEEPSEEK_KEY) estados.deepseek = 'pulado';
+  const estados = {};
+  ORDEM_PROVEDORES_IDS.forEach(id => { estados[id] = 'pendente'; });
+  if (!GEMINI_KEY     || !GEMINI_ATIVO)     estados.gemini     = 'pulado';
+  if (!GROQ_KEY       || !GROQ_ATIVO)       estados.groq       = 'pulado';
+  if (!KIMI_KEY       || !KIMI_ATIVO)       estados.kimi       = 'pulado';
+  if (!OPENROUTER_KEY || !OPENROUTER_ATIVO) estados.openrouter = 'pulado';
+  if (!DEEPSEEK_KEY   || !DEEPSEEK_ATIVO)   estados.deepseek   = 'pulado';
+  if (!OLLAMA_ATIVO)                         estados.ollama     = 'pulado';
 
   // Mascara só uma vez, reaproveitado nas 3 tentativas em nuvem — o Ollama (local)
   // usa o "prompt" original, sem máscara, mais abaixo.
@@ -1800,6 +1940,43 @@ function montarDadosExtraidos(textoIntegral) {
   }).join('\n');
 }
 
+
+function toggleFonte(tipo) {
+  if (tipo === 'drive') {
+    const chk = document.getElementById('chk-historico-unidade');
+    const box = document.getElementById('chk-drive-box');
+    const card = document.getElementById('card-drive');
+    chk.checked = !chk.checked;
+    if (chk.checked) {
+      box.innerHTML = '<span style="color:#fff;font-size:10px;">✓</span>';
+      box.style.background = '#2563eb';
+      card.style.borderColor = '#a3cfbb';
+      card.style.background = '#e8f5e9';
+    } else {
+      box.innerHTML = '';
+      box.style.background = '#f8f9fa';
+      card.style.borderColor = '#dee2e6';
+      card.style.background = '#f8f9fa';
+    }
+  } else {
+    const chk = document.getElementById('chk-legislacao-jurisprudencia');
+    const box = document.getElementById('chk-web-box');
+    const card = document.getElementById('card-web');
+    chk.checked = !chk.checked;
+    if (chk.checked) {
+      box.innerHTML = '<span style="color:#fff;font-size:10px;">✓</span>';
+      box.style.background = '#d97706';
+      card.style.borderColor = '#d97706';
+      card.style.background = '#fef3c7';
+    } else {
+      box.innerHTML = '';
+      box.style.background = '#f8f9fa';
+      card.style.borderColor = '#dee2e6';
+      card.style.background = '#f8f9fa';
+    }
+  }
+}
+
 // === 1. CHECAGEM PREMIUM ===
 async function rodarRaioX() {
   const st = document.getElementById('ia-status');
@@ -1886,7 +2063,7 @@ async function rodarRaioX() {
 
   // Busca externa de normas (opcional, via checkbox) — chamada separada do modo JSON da checagem
   let normasExternasBloco = '';
-  const buscaExternaAtiva = document.getElementById('chk-busca-externa')?.checked;
+  const buscaExternaAtiva = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
   if (buscaExternaAtiva) {
     st.innerHTML = `<span class="spinner"></span> Buscando normas externas na web (SES-PE)...`;
     try {
@@ -1908,7 +2085,7 @@ ${listaFontes}`;
   }
 
   let jurisprudenciaBloco = '';
-  const jurisprudenciaAtiva = document.getElementById('chk-jurisprudencia')?.checked;
+  const jurisprudenciaAtiva = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
   if (jurisprudenciaAtiva) {
     st.innerHTML = `<span class="spinner"></span> Cruzando com jurisprudência (TCE-PE, TCU)...`;
     try {
@@ -2488,7 +2665,9 @@ function verificarIA() {
   if (DEEPSEEK_KEY && DEEPSEEK_KEY.trim()) provedoresAtivos.push('DeepSeek');
   if (OLLAMA_URL) provedoresAtivos.push('Ollama'); // sempre "configurado" (URL tem padrão), só não garante que está rodando
 
-  if (GEMINI_KEY || GROQ_KEY || OPENROUTER_KEY || KIMI_KEY || DEEPSEEK_KEY) {
+  const algumAtivo = (GEMINI_KEY && GEMINI_ATIVO) || (GROQ_KEY && GROQ_ATIVO) ||
+    (KIMI_KEY && KIMI_ATIVO) || (OPENROUTER_KEY && OPENROUTER_ATIVO) || (DEEPSEEK_KEY && DEEPSEEK_ATIVO);
+  if (algumAtivo) {
     dot.className = 'ai-dot on';
     txt.innerText = 'IA conectada (' + provedoresAtivos.filter(p => p !== 'Ollama').join(' + ') + ')';
   } else {
