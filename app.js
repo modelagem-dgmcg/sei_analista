@@ -22,7 +22,7 @@
 // desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
 // Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
 // titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
-const BUILD_VERSION = '2026-09-29 v23.2';
+const BUILD_VERSION = '2026-09-29 v23.5';
 const BUILD_DATE    = '29/09/2026';
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -48,6 +48,19 @@ let DEEPSEEK_ATIVO   = _lerHabilitado('sei_deepseek_ativo');
 let OLLAMA_ATIVO     = _lerHabilitado('sei_ollama_ativo');
 
 let ORDEM_PROVEDORES_IDS = JSON.parse(localStorage.getItem('sei_ordem_provedores') || '["gemini","groq","kimi","openrouter","deepseek","ollama"]');
+// Ordem gravada por versão antiga pode estar sem algum provedor (o v22 gravava sem o
+// DeepSeek). Quem faltar entra no fim da fila, antes do Ollama, em vez de nunca ser tentado.
+(function _completarOrdemProvedores() {
+  const todos = ['gemini', 'groq', 'kimi', 'openrouter', 'deepseek', 'ollama'];
+  if (!Array.isArray(ORDEM_PROVEDORES_IDS)) ORDEM_PROVEDORES_IDS = todos.slice();
+  ORDEM_PROVEDORES_IDS = ORDEM_PROVEDORES_IDS.filter(id => todos.includes(id));
+  todos.forEach(id => {
+    if (ORDEM_PROVEDORES_IDS.includes(id)) return;
+    const posOllama = ORDEM_PROVEDORES_IDS.indexOf('ollama');
+    if (id !== 'ollama' && posOllama >= 0) ORDEM_PROVEDORES_IDS.splice(posOllama, 0, id);
+    else ORDEM_PROVEDORES_IDS.push(id);
+  });
+})();
 
 // URL do Backend (Apps Script) — planilha compartilhada:
 let API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
@@ -1091,7 +1104,7 @@ async function salvarNovoProcesso() {
     if (btn) btn.innerHTML = '<span class="spinner"></span> Anexando documento já lido...';
     processoAtual = res.processo; // salvarDocumentoNoBackend depende de processoAtual.id
     try {
-      await salvarDocumentoNoBackend(_arquivoPrePreenchido.nome, _arquivoPrePreenchido.texto);
+      await salvarDocumentoNoBackend(_arquivoPrePreenchido.nome, _arquivoPrePreenchido.texto, detectarSensiveisDoArquivo(_arquivoPrePreenchido.texto, _arquivoPrePreenchido.nome));
     } catch (e) {
       console.warn('Processo criado, mas falhou ao anexar o documento pré-lido:', e.message);
     }
@@ -1252,7 +1265,20 @@ async function abrirProcesso(identificador) {
   let docsHtml = '<span style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum documento anexado ainda.</span>';
   if (docs.length > 0) {
     docsHtml = '<ul style="margin:0; padding-left:20px; font-size:0.85rem; color:#495057; max-height: 120px; overflow-y: auto;">';
-    docs.forEach(d => { docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}</li>`; });
+    docs.forEach(d => {
+      let resumoTxt = '';
+      if (d.resumo_sensiveis) {
+        try {
+          const lista = JSON.parse(d.resumo_sensiveis);
+          resumoTxt = lista.length
+            ? ` <span style="color:#b45309; font-size:0.72rem;">(${lista.length} dado(s) sensível(is) coberto(s))</span>`
+            : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
+        } catch (e) { /* resumo antigo ou inválido: só não mostra */ }
+      }
+      const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO'
+        ? ' <span style="background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600;">✓ VERSÃO ASSINADA</span>' : '';
+      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${seloAssinado}${resumoTxt}</li>`;
+    });
     docsHtml += '</ul>';
   }
 
@@ -1570,7 +1596,7 @@ async function processarVersaoAssinada(file) {
     const buf = await file.arrayBuffer();
     const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
     if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
-    await salvarDocumentoNoBackend(file.name, texto, [], 'FINAL_ASSINADO');
+    await salvarDocumentoNoBackend(file.name, texto, detectarSensiveisDoArquivo(texto, file.name), 'FINAL_ASSINADO');
     await api('log/registrar', { usuario: usuarioAtual.email, acao: 'VERSAO_ASSINADA', processo_id: processoAtual.id, detalhes: file.name });
     status.innerHTML = '<div class="alert alert-success" style="background:#d1e7dd;color:#0f5132;padding:10px;border-radius:6px;">✓ Versão assinada registrada neste processo.</div>';
     setTimeout(() => {
@@ -1736,7 +1762,7 @@ async function processarUploadZIP(files) {
           try {
             const buf = await contents.files[filename].async('arraybuffer');
             const texto = await extrairTextoArquivo(filename, buf);
-            if (texto.trim().length > 20) { await salvarDocumentoNoBackend(filename, texto); importados++; }
+            if (texto.trim().length > 20) { await salvarDocumentoNoBackend(filename, texto, detectarSensiveisDoArquivo(texto, filename)); importados++; }
             else avisos.push(`${filename}: nenhum texto extraído (pode ser imagem/escaneado sem OCR) — NÃO importado`);
           } catch (e) { avisos.push(`${filename}: ${e.message}`); }
         }
@@ -1752,7 +1778,7 @@ async function processarUploadZIP(files) {
         const buf = await file.arrayBuffer();
         const texto = await extrairTextoArquivo(file.name, buf);
         if (!texto.trim().length) throw new Error('nenhum texto extraído (pode ser um arquivo escaneado/imagem, sem OCR)');
-        await salvarDocumentoNoBackend(file.name, texto);
+        await salvarDocumentoNoBackend(file.name, texto, detectarSensiveisDoArquivo(texto, file.name));
         importados++;
       } catch (e) {
         avisos.push(`${file.name}: ${e.message}`);
@@ -1922,15 +1948,14 @@ function renderPainelProvedores(statusEl, estados, mensagem) {
 // padrão pode escapar. CEP e valor monetário continuam fora da máscara (ver camada 2).
 function mascararBlocosQualificacao(texto) {
   const mapa = new Map();
+  const detalhes = [];
   let contador = 0;
-  const LIMITE_CAPTURA = 220; // caracteres pra frente da âncora, se não achar ponto final antes
-
+  const LIMITE_CAPTURA = 220;
   const ancoras = [
     /neste\s+ato\s+representad[oa]\s+por/gi,
     /representad[oa]\s+neste\s+ato\s+por/gi,
     /por\s+seu[a]?\s+representante\s+legal[,:]?/gi
   ];
-
   let textoComBlocosMascarados = texto;
   ancoras.forEach(ancora => {
     textoComBlocosMascarados = textoComBlocosMascarados.replace(ancora, (match, offset, textoCompleto) => {
@@ -1940,66 +1965,97 @@ function mascararBlocosQualificacao(texto) {
       const trechoCapturado = pontoFinal >= 0 ? resto.substring(0, pontoFinal) : resto;
       contador++;
       const marcador = `[QUALIFICACAO-${contador}]`;
+      const origem = _localizarOrigem(textoCompleto.substring(0, offset));
       mapa.set(marcador, match + trechoCapturado);
-      // Substitui a âncora + o trecho capturado pelo marcador — o resto do texto
-      // (depois do trecho capturado) continua intacto, não é tocado.
+      detalhes.push({ tipo: 'QUALIFICACAO', marcador, doc: origem.doc, pagina: origem.pagina });
       return marcador;
     });
-    // O replace acima só troca a âncora; o trecho capturado ainda está duplicado no
-    // texto (antes e depois do marcador) — remove a duplicata logo em seguida.
   });
-
-  // O passo acima marca a âncora mas deixa o trecho capturado intacto no texto (já
-  // que replace não pode "consumir" caracteres fora do match). Remove esse trecho
-  // duplicado agora, usando o que foi guardado no mapa — e ajusta o mapa pra guardar
-  // só o trecho útil (sem repetir a âncora), pra desmascarar ficar gramaticalmente limpo.
   for (const [marcador, textoOriginalCompleto] of mapa) {
-    const ancoraOriginal = textoOriginalCompleto.match(/^(neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal[,:]?)/i)[0];
+    const matchAncora = textoOriginalCompleto.match(/^(neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal[,:]?)/i);
+    if (!matchAncora) continue;
+    const ancoraOriginal = matchAncora[0];
     const trechoCapturado = textoOriginalCompleto.substring(ancoraOriginal.length);
     if (trechoCapturado) {
       textoComBlocosMascarados = textoComBlocosMascarados.replace(marcador + trechoCapturado, marcador);
     }
     mapa.set(marcador, trechoCapturado.replace(/^,?\s*/, '').trim() || ancoraOriginal.trim());
   }
-
-  return { textoComBlocosMascarados, mapaBlocos: mapa };
+  return { textoComBlocosMascarados, mapaBlocos: mapa, detalhesBlocos: detalhes };
 }
 
 function mascararDadosSensiveis(texto) {
-  const mapa = new Map(); // marcador -> valor original, pra desmascarar a resposta da IA depois
+  const mapa = new Map();
+  const detalhes = [];
   const contador = { CPF: 0, RG: 0, EMAIL: 0, TELEFONE: 0, BANCARIO: 0 };
-
-  // Camada 1 — bloco de qualificação inteiro (cobre nome, que a regex nunca cobriria)
-  const { textoComBlocosMascarados, mapaBlocos } = mascararBlocosQualificacao(texto);
+  const { textoComBlocosMascarados, mapaBlocos, detalhesBlocos } = mascararBlocosQualificacao(texto);
   let textoMascarado = textoComBlocosMascarados;
   for (const [marcador, original] of mapaBlocos) mapa.set(marcador, original);
+  detalhes.push(...detalhesBlocos);
 
   function substituir(regex, tipo) {
-    const marcadorPorValor = new Map(); // mesmo valor original -> mesmo marcador, sempre
-    textoMascarado = textoMascarado.replace(regex, (match) => {
+    const marcadorPorValor = new Map();
+    textoMascarado = textoMascarado.replace(regex, (match, ...args) => {
+      // Os dois últimos argumentos do replace são sempre (posição, texto completo)
+      const offset = args[args.length - 2];
+      const textoCompleto = args[args.length - 1];
       if (marcadorPorValor.has(match)) return marcadorPorValor.get(match);
       contador[tipo]++;
       const marcador = `[${tipo}-${contador[tipo]}]`;
+      const origem = _localizarOrigem(textoCompleto.substring(0, offset));
       marcadorPorValor.set(match, marcador);
       mapa.set(marcador, match);
+      detalhes.push({ tipo, marcador, doc: origem.doc, pagina: origem.pagina });
       return marcador;
     });
   }
-
-  // Camada 2 — regex de formato conhecido, no que sobrou fora dos blocos já mascarados.
-  // Ordem importa: CPF (com pontuação) primeiro, pra não ser "roubado" pela regex
-  // mais genérica de telefone antes de ter a chance de casar.
+  // CPF primeiro, pra não ser "roubado" pela regra mais genérica de telefone
   substituir(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, 'CPF');
   substituir(/\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g, 'RG');
   substituir(/[\w.+-]+@[\w-]+\.[\w.-]+/g, 'EMAIL');
   substituir(/\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g, 'TELEFONE');
   substituir(/\b(?:ag[êe]ncia|conta corrente|c\/c)\s*:?\s*\d{3,10}-?\d?\b/gi, 'BANCARIO');
-
-  return { textoMascarado, mapa, totalMascarado: mapa.size };
+  return { textoMascarado, mapa, totalMascarado: mapa.size, detalhes };
 }
 
-// Reverte os marcadores de volta pro valor original — aplicado na RESPOSTA da IA
-// antes de mostrar pro analista (ele precisa ver o CPF de verdade, não "[CPF-1]").
+// Último "--- DOC: nome ---" e "--- PÁGINA N ---" antes de um ponto do texto —
+// é assim que se sabe de qual documento e página veio cada dado mascarado.
+function _localizarOrigem(textoAntes) {
+  const docMatches = [...textoAntes.matchAll(/--- DOC: (.+?) ---/g)];
+  const pagMatches = [...textoAntes.matchAll(/--- PÁGINA (\d+) ---/g)];
+  return {
+    doc: docMatches.length ? docMatches[docMatches.length - 1][1].trim() : null,
+    pagina: pagMatches.length ? pagMatches[pagMatches.length - 1][1] : null
+  };
+}
+
+// Só DETECTA (não mascara): usado na importação, pra já mostrar em cada documento
+// quantos dados sensíveis ele tem, antes de existir qualquer checagem.
+function detectarSensiveisDoArquivo(texto, nomeArquivo) {
+  const { detalhes } = mascararDadosSensiveis(texto);
+  return detalhes.map(d => ({ tipo: d.tipo, doc: nomeArquivo, pagina: d.pagina }));
+}
+
+// Painel "o que foi mascarado e onde", mostrado depois da Checagem e da Revisão.
+function renderPainelMascaramento(detalhes) {
+  if (!detalhes || !detalhes.length) return '';
+  const rotulos = { CPF: 'CPF', RG: 'RG', EMAIL: 'E-mail', TELEFONE: 'Telefone', BANCARIO: 'Dado bancário', QUALIFICACAO: 'Bloco de qualificação (nome e documento)' };
+  const vistos = new Set();
+  const unicos = detalhes.filter(d => { const k = d.tipo + '|' + (d.doc || '') + '|' + (d.pagina || ''); if (vistos.has(k)) return false; vistos.add(k); return true; });
+  const linhas = unicos.map(d => {
+    const origemTxt = [d.doc ? `doc. <strong>${escHtml(d.doc)}</strong>` : null, d.pagina ? `página ${escHtml(d.pagina)}` : null]
+      .filter(Boolean).join(', ') || 'origem não identificada';
+    return `<li style="margin-bottom:3px;"><span style="font-weight:600;">${escHtml(rotulos[d.tipo] || d.tipo)}</span> — ${origemTxt}</li>`;
+  }).join('');
+  return `
+    <details style="margin-top:10px; background:#fff9db; border:1px solid #f5c518; border-radius:6px; padding:10px 14px;">
+      <summary style="cursor:pointer; font-size:0.82rem; font-weight:600; color:#7c5a00;">
+        <i class="ti ti-eye-off"></i> ${unicos.length} dado(s) pessoal(is) mascarado(s) antes de enviar à nuvem — ver o quê e onde
+      </summary>
+      <ul style="margin:8px 0 0 18px; font-size:0.8rem; color:#5c4600; padding:0;">${linhas}</ul>
+    </details>`;
+}
+
 function desmascararTexto(texto, mapa) {
   if (!mapa || !mapa.size) return texto;
   let resultado = texto;
@@ -2030,7 +2086,9 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   if (!DEEPSEEK_KEY   || !DEEPSEEK_ATIVO)   estados.deepseek   = 'pulado';
   if (!OLLAMA_ATIVO)                         estados.ollama     = 'pulado';
 
-  const { textoMascarado: promptMascarado, mapa, totalMascarado } = mascararDadosSensiveis(prompt);
+  const { textoMascarado: promptMascarado, mapa, totalMascarado, detalhes } = mascararDadosSensiveis(prompt);
+  window._ultimoMascaramentoDetalhes = detalhes;
+  (window._mascaramentoAcumulado = window._mascaramentoAcumulado || []).push(...detalhes);
   const avisoMascara = totalMascarado > 0
     ? ` (${totalMascarado} dado(s) sensível(is) mascarado(s) antes de enviar à nuvem)` : '';
 
@@ -2045,9 +2103,18 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   };
 
   // Itera na ordem configurada pelo usuário (ORDEM_PROVEDORES_IDS)
+  const pulados = [];
   for (const id of ORDEM_PROVEDORES_IDS) {
     const provedor = MAPA_INVOCAR[id];
-    if (!provedor || !provedor.ativo) continue;
+    if (!provedor) continue;
+    if (!provedor.ativo) {
+      const nomeP = PROVEDORES_INFO[id] ? PROVEDORES_INFO[id].nome : id;
+      const chaves = { gemini: GEMINI_KEY, groq: GROQ_KEY, kimi: KIMI_KEY, openrouter: OPENROUTER_KEY, deepseek: DEEPSEEK_KEY };
+      const ativos = { gemini: GEMINI_ATIVO, groq: GROQ_ATIVO, kimi: KIMI_ATIVO, openrouter: OPENROUTER_ATIVO, deepseek: DEEPSEEK_ATIVO, ollama: OLLAMA_ATIVO };
+      if (id !== 'ollama' && !chaves[id]) pulados.push(nomeP + ': PULADO_SEM_CHAVE');
+      else if (!ativos[id]) pulados.push(nomeP + ': PULADO_DESLIGADO');
+      continue;
+    }
 
     const info = PROVEDORES_INFO[id];
     estados[id] = 'tentando';
@@ -2066,8 +2133,8 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   }
 
   renderPainelProvedores(statusEl, estados, 'Nenhum provedor respondeu.');
-  if (!erros.length) throw new Error('Nenhum serviço de IA está habilitado. Vá em "Motor de IA" e ligue ao menos um.');
-  throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
+  if (!erros.length) throw new Error('Todos os provedores de IA falharam:\n' + pulados.join('\n') + '\n(Nenhum serviço em nuvem está ligado com chave neste navegador. Vá em "Motor de IA".)');
+  throw new Error('Todos os provedores de IA falharam:\n' + erros.concat(pulados).join('\n'));
 }
 
 async function invocarGroq(prompt, isChat, statusEl) {
@@ -2833,11 +2900,13 @@ ${jurisprudenciaBloco}
 ${promptContas}TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
 ___TEXTO_DO_LOTE___`;
 
+  window._mascaramentoAcumulado = [];
   const lotes = _dividirEmLotes(textoIntegralAtual, LIMITE_CHARS_LOTE);
   if (lotes.length > 1) {
     const maiores = dividirPorDocumento(textoIntegralAtual)
       .sort((a, b) => b.texto.length - a.texto.length).slice(0, 5)
       .map(d => `${escHtml(d.nome)} (${Math.round(d.texto.length / 1000)} mil)`).join(', ');
+    document.getElementById('aviso-lotes')?.remove();
     st.insertAdjacentHTML('beforebegin', `<div id="aviso-lotes" style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-top:8px;">
       <i class="ti ti-stack-2"></i> Processo grande (${Math.round(textoIntegralAtual.length / 1000)} mil caracteres): a análise será feita em <strong>${lotes.length} lotes</strong>, um depois do outro. Pode levar vários minutos.
       <div style="margin-top:4px;">Maiores documentos: ${maiores}</div></div>`);
@@ -2857,6 +2926,15 @@ ___TEXTO_DO_LOTE___`;
       respostasIA.push(resposta);
       cardsIA.push(..._lerCardsDaResposta(resposta));
     } catch (e) {
+      // Limite de tokens por minuto: não é falha de verdade, é só esperar a janela virar
+      if (/TPM|rate_limit|HTTP 429/i.test(e.message) && !lotes[i]._jaEsperou) {
+        lotes[i]._jaEsperou = true;
+        for (let s = 60; s > 0; s--) {
+          if (bannerDetalhe) bannerDetalhe.textContent = `Limite por minuto da conta atingido — retomando em ${s}s`;
+          await new Promise(r => setTimeout(r, 1000));
+        }
+        i--; continue;
+      }
       falhasLote.push({ lote: i + 1, erro: e.message });
       if (lotes.length === 1) throw e;
     }
@@ -2877,6 +2955,7 @@ ___TEXTO_DO_LOTE___`;
     st.innerHTML = falhasLote.length
       ? `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;"><i class="ti ti-alert-triangle"></i> ${falhasLote.length} de ${lotes.length} lote(s) não foram analisados pela IA (lote ${falhasLote.map(f => f.lote).join(', ')}). Os achados acima cobrem só os demais. Rode a checagem de novo em alguns minutos para completar.</div>`
       : '';
+    st.innerHTML += renderPainelMascaramento(window._mascaramentoAcumulado);
 
     // Registra a checagem como auditoria no backend (mantém histórico e status do processo)
     await api('auditorias/salvar', {
@@ -3135,9 +3214,8 @@ async function fazerPerguntaAoProcesso() {
   // o texto INTEIRO pra IA. O filtro por relevância (extrairTrechosRelevantes) só entra
   // como válvula de escape em volumes realmente extremos (histórico de unidade com
   // muitos aditivos acumulados), não como economia de rotina.
-  const LIMIAR_FILTRAGEM = 400000;
-  const contextoDocs = textoIntegralAtual.length > LIMIAR_FILTRAGEM
-    ? extrairTrechosRelevantes(textoIntegralAtual, pergunta)
+  const contextoDocs = textoIntegralAtual.length > LIMITE_CHARS_LOTE
+    ? extrairTrechosRelevantes(textoIntegralAtual, pergunta).substring(0, LIMITE_CHARS_LOTE)
     : textoIntegralAtual;
 
   const prompt = `Você é um assistente investigativo sênior. O usuário fará uma pergunta sobre o processo em anexo.
@@ -3199,6 +3277,15 @@ async function rodarRevisaoFinal() {
   contadorEl.innerHTML = '';
 
   const txtAnalista = document.getElementById('editor-final').value.trim();
+  let contextoRevisao = textoIntegralAtual;
+  let revisaoResumida = false;
+  if (textoIntegralAtual.length > LIMITE_CHARS_LOTE) {
+    revisaoResumida = true;
+    const trechos = extrairTrechosRelevantes(textoIntegralAtual, txtAnalista.substring(0, 4000));
+    contextoRevisao = ('(Processo grande demais para ir inteiro. Abaixo: valores extraídos por código de TODOS os documentos, '
+      + 'seguidos dos trechos mais ligados ao texto do analista.)\n\nVALORES EXTRAÍDOS:\n'
+      + _dadosExtraidosCompactos(textoIntegralAtual) + '\n\nTRECHOS RELEVANTES:\n' + trechos).substring(0, LIMITE_CHARS_LOTE);
+  }
   if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Cole o seu parecer na caixa de texto primeiro.</div>';
 
   const p = processoAtual;
@@ -3239,14 +3326,16 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido, com esta estrutura exata (NÃO in
 }
 
 DOCUMENTOS ORIGINAIS:
-${textoIntegralAtual}
+${contextoRevisao}
 ------------------------------------------------
 PARECER DO ANALISTA:
 ${txtAnalista}`;
 
   try {
     const jsonStr = await invocarIAComFallback(prompt, false, st);
-    const rev = JSON.parse(jsonStr);
+    let rev;
+    try { rev = JSON.parse(jsonStr); }
+    catch (e) { rev = JSON.parse(String(jsonStr).replace(/[\x00-\x1F\x7F]/g, ' ').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']')); }
     const qtdCriticas = (rev.criticas || []).length;
 
     contadorEl.innerHTML = qtdCriticas > 0
@@ -3267,7 +3356,8 @@ ${txtAnalista}`;
         <p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p>
       </div>`;
     }
-    st.innerHTML = htmlResultado;
+    if (revisaoResumida) htmlResultado = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> Processo muito grande: a revisão comparou seu texto com os valores de todos os documentos e com os trechos mais relacionados, não com o processo inteiro.</div>` + htmlResultado;
+    st.innerHTML = htmlResultado + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
 
     // Registra no histórico (fechava um buraco: só a Checagem salvava, a Revisão Final não)
     const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
@@ -3293,6 +3383,8 @@ ${txtAnalista}`;
 // objetiva + uma sugestão do que fazer. O detalhe técnico continua acessível (link
 // pequeno), só não fica exposto por padrão.
 function _motivoCurtoProvedor(m) {
+  if (/PULADO_SEM_CHAVE/.test(m)) return 'não tentado: sem chave neste navegador';
+  if (/PULADO_DESLIGADO/.test(m)) return 'não tentado: desligado em Motor de IA';
   if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
   if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia da conta';
   if (/exceeded_current_quota|insufficient/i.test(m)) return 'saldo insuficiente';
