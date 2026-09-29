@@ -142,73 +142,67 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.75s linear infinite; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+
 /* ==================== VERSAO / EASTER EGG (cidades de Pernambuco) ==================== */
 #versao-cidade-wrap {
   text-align: center;
-  margin-top: 18px;
+  margin-top: 16px;
+  padding-bottom: 4px;
 }
 #versao-cidade-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.7rem;
+  gap: 5px;
+  font-size: 0.68rem;
   color: var(--text-muted);
-  letter-spacing: 0.3px;
+  letter-spacing: 0.4px;
   cursor: help;
-  padding: 3px 10px;
-  border-radius: 12px;
+  padding: 3px 8px;
+  border-radius: 20px;
   border: 1px solid transparent;
-  transition: border-color 0.2s, color 0.2s;
-  position: relative;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  user-select: none;
 }
 #versao-cidade-badge:hover {
-  border-color: var(--alert-bordeaux);
+  border-color: rgba(142, 22, 40, 0.35);
   color: var(--alert-bordeaux);
+  background: rgba(142, 22, 40, 0.04);
 }
 #versao-cidade-badge .versao-ponto {
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--action-amber);
+  opacity: 0.7;
+  flex-shrink: 0;
 }
-#versao-cidade-tooltip {
-  visibility: hidden;
-  opacity: 0;
-  position: absolute;
-  bottom: 130%;
-  left: 50%;
-  transform: translateX(-50%) translateY(4px);
-  background: var(--bg-sidebar);
-  color: var(--text-light);
-  padding: 10px 14px;
+
+/* Tooltip flutuante — injetado no <body> via JS, position:fixed */
+#versao-tooltip-global {
+  position: fixed;
+  background: #1a1d20;
+  color: #f8f9fa;
+  padding: 11px 15px;
   border-radius: 8px;
   font-size: 0.72rem;
-  line-height: 1.5;
-  width: 260px;
+  line-height: 1.55;
+  width: 240px;
+  max-width: 90vw;
   text-align: left;
-  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
-  transition: opacity 0.2s, transform 0.2s;
-  z-index: 50;
-  letter-spacing: normal;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  border-left: 3px solid var(--action-amber);
 }
-#versao-cidade-tooltip::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border-width: 6px;
-  border-style: solid;
-  border-color: var(--bg-sidebar) transparent transparent transparent;
-}
-#versao-cidade-tooltip strong {
-  color: var(--action-amber);
-  display: block;
-  margin-bottom: 3px;
-  font-size: 0.76rem;
-}
-#versao-cidade-badge:hover #versao-cidade-tooltip {
-  visibility: visible;
+#versao-tooltip-global.visivel {
   opacity: 1;
-  transform: translateX(-50%) translateY(0);
+}
+#versao-tooltip-global strong {
+  display: block;
+  color: var(--action-amber);
+  font-size: 0.74rem;
+  margin-bottom: 5px;
+  letter-spacing: 0.2px;
 }
