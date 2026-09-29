@@ -22,7 +22,7 @@
 // desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
 // Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
 // titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
-const BUILD_VERSION = '2026-09-29 v23';
+const BUILD_VERSION = '2026-09-29 v23.1';
 const BUILD_DATE    = '29/09/2026';
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -592,7 +592,7 @@ async function renderDashboard(caixa = 'entrada') {
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
         : '';
 
-      const botaoAssumirHtml = (caixa === 'entrada' && String(p.responsavel_atual||'').toLowerCase() !== usuarioAtual.email.toLowerCase())
+      const botaoAssumirHtml = (caixa === 'entrada')
         ? `<div style="margin-top:10px;border-top:1px dashed #dee2e6;padding-top:8px;"><button class="btn btn-primary btn-sm" style="width:100%;font-size:0.75rem;" onclick="assumirProcesso(event,${p.id})"><i class="ti ti-hand-stop"></i> Assumir para análise</button></div>`
         : '';
 
@@ -620,14 +620,21 @@ async function renderDashboard(caixa = 'entrada') {
 
 async function assumirProcesso(e, id) {
   e.stopPropagation();
-  const res = await api('processos/encaminhar', {
-    processo_id: id, de: usuarioAtual.email, para: usuarioAtual.email, observacao: 'Assumido para análise'
-  });
-  if (!res.ok) { alert('Erro ao assumir: ' + res.erro); return; }
-  await api('processos/atualizar-status', { id, status: 'Em Análise' });
-  await api('log/registrar', { usuario: usuarioAtual.email, acao: 'ASSUMIR', processo_id: id, detalhes: 'Processo assumido da entrada' });
-  mostrarToast('Processo assumido para análise.');
-  showView('dashboard', 'andamento');
+  // O processo da Entrada já está com a pessoa; assumir é só iniciar a análise.
+  // Não usa "encaminhar para si mesmo", que criaria uma tramitação falsa no histórico.
+  const res = await api('processos/atualizar-status', { id, status: 'Em Análise' });
+  if (!res.ok) { alert('Não foi possível assumir: ' + (res.erro || 'erro desconhecido')); return; }
+  api('log/registrar', { usuario: usuarioAtual.email, acao: 'ASSUMIR', processo_id: id, detalhes: 'Análise iniciada a partir da Entrada' }).catch(() => {});
+  // Confere de verdade se o servidor passou a mostrar o processo em Andamento.
+  const conf = await api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'andamento' });
+  const apareceu = conf.ok && (conf.processos || []).some(p => String(p.id) === String(id));
+  if (apareceu) {
+    mostrarToast('Processo assumido. Ele está agora em Andamento.');
+    showView('dashboard', 'andamento');
+  } else {
+    alert('O status mudou para "Em Análise", mas o servidor ainda não mostra o processo em Andamento.\n\nIsso indica que o Code.gs não está classificando esse status na caixa Andamento. Me avise que ajustamos o backend.');
+    showView('dashboard', 'entrada');
+  }
 }
 
 async function renderPerguntasAchados() {
