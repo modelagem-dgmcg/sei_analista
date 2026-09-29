@@ -1,36 +1,214 @@
-const CACHE_NAME = 'sei-analista-shell-v5';
-const APP_SHELL = [
-  './',
-  './index.html',
-  './style.css',
-  './app.js',
-  './manifest.webmanifest',
-  './icons/mascote-analista.png'
-];
+/* ============================================================
+   SEI ANALISTA v4.2 — style.css (Estrutura Corrigida)
+   ============================================================ */
 
-self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL)));
-  self.skipWaiting();
-});
+:root {
+  --bg-sidebar: #1a1d20;
+  --bg-sidebar-hover: #2a2e33;
+  --bg-main: #f0f2f5;
+  --text-dark: #212529;
+  --text-light: #f8f9fa;
+  --text-muted: #6c757d;
+  
+  --action-primary: #5c636a; 
+  --action-hover: #495057;
+  --action-success: #198754;
+  --action-amber: #d97706;
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))))
-  );
-  self.clients.claim();
-});
+  --alert-bordeaux: #8e1628;
+  --alert-bordeaux-light: #f8d7da;
+  
+  --border-radius: 6px;
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.1);
+  --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
+}
 
-self.addEventListener('fetch', event => {
-  if (event.request.method !== 'GET') return;
-  const url = new URL(event.request.url);
-  if (url.hostname === 'script.google.com' || url.hostname.endsWith('googleusercontent.com')) return;
-  event.respondWith(
-    fetch(event.request).then(response => {
-      if (url.origin === self.location.origin && response.ok) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-      }
-      return response;
-    }).catch(() => caches.match(event.request))
-  );
-});
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+body { background-color: var(--bg-main); color: var(--text-dark); overflow: hidden; }
+
+/* === LOGIN SCREEN === */
+#login-screen { 
+  position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; 
+  display: flex; align-items: center; justify-content: center; 
+  background-color: var(--bg-sidebar); z-index: 9999; 
+}
+.login-box { background: #ffffff; padding: 40px; border-radius: 8px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+.login-header { text-align: center; margin-bottom: 30px; }
+.login-header h1 { color: #212529; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
+.login-header h1 span { color: var(--action-amber); }
+.login-header p { color: #6c757d; font-size: 0.85rem; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* === ESTRUTURA PRINCIPAL CORRIGIDA === */
+#app {
+  display: flex;
+  flex-direction: row; /* Força a ficar lado a lado */
+  width: 100vw;
+  height: 100vh;
+}
+.hidden { display: none !important; }
+
+/* === SIDEBAR (Esquerda) === */
+#sidebar { 
+  width: 260px; 
+  height: 100%;
+  background-color: var(--bg-sidebar); 
+  color: var(--text-light); 
+  display: flex; 
+  flex-direction: column; 
+  flex-shrink: 0; /* Impede a barra lateral de esmagar */
+  box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+  z-index: 10; 
+}
+.sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: center; }
+.sidebar-header h1 { font-size: 1.2rem; font-weight: 600; color: var(--text-light); }
+.sidebar-header h1 span { color: var(--action-amber); font-weight: 700; }
+.user-info { padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; color: #adb5bd; }
+.user-info strong { display: block; color: var(--text-light); font-size: 0.9rem; margin-bottom: 2px; }
+#sidebar nav { flex: 1; padding: 15px 0; overflow-y: auto; }
+#sidebar nav a { display: block; padding: 12px 20px; color: #adb5bd; text-decoration: none; font-size: 0.95rem; transition: background 0.2s, color 0.2s; border-left: 3px solid transparent; }
+#sidebar nav a i { width: 24px; text-align: center; margin-right: 8px; }
+#sidebar nav a:hover { background-color: var(--bg-sidebar-hover); color: var(--text-light); }
+#sidebar nav a.active { background-color: var(--bg-sidebar-hover); color: var(--text-light); border-left-color: var(--action-amber); font-weight: 500; }
+.ai-status { padding: 15px 20px; font-size: 0.8rem; border-top: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; gap: 8px; }
+.ai-dot { width: 8px; height: 8px; border-radius: 50%; }
+.ai-dot.on { background-color: var(--action-success); box-shadow: 0 0 5px var(--action-success); }
+.ai-dot.off { background-color: var(--alert-bordeaux); }
+
+/* === ÁREA CENTRAL DA BANCADA (Direita) === */
+#main-content { 
+  flex: 1; /* Ocupa todo o resto da tela */
+  height: 100%;
+  display: flex; 
+  flex-direction: column; 
+  overflow-y: auto; 
+  background-color: var(--bg-main);
+}
+header { 
+  background: #fff; 
+  padding: 15px 30px; 
+  border-bottom: 1px solid #e9ecef; 
+  display: flex; 
+  justify-content: space-between; 
+  align-items: center; 
+  width: 100%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin: 0;}
+#content { 
+  padding: 30px; 
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* === BOTÕES === */
+.btn { display: inline-flex; align-items: center; justify-content: center; padding: 8px 16px; font-size: 0.9rem; font-weight: 500; border: none; border-radius: var(--border-radius); cursor: pointer; transition: 0.2s; gap: 6px; }
+.btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+.btn-primary { background-color: var(--action-primary); color: white; }
+.btn-primary:hover { background-color: var(--action-hover); }
+.btn-warning { background-color: var(--action-amber); color: white; }
+.btn-secondary { background-color: #e9ecef; color: var(--text-dark); }
+.btn-secondary:hover { background-color: #dee2e6; }
+
+/* === CARDS E BANCADA === */
+.cards-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+.process-card { background: #fff; border: 1px solid #dee2e6; border-radius: var(--border-radius); padding: 20px; cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+.process-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: #adb5bd; }
+.sei-num { font-weight: 700; color: var(--text-dark); font-size: 1.1rem; }
+.badge-status { background: #e9ecef; color: var(--text-muted); font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 600; }
+.badge-obice { background: var(--alert-bordeaux-light); color: var(--alert-bordeaux); font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 600; border: 1px solid rgba(142,22,40,0.2); }
+.badge-atendido { background: #d1e7dd; color: #0f5132; font-size: 0.75rem; padding: 3px 8px; border-radius: 12px; font-weight: 600; }
+
+/* === CARDS EXPANSÍVEIS (RAIO-X) === */
+.rx-card { background: #fff; border: 1px solid #dee2e6; border-left: 4px solid var(--action-primary); border-radius: var(--border-radius); margin-bottom: 12px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+.rx-card.is-obice { border-left-color: var(--alert-bordeaux); }
+.rx-header { padding: 14px 16px; cursor: pointer; display: flex; align-items: center; background: #fff; transition: background 0.2s; }
+.rx-header:hover { background: #f8f9fa; }
+.rx-tag { font-size: 0.75rem; font-weight: 700; padding: 3px 6px; border-radius: 4px; background: #e9ecef; color: var(--text-muted); text-transform: uppercase; margin-right: 10px; }
+.rx-title { font-weight: 600; color: var(--text-dark); font-size: 0.95rem; flex: 1; }
+.rx-body { padding: 16px; border-top: 1px dashed #dee2e6; background: #fdfdfe; display: none; }
+.rx-card.open .rx-body { display: block; }
+.rx-evidence { background: #f1f3f5; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85rem; color: #495057; margin-bottom: 12px; border-left: 3px solid #ced4da; white-space: pre-wrap; }
+
+/* === FORMULÁRIOS === */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-weight: 500; font-size: 0.9rem; color: #495057; margin-bottom: 6px; }
+.form-group input { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: var(--border-radius); outline: none; }
+.dropzone { border: 2px dashed #ced4da; padding: 40px; text-align: center; color: var(--text-muted); cursor: pointer; border-radius: var(--border-radius); background: #f8f9fa; transition: 0.2s; }
+.dropzone:hover { border-color: var(--action-primary); background: #e9ecef; color: var(--action-primary); }
+.modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.modal { background: #fff; padding: 25px; border-radius: 8px; width: 90%; max-width: 500px; box-shadow: var(--shadow-md); }
+.alert { padding: 12px; border-radius: var(--border-radius); margin-bottom: 15px; font-size: 0.9rem; border: 1px solid transparent; }
+.alert-danger { background-color: var(--alert-bordeaux-light); color: var(--alert-bordeaux); border-color: #f5c2c7; }
+.spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.75s linear infinite; margin-right: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ==================== VERSAO / EASTER EGG (cidades de Pernambuco) ==================== */
+#versao-cidade-wrap {
+  text-align: center;
+  margin-top: 18px;
+}
+#versao-cidade-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  letter-spacing: 0.3px;
+  cursor: help;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  transition: border-color 0.2s, color 0.2s;
+  position: relative;
+}
+#versao-cidade-badge:hover {
+  border-color: var(--alert-bordeaux);
+  color: var(--alert-bordeaux);
+}
+#versao-cidade-badge .versao-ponto {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--action-amber);
+}
+#versao-cidade-tooltip {
+  visibility: hidden;
+  opacity: 0;
+  position: absolute;
+  bottom: 130%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  background: var(--bg-sidebar);
+  color: var(--text-light);
+  padding: 10px 14px;
+  border-radius: 8px;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  width: 260px;
+  text-align: left;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  transition: opacity 0.2s, transform 0.2s;
+  z-index: 50;
+  letter-spacing: normal;
+}
+#versao-cidade-tooltip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border-width: 6px;
+  border-style: solid;
+  border-color: var(--bg-sidebar) transparent transparent transparent;
+}
+#versao-cidade-tooltip strong {
+  color: var(--action-amber);
+  display: block;
+  margin-bottom: 3px;
+  font-size: 0.76rem;
+}
+#versao-cidade-badge:hover #versao-cidade-tooltip {
+  visibility: visible;
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
