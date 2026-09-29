@@ -22,7 +22,7 @@
 // desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
 // Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
 // titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
-const BUILD_VERSION = '2026-09-29 v23.1';
+const BUILD_VERSION = '2026-09-29 v23.2';
 const BUILD_DATE    = '29/09/2026';
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
 console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
@@ -1238,10 +1238,14 @@ async function abrirProcesso(identificador) {
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
 
   // Reconstrói o texto integral a partir dos blocos, agrupado por documento
+  const _textosVistos = new Set();
   textoIntegralAtual = docs.map(d => {
     const textoDoc = blocos.filter(b => String(b.documento_id) === String(d.id))
       .sort((a, b) => a.bloco_num - b.bloco_num)
       .map(b => b.conteudo || '').join('');
+    // Mesmo conteúdo importado mais de uma vez só entra uma vez no texto enviado à IA
+    if (textoDoc.length > 200 && _textosVistos.has(textoDoc)) return '';
+    _textosVistos.add(textoDoc);
     return `\n\n--- DOC: ${d.nome_arquivo} ---\n` + textoDoc;
   }).join('');
 
@@ -2561,6 +2565,81 @@ function conferirContasPorCodigo(textoIntegral) {
   }
 }
 
+
+// ==================== DIVISÃO EM LOTES (processos grandes) ====================
+// Nenhum serviço de IA aceita um processo de milhões de caracteres numa chamada só
+// (DeepSeek: 1 milhão de tokens; Kimi: limite de tokens por minuto da conta). Aqui o
+// texto é dividido por documento em lotes. Cada lote recebe a lista COMPLETA de
+// valores/datas/CEP extraídos por código de todos os documentos, então a comparação
+// numérica entre documentos continua funcionando mesmo com os textos separados.
+const LIMITE_CHARS_LOTE = 300000; // cerca de 85 a 100 mil tokens por chamada
+
+function _dividirEmLotes(textoIntegral, limite) {
+  const docs = dividirPorDocumento(textoIntegral);
+  if (!docs.length) return [{ texto: textoIntegral, docs: [] }];
+  const pedacos = [];
+  docs.forEach(d => {
+    if (d.texto.length <= limite) { pedacos.push({ nome: d.nome, texto: d.texto }); return; }
+    // Documento maior que o lote inteiro: corta em partes, de preferência em quebra de linha
+    let ini = 0, parte = 1;
+    while (ini < d.texto.length) {
+      let fim = Math.min(ini + limite, d.texto.length);
+      if (fim < d.texto.length) { const q = d.texto.lastIndexOf('\n', fim); if (q > ini + limite * 0.5) fim = q; }
+      pedacos.push({ nome: d.nome + ' (parte ' + parte + ')', texto: d.texto.substring(ini, fim) });
+      ini = fim; parte++;
+    }
+  });
+  const lotes = [];
+  let atual = { texto: '', docs: [] };
+  pedacos.forEach(pc => {
+    const bloco = '\n\n--- DOC: ' + pc.nome + ' ---\n' + pc.texto;
+    if (atual.texto.length && atual.texto.length + bloco.length > limite) { lotes.push(atual); atual = { texto: '', docs: [] }; }
+    atual.texto += bloco; atual.docs.push(pc.nome);
+  });
+  if (atual.texto.length) lotes.push(atual);
+  return lotes;
+}
+
+// Versão enxuta da lista extraída por código (sem os trechos de contexto), usada só
+// quando a lista completa fica grande demais para caber junto em cada lote.
+function _dadosExtraidosCompactos(textoIntegral) {
+  return dividirPorDocumento(textoIntegral).map(d => {
+    const v = extrairValoresMonetarios(d.texto).map(x => x.valor);
+    const dt = extrairDatas(d.texto).map(x => x.valor);
+    const c = extrairCEPs(d.texto).map(x => x.valor);
+    let b = '\n--- ' + d.nome + ' ---\n';
+    if (v.length) b += 'VALORES: ' + v.join('; ') + '\n';
+    if (dt.length) b += 'DATAS: ' + dt.join('; ') + '\n';
+    if (c.length) b += 'CEP: ' + c.join('; ') + '\n';
+    return b;
+  }).join('');
+}
+
+// Lê os cards da resposta da IA. Se o JSON vier cortado ou malformado, tenta limpar;
+// se ainda assim falhar, recupera os cards completos que vieram antes do defeito.
+function _lerCardsDaResposta(txt) {
+  const s = String(txt || '');
+  try { return JSON.parse(s).cards || []; } catch (e) { /* segue para as tentativas abaixo */ }
+  try {
+    const limpo = s.replace(/[\x00-\x1F\x7F]/g, ' ').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']');
+    return JSON.parse(limpo).cards || [];
+  } catch (e) { /* segue */ }
+  const cards = [];
+  let pos = s.indexOf('"tag"');
+  while (pos >= 0) {
+    const ini = s.lastIndexOf('{', pos);
+    let prof = 0, fim = -1;
+    for (let i = ini; ini >= 0 && i < s.length; i++) {
+      if (s[i] === '{') prof++;
+      else if (s[i] === '}') { prof--; if (prof === 0) { fim = i; break; } }
+    }
+    if (fim > ini) { try { cards.push(JSON.parse(s.slice(ini, fim + 1))); } catch (e) { /* card defeituoso, pula */ } }
+    pos = s.indexOf('"tag"', fim > pos ? fim : pos + 5);
+  }
+  if (!cards.length) throw new Error('A IA respondeu, mas a resposta não pôde ser lida como lista de achados.');
+  return cards;
+}
+
 // === 1. CHECAGEM PREMIUM ===
 async function rodarRaioX() {
   const st = document.getElementById('ia-status');
@@ -2601,7 +2680,8 @@ async function rodarRaioX() {
   }
 
   try {
-    const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
+    let dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
+    if (dadosExtraidos.length > 150000) dadosExtraidos = _dadosExtraidosCompactos(textoIntegralAtual);
     const achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
     const promptContas = achadosCodigo.length
       ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n'
@@ -2751,11 +2831,39 @@ ${normasExternasBloco}
 ${jurisprudenciaBloco}
 
 ${promptContas}TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
-${textoIntegralAtual}`;
+___TEXTO_DO_LOTE___`;
 
-  const jsonStr = await invocarIAComFallback(prompt, false, st);
-  const jsonObj = JSON.parse(jsonStr);
-  const achadosIA = (jsonObj.cards || []).map(c => {
+  const lotes = _dividirEmLotes(textoIntegralAtual, LIMITE_CHARS_LOTE);
+  if (lotes.length > 1) {
+    const maiores = dividirPorDocumento(textoIntegralAtual)
+      .sort((a, b) => b.texto.length - a.texto.length).slice(0, 5)
+      .map(d => `${escHtml(d.nome)} (${Math.round(d.texto.length / 1000)} mil)`).join(', ');
+    st.insertAdjacentHTML('beforebegin', `<div id="aviso-lotes" style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-top:8px;">
+      <i class="ti ti-stack-2"></i> Processo grande (${Math.round(textoIntegralAtual.length / 1000)} mil caracteres): a análise será feita em <strong>${lotes.length} lotes</strong>, um depois do outro. Pode levar vários minutos.
+      <div style="margin-top:4px;">Maiores documentos: ${maiores}</div></div>`);
+  }
+  const cardsIA = [], respostasIA = [], falhasLote = [];
+  for (let i = 0; i < lotes.length; i++) {
+    if (lotes.length > 1) {
+      if (bannerTitulo) bannerTitulo.textContent = `CONFERINDO LOTE ${i + 1} DE ${lotes.length}...`;
+      if (bannerDetalhe) bannerDetalhe.textContent = `${lotes[i].docs.length} documento(s) neste lote`;
+    }
+    const aviso = lotes.length > 1
+      ? `(Este é o lote ${i + 1} de ${lotes.length} do processo. A lista de valores extraídos acima cobre TODOS os documentos; o texto abaixo cobre só os documentos deste lote.)\n`
+      : '';
+    const promptLote = prompt.replace('___TEXTO_DO_LOTE___', () => aviso + lotes[i].texto);
+    try {
+      const resposta = await invocarIAComFallback(promptLote, false, st);
+      respostasIA.push(resposta);
+      cardsIA.push(..._lerCardsDaResposta(resposta));
+    } catch (e) {
+      falhasLote.push({ lote: i + 1, erro: e.message });
+      if (lotes.length === 1) throw e;
+    }
+  }
+  if (falhasLote.length === lotes.length) throw new Error(falhasLote[0].erro);
+  const jsonStr = respostasIA.join('\n\n--- LOTE ---\n\n');
+  const achadosIA = cardsIA.map(c => {
       if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade || c.baseado_em_jurisprudencia || c.baseado_em_fonte_externa) c.verificar = true;
       return c;
     });
@@ -2766,7 +2874,9 @@ ${textoIntegralAtual}`;
       : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Processo limpo nesta checagem.</span>`;
 
     renderizarCards(window.achadosAtuais);
-    st.innerHTML = '';
+    st.innerHTML = falhasLote.length
+      ? `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;"><i class="ti ti-alert-triangle"></i> ${falhasLote.length} de ${lotes.length} lote(s) não foram analisados pela IA (lote ${falhasLote.map(f => f.lote).join(', ')}). Os achados acima cobrem só os demais. Rode a checagem de novo em alguns minutos para completar.</div>`
+      : '';
 
     // Registra a checagem como auditoria no backend (mantém histórico e status do processo)
     await api('auditorias/salvar', {
@@ -3186,6 +3296,8 @@ function _motivoCurtoProvedor(m) {
   if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
   if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia da conta';
   if (/exceeded_current_quota|insufficient/i.test(m)) return 'saldo insuficiente';
+  if (/maximum context length|context_length|token limit|too long/i.test(m)) return 'processo grande demais para uma chamada';
+  if (/TPM|tokens per minute/i.test(m)) return 'limite de tokens por minuto da conta';
   if (/HTTP 429/.test(m)) return 'limite de uso atingido';
   if (/HTTP 40[13]|invalid.*(api.?key|authentication)/i.test(m)) return 'chave inválida';
   if (/não respondeu em|aborted/i.test(m)) return 'demorou demais para responder';
