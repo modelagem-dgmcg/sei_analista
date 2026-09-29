@@ -82,15 +82,40 @@ const VERSAO_ATUAL_CIDADE = CIDADES_PERNAMBUCO_VERSAO[VERSAO_ATUAL_INDICE];
 function injetarVersaoCidade() {
   const wrap = document.getElementById('versao-cidade-wrap');
   if (!wrap || !VERSAO_ATUAL_CIDADE) return;
+
+  // Badge discreto dentro da login-box
   wrap.innerHTML = `
     <div id="versao-cidade-badge">
       <span class="versao-ponto"></span>
-      <span>v${VERSAO_ATUAL_INDICE + 1} &middot; ${VERSAO_ATUAL_CIDADE.nome}, PE</span>
-      <div id="versao-cidade-tooltip">
-        <strong>${VERSAO_ATUAL_CIDADE.nome} &mdash; Pernambuco</strong>
-        ${VERSAO_ATUAL_CIDADE.fato}
-      </div>
+      <span>v${VERSAO_ATUAL_INDICE + 1} · ${VERSAO_ATUAL_CIDADE.nome}, PE</span>
     </div>`;
+
+  // Tooltip global no <body> — position:fixed evita corte pelo overflow da login-box
+  const tooltipExistente = document.getElementById('versao-tooltip-global');
+  if (tooltipExistente) tooltipExistente.remove();
+
+  const tip = document.createElement('div');
+  tip.id = 'versao-tooltip-global';
+  tip.innerHTML = `<strong>${VERSAO_ATUAL_CIDADE.nome} — Pernambuco</strong>${VERSAO_ATUAL_CIDADE.fato}`;
+  document.body.appendChild(tip);
+
+  const badge = document.getElementById('versao-cidade-badge');
+
+  badge.addEventListener('mouseenter', () => {
+    const r = badge.getBoundingClientRect();
+    const tipW = 240;
+    let left = r.left + r.width / 2 - tipW / 2;
+    if (left < 8) left = 8;
+    if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
+    const top = r.top - tip.offsetHeight - 10;
+    tip.style.left = left + 'px';
+    tip.style.top = (top < 8 ? r.bottom + 10 : top) + 'px';
+    tip.classList.add('visivel');
+  });
+
+  badge.addEventListener('mouseleave', () => {
+    tip.classList.remove('visivel');
+  });
 }
 
 window.onload = () => {
