@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v21.0 — app.js
-// Ajustes desta versão em relação à v20.6 (ver notas ao final do arquivo):
+// SEI ANALISTA v23.0 — app.js
+// Versão 23 — integra todas as funcionalidades do v22 + botão Assumir.
 //  - Processos e documentos agora vivem no backend (planilha compartilhada),
 //    não mais só no localStorage do navegador — necessário para o processo
 //    poder tramitar entre funcionários.
@@ -22,7 +22,10 @@
 // desenvolvido no âmbito do vínculo funcional do autor com o órgão público).
 // Direito de paternidade preservado ao autor a qualquer tempo, independentemente da
 // titularidade econômica (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
+const BUILD_VERSION = '2026-09-29 v23';
+const BUILD_DATE    = '29/09/2026';
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
+console.log("%cSEI Analista " + BUILD_VERSION, "color: #495057; font-size: 13px; font-weight: bold;");
 console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13px;");
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
@@ -62,13 +65,82 @@ window.achadosAtuais = [];
 window.onload = () => {
   verificarIA();
   injetarMarcaDagua();
+  injetarBotaoSobre();
+  _garantirEstiloNotificacoes();
 };
 
 function injetarMarcaDagua() {
   const rodape = document.createElement('div');
-  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.`;
+  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>. <span id='build-tag' style='color:#6c757d; margin-left:8px;' title='app.js / Code.gs'>app v${BUILD_VERSION} · backend …</span>`;
   rodape.style = "text-align: center; padding: 15px; font-size: 0.75rem; color: #adb5bd; margin-top: auto; border-top: 1px solid #dee2e6;";
   document.getElementById('content').parentElement.appendChild(rodape);
+}
+
+
+// ==================== "O QUE É ISSO?" NA TELA DE LOGIN ====================
+const TEXTO_SOBRE_FERRAMENTA = `
+  <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
+    Ferramenta da DGMCG e da GGPCG para apoiar a análise de processos de Contrato de Gestão
+    com Organizações Sociais de Saúde na SES-PE.
+  </p>
+  <h3 style="font-size:1rem; margin-bottom:10px;">O que ele faz por você</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Antes de assinar qualquer documento, ele confere o processo inteiro. Verifica valores,
+    datas, cálculos e indicadores de metas contratuais, além de identificar textos
+    duplicados ou copiados incorretamente. Se a soma de uma tabela não bater com o total
+    citado, ou se um número divergir entre os documentos, ele aponta o trecho exato.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Se você precisar consultar normas ou decisões de tribunais, o sistema busca e apresenta
+    as fontes estaduais e federais aplicáveis.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
+    Precisa localizar um dado sem reler o processo inteiro? Basta fazer a pergunta
+    e o sistema traz a resposta exata, indicando o documento de origem.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Caso queira debater um ponto com um colega antes de decidir, é possível encaminhar o
+    achado específico ou o processo inteiro diretamente pela ferramenta.
+  </p>
+  <h3 style="font-size:1rem; margin-bottom:8px;">O que ele não faz</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Ele não toma decisões e nem substitui o servidor. Cada apontamento é uma sugestão
+    técnica para sua conferência. A palavra final e a aprovação são sempre do analista.
+  </p>
+  <h3 style="font-size:1rem; margin-bottom:8px;">Sobre os dados</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Antes de qualquer texto ser enviado para análise externa, os dados pessoais e as
+    informações sensíveis são ocultados automaticamente, conforme a LGPD.
+  </p>
+  <h3 style="font-size:1rem; margin-bottom:8px;">Base legal e titularidade</h3>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    Os direitos econômicos deste software pertencem à SES-PE (Lei nº 9.609/98, art. 4º).
+    O direito de paternidade é preservado ao autor a qualquer tempo
+    (Lei nº 9.609/98, art. 2º, §1º; Lei nº 9.610/98, art. 24, I).
+  </p>
+  <h3 style="font-size:1rem; margin-bottom:8px;">Desenvolvido por</h3>
+  <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.6;">
+    Secretaria de Estado de Saúde de Pernambuco, por meio da DGMCG e da GGPCG.
+    Criado por Antonio Cleuton Eufrasio Vieira, Analista Administrativo,
+    para uso exclusivo da equipe da Gerência de Gestão de Processos dos Contratos de Gestão.
+  </p>
+`;
+
+function abrirSobreFerramenta() {
+  criarModal(`<div style="max-height:70vh; overflow-y:auto; padding-right:6px;">${TEXTO_SOBRE_FERRAMENTA}</div>`);
+}
+
+function injetarBotaoSobre() {
+  const loginBox = document.querySelector('#login-screen .login-box');
+  if (!loginBox || document.getElementById('link-sobre-ferramenta')) return;
+  const link = document.createElement('button');
+  link.id = 'link-sobre-ferramenta';
+  link.type = 'button';
+  link.innerHTML = '<i class="ti ti-info-circle"></i> O que é o SEI Analista?';
+  link.style = "display:block; width:100%; text-align:center; margin-top:18px; padding:0; border:none; background:none; font-size:0.85rem; color:#495057; text-decoration:underline; cursor:pointer;";
+  link.addEventListener('click', abrirSobreFerramenta);
+  loginBox.appendChild(link);
 }
 
 // ==================== API (backend compartilhado) ====================
@@ -193,16 +265,7 @@ async function showView(v, subCaixa = 'entrada') {
         <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.72rem;padding:2px 10px;" onclick="testarConexaoProvedor('${id}')">Testar conexão</button>
         <span id="teste-${id}" style="font-size:0.75rem;"></span>
       </div>`;
-    const linha = (id, num, label, campo, placeholder, extra) => `
-      <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:10px;">
-        <select id="prio-${id}" title="Ordem de tentativa" style="width:48px;padding:8px 2px;border:1px solid #ced4da;border-radius:6px;font-weight:700;text-align:center;">${opcoesPrioridade(id)}</select>
-        <div class="form-group" style="flex:1;margin-bottom:0;">
-          <label>${label}</label>
-          <input type="password" id="${campo}" value="${eval(campo.replace('cfg-','').replace('-','_').toUpperCase().replace('GEMINI','GEMINI_KEY').replace('GROQ','GROQ_KEY').replace('KIMI','KIMI_KEY').replace('OPENROUTER','OPENROUTER_KEY').replace('DEEPSEEK','DEEPSEEK_KEY'))}" placeholder="${placeholder}">
-          ${extra || ''}
-          \${checkboxAtivo('${id}', ${id.toUpperCase()}_ATIVO)}
-        </div>
-      </div>`;
+
     content.innerHTML = `
       <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
         <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:16px;">
@@ -289,7 +352,189 @@ async function atualizarContagensSidebar() {
   }
 }
 
+
+// ==================== AVISO DE CHEGADA (processo novo / achado pendente) ====================
+const INTERVALO_MONITORAMENTO_MS = 45000;
+let _alertasCache = [];
+
+async function carregarAlertasSidebar() {
+  if (!usuarioAtual) return;
+  try {
+    const res = await api('processos/alertas', { usuario: usuarioAtual.email });
+    _alertasCache = (res.ok && res.alertas) ? res.alertas : [];
+  } catch(e) { _alertasCache = []; }
+  _renderAlertasSidebar();
+}
+
+function _renderAlertasSidebar() {
+  const area = document.getElementById('area-alertas-sidebar');
+  if (!area) return;
+  if (!_alertasCache.length) { area.innerHTML = ''; return; }
+  const corMaisUrgente = ['vermelho','amarelo','laranja','azul'].find(c => _alertasCache.some(a => a.cor === c)) || 'azul';
+  const cor = COR_ALERTA[corMaisUrgente] || '#868e96';
+  area.innerHTML = `<a href="#" onclick="showView('dashboard','panorama'); return false;"
+    style="display:flex;align-items:center;gap:6px;padding:5px 10px 5px 12px;text-decoration:none;
+           border-left:3px solid ${cor};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;margin:0 0 4px;">
+    <i class="ti ti-bell" style="color:${cor};font-size:13px;"></i>
+    <span style="font-size:0.72rem;color:${cor};font-weight:600;">${_alertasCache.length} alerta(s) — ver Panorama</span>
+  </a>`;
+}
+
+let _intervaloMonitoramento = null;
+let _ultimaContagemEntrada = null;
+let _ultimaContagemAchadosPendentes = null;
+
+function _garantirEstiloNotificacoes() {
+  if (document.getElementById('estilo-notificacoes-chegada')) return;
+  const style = document.createElement('style');
+  style.id = 'estilo-notificacoes-chegada';
+  style.textContent = `
+    @keyframes pulsoChegada { 0%,100% { box-shadow: 0 0 0 0 rgba(74,144,226,0.35); } 50% { box-shadow: 0 0 0 7px rgba(74,144,226,0); } }
+    .pulso-chegada { animation: pulsoChegada 1.2s ease-out 2; border-radius: 6px; }
+    #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 900; display: flex; flex-direction: column; gap: 10px; }
+    .toast-chegada { background: #2b2f36; color: #f1f3f5; padding: 12px 16px; border-radius: 8px;
+      font-size: 0.85rem; box-shadow: 0 6px 20px rgba(0,0,0,0.25); max-width: 300px;
+      opacity: 0; transform: translateX(12px); transition: opacity 0.25s ease, transform 0.25s ease;
+      display: flex; align-items: flex-start; gap: 10px; }
+    .toast-chegada.visivel { opacity: 1; transform: translateX(0); }
+    .toast-chegada i { color: #74c0fc; font-size: 1rem; margin-top: 1px; }
+  `;
+  document.head.appendChild(style);
+}
+
+function pulsarElemento(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.classList.remove('pulso-chegada');
+  void el.offsetWidth;
+  el.classList.add('pulso-chegada');
+  setTimeout(() => el.classList.remove('pulso-chegada'), 2600);
+}
+
+function mostrarToast(mensagem) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    document.body.appendChild(container);
+  }
+  const toast = document.createElement('div');
+  toast.className = 'toast-chegada';
+  toast.innerHTML = `<i class="ti ti-bell"></i><span>${escHtml(mensagem)}</span>`;
+  container.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add('visivel'));
+  setTimeout(() => {
+    toast.classList.remove('visivel');
+    setTimeout(() => toast.remove(), 300);
+  }, 4500);
+}
+
+function iniciarMonitoramentoNovosItens() {
+  if (_intervaloMonitoramento) clearInterval(_intervaloMonitoramento);
+  _ultimaContagemEntrada = null;
+  _ultimaContagemAchadosPendentes = null;
+  _verificarNovosItens();
+  _intervaloMonitoramento = setInterval(_verificarNovosItens, INTERVALO_MONITORAMENTO_MS);
+}
+
+async function _verificarNovosItens() {
+  if (!usuarioAtual) return;
+  try {
+    const [resContagens, resPendentes] = await Promise.all([
+      api('processos/contagens', { responsavel: usuarioAtual.email }),
+      api('achados/contar-pendentes', { usuario: usuarioAtual.email })
+    ]);
+    if (resContagens.ok) {
+      const entradaAtual = resContagens.contagens.entrada || 0;
+      if (_ultimaContagemEntrada !== null && entradaAtual > _ultimaContagemEntrada) {
+        pulsarElemento('nav-entrada');
+        const diff = entradaAtual - _ultimaContagemEntrada;
+        mostrarToast(diff === 1 ? 'Chegou um processo novo na Caixa de Entrada.' : `Chegaram ${diff} processos novos na Caixa de Entrada.`);
+      }
+      _ultimaContagemEntrada = entradaAtual;
+      const badgeEntrada = document.getElementById('badge-entrada');
+      if (badgeEntrada) badgeEntrada.textContent = entradaAtual > 0 ? entradaAtual : '';
+    }
+    if (resPendentes.ok) {
+      const pendentesAtual = resPendentes.pendentes || 0;
+      if (_ultimaContagemAchadosPendentes !== null && pendentesAtual > _ultimaContagemAchadosPendentes) {
+        pulsarElemento('nav-entrada');
+        mostrarToast('Um colega pediu sua opinião sobre um achado. Veja na aba "Perguntas".');
+      }
+      _ultimaContagemAchadosPendentes = pendentesAtual;
+    }
+  } catch(e) { console.warn('Falha na checagem periódica:', e.message); }
+}
+
 // ==================== DASHBOARD MULTI-CAIXAS ====================
+
+async function renderPanorama(content, abasHtml) {
+  const [resContagens, resPerguntas, resAlertas, resEnc] = await Promise.all([
+    api('processos/contagens', { responsavel: usuarioAtual.email }),
+    api('achados/contar-pendentes', { usuario: usuarioAtual.email }),
+    api('processos/alertas', { usuario: usuarioAtual.email }),
+    api('processos/listar', { responsavel: usuarioAtual.email, caixa: 'encaminhados' })
+  ]);
+  const c = resContagens.ok ? resContagens.contagens : {};
+  const qtdEntrada      = c.entrada      || 0;
+  const qtdAndamento    = c.andamento    || 0;
+  const qtdEncaminhados = (resEnc.ok && resEnc.processos) ? resEnc.processos.length : 0;
+  const qtdConcluidos   = c.concluidos   || 0;
+  const qtdPerguntas    = (resPerguntas.ok && resPerguntas.pendentes) || 0;
+  const alertas         = (resAlertas.ok && resAlertas.alertas) || [];
+  const qtdAlertas      = alertas.length;
+
+  const bloco = (icone, rotulo, qtd, caixa, cor, destaque) => `
+    <div onclick="showView('dashboard','${caixa}')" style="
+      cursor:pointer; padding:16px 20px; border-radius:10px; background:#fff;
+      border:1px solid ${destaque ? cor : '#dee2e6'}; border-left:4px solid ${cor};
+      display:flex; align-items:center; gap:14px; transition:box-shadow .15s;"
+      onmouseenter="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.1)'"
+      onmouseleave="this.style.boxShadow='none'">
+      <div style="font-size:1.6rem; color:${cor}; line-height:1;"><i class="ti ${icone}"></i></div>
+      <div>
+        <div style="font-size:1.8rem; font-weight:700; color:${cor}; line-height:1;">${qtd}</div>
+        <div style="font-size:0.78rem; color:var(--text-muted); margin-top:2px;">${rotulo}</div>
+      </div>
+    </div>`;
+
+  const blocoAlerta = (a) => {
+    const cor = COR_ALERTA[a.cor] || '#868e96';
+    return `<div onclick="abrirProcesso('${escAttr(a.numero_sei||String(a.processo_id))}')" style="
+      cursor:pointer; padding:8px 12px; border-radius:6px; background:#fff;
+      border-left:3px solid ${cor}; border:1px solid ${cor}33; font-size:0.8rem;
+      display:flex; gap:10px; align-items:flex-start;"
+      onmouseenter="this.style.background='#f8f9fa'" onmouseleave="this.style.background='#fff'">
+      <span style="color:${cor}; font-size:1rem; margin-top:1px;"><i class="ti ${ICONE_ALERTA[a.cor]||'ti-bell'}"></i></span>
+      <div>
+        <div style="font-weight:600; color:${cor};">${escHtml(a.mensagem)}</div>
+        <div style="color:var(--text-muted); font-size:0.75rem;">${escHtml(a.titulo||a.numero_sei||'')}</div>
+      </div>
+    </div>`;
+  };
+
+  content.innerHTML = abasHtml + `
+    <div style="margin-bottom:20px;">
+      <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px;">
+        Panorama — ${new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long'})}
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:18px;">
+        ${bloco('ti-inbox',            'Na caixa de entrada',     qtdEntrada,      'entrada',      '#0b509e', qtdEntrada > 0)}
+        ${bloco('ti-loader',           'Em andamento',            qtdAndamento,    'andamento',    '#6f42c1', false)}
+        ${bloco('ti-share',            'Encaminhados',            qtdEncaminhados, 'encaminhados', '#0d6efd', false)}
+        ${bloco('ti-archive',          'Concluídos',              qtdConcluidos,   'concluidos',   '#198754', false)}
+        ${bloco('ti-message-question', 'Perguntas pendentes',     qtdPerguntas,    'perguntas',    '#fd7e14', qtdPerguntas > 0)}
+      </div>
+      ${qtdAlertas ? `
+        <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:8px;">Alertas ativos (${qtdAlertas})</div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          ${alertas.slice(0,6).map(blocoAlerta).join('')}
+          ${qtdAlertas > 6 ? `<div style="font-size:0.75rem; color:var(--text-muted); padding:4px 0;">+${qtdAlertas-6} alerta(s)</div>` : ''}
+        </div>` : `
+        <div style="font-size:0.82rem; color:#2b8a3e;"><i class="ti ti-check"></i> Nenhum alerta no momento.</div>`}
+    </div>`;
+}
+
 async function renderDashboard(caixa = 'entrada') {
   const content = document.getElementById('content');
   content.innerHTML = '<span class="spinner"></span> Carregando processos...';
@@ -347,6 +592,10 @@ async function renderDashboard(caixa = 'entrada') {
         ? `<button onclick="deletarProcessoRemoto(event, ${p.id})" title="Excluir processo" style="position:absolute; top:12px; right:12px; background:none; border:none; color:#adb5bd; cursor:pointer; font-size:0.9rem; padding:4px;" onmouseover="this.style.color='#dc3545'" onmouseout="this.style.color='#adb5bd'"><i class="ti ti-trash"></i></button>`
         : '';
 
+      const botaoAssumirHtml = (caixa === 'entrada' && String(p.responsavel_atual||'').toLowerCase() !== usuarioAtual.email.toLowerCase())
+        ? `<div style="margin-top:10px;border-top:1px dashed #dee2e6;padding-top:8px;"><button class="btn btn-primary btn-sm" style="width:100%;font-size:0.75rem;" onclick="assumirProcesso(event,${p.id})"><i class="ti ti-hand-stop"></i> Assumir para análise</button></div>`
+        : '';
+
       html += `
       <div class="process-card" style="position:relative;">
         <div onclick="abrirProcesso('${escAttr(p.numero_sei || p.id)}')" style="cursor:pointer;">
@@ -359,12 +608,72 @@ async function renderDashboard(caixa = 'entrada') {
           <div style="font-size:0.75rem;color:#6c757d; margin-top:2px;"><i class="ti ti-user"></i> Com: ${escHtml(p.responsavel_atual)}</div>
           ${infoTramitacao}
         </div>
+        ${botaoAssumirHtml}
         ${botaoParar}
         ${botaoExcluir}
       </div>`;
     });
   }
   content.innerHTML = html + '</div>';
+}
+
+
+async function assumirProcesso(e, id) {
+  e.stopPropagation();
+  const res = await api('processos/encaminhar', {
+    processo_id: id, de: usuarioAtual.email, para: usuarioAtual.email, observacao: 'Assumido para análise'
+  });
+  if (!res.ok) { alert('Erro ao assumir: ' + res.erro); return; }
+  await api('processos/atualizar-status', { id, status: 'Em Análise' });
+  await api('log/registrar', { usuario: usuarioAtual.email, acao: 'ASSUMIR', processo_id: id, detalhes: 'Processo assumido da entrada' });
+  mostrarToast('Processo assumido para análise.');
+  showView('dashboard', 'andamento');
+}
+
+async function renderPerguntasAchados() {
+  const area = document.getElementById('area-perguntas');
+  if (!area) return;
+  const res = await api('achados/meus', { usuario: usuarioAtual.email });
+  if (!res.ok) {
+    area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}.</div>`;
+    return;
+  }
+  const recebidas = (res.recebidas || []).sort((a,b) => (a.resposta ? 1 : 0) - (b.resposta ? 1 : 0));
+  const enviadas  = res.enviadas  || [];
+  const linkProcesso = q => `<a href="#" onclick="abrirProcesso('${escAttr(q.numero_sei||q.processo_id)}'); return false;">${escHtml(q.numero_sei || 'processo ' + q.processo_id)}</a>`;
+  const cartao = (q, tipo) => {
+    const pendente = !q.resposta;
+    const cor = pendente ? (tipo==='recebida' ? '#fff9db;border-left:3px solid #f5c518' : '#f8f9fa;border-left:3px solid #adb5bd') : '#e7f5ff;border-left:3px solid #339af0';
+    const quem = tipo==='recebida' ? `De <strong>${escHtml(q.de_usuario)}</strong>` : `Para <strong>${escHtml(q.para_usuario)}</strong>`;
+    const quando = q.data_envio ? ` · há ${_tempoDecorridoDesde(q.data_envio)}` : '';
+    const resposta = q.resposta
+      ? `<div style="margin-top:6px;color:#1864ab;"><strong>Resposta:</strong> ${escHtml(q.resposta)}</div>`
+      : (tipo==='recebida'
+          ? `<textarea id="resp-caixa-${q.id}" placeholder="Sua resposta..." style="width:100%;margin-top:8px;padding:6px;border:1px solid #ced4da;border-radius:4px;min-height:50px;"></textarea>
+             <button class="btn btn-primary btn-sm" style="margin-top:6px;" onclick="responderPerguntaNaCaixa(${q.id})">Responder</button>`
+          : `<div style="margin-top:6px;color:var(--text-muted);"><i class="ti ti-clock"></i> Aguardando resposta.</div>`);
+    return `<div style="background:${cor};padding:10px 14px;border-radius:6px;margin-bottom:10px;font-size:0.85rem;">
+      <div style="font-size:0.78rem;color:var(--text-muted);">${quem}${quando} · Processo ${linkProcesso(q)}</div>
+      <div style="margin-top:4px;"><strong>Achado:</strong> ${escHtml(q.achado_referencia)}</div>
+      <div style="margin-top:4px;"><strong>Pergunta:</strong> ${escHtml(q.mensagem||'(sem mensagem)')}</div>
+      ${resposta}
+    </div>`;
+  };
+  area.innerHTML = `
+    <h3 style="font-size:1rem;margin-bottom:10px;">Recebidas</h3>
+    ${recebidas.length ? recebidas.map(q => cartao(q,'recebida')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta recebida.</p>'}
+    <h3 style="font-size:1rem;margin:20px 0 10px;">Enviadas</h3>
+    ${enviadas.length ? enviadas.map(q => cartao(q,'enviada')).join('') : '<p class="text-muted" style="font-size:0.85rem;">Nenhuma pergunta enviada.</p>'}`;
+}
+
+async function responderPerguntaNaCaixa(id) {
+  const campo = document.getElementById('resp-caixa-' + id);
+  const resposta = (campo?.value || '').trim();
+  if (!resposta) return alert('Escreva a resposta antes de enviar.');
+  const res = await api('achados/responder', { id, resposta });
+  if (!res.ok) return alert('Erro ao responder: ' + (res.erro || ''));
+  mostrarToast('Resposta enviada.');
+  renderPerguntasAchados();
 }
 
 async function pararAcompanhamento(e, id) {
@@ -381,6 +690,107 @@ async function deletarProcessoRemoto(e, id) {
   const res = await api('processos/remover', { id });
   if (!res.ok) { alert('Erro ao remover: ' + res.erro); return; }
   showView('dashboard', caixaAtualAtiva);
+}
+
+
+// ==================== MENSAGEIRO ====================
+let _msgConversaAtual = null;
+
+async function toggleMensageiro() {
+  const painel = document.getElementById('painel-mensageiro');
+  if (!painel) return;
+  if (painel.style.display === 'none') {
+    painel.style.display = 'block';
+    await abrirListaContatos();
+  } else {
+    painel.style.display = 'none';
+    _msgConversaAtual = null;
+  }
+}
+
+async function abrirListaContatos() {
+  const listaEl = document.getElementById('msg-lista-contatos');
+  const convEl  = document.getElementById('msg-conversa');
+  if (!listaEl || !convEl) return;
+  convEl.style.display = 'none';
+  listaEl.style.display = 'block';
+  listaEl.innerHTML = '<div style="padding:8px 10px;font-size:0.72rem;color:#adb5bd;"><span class="spinner" style="width:10px;height:10px;border-width:2px;margin:0 4px 0 0;"></span> Carregando...</div>';
+  const res = await api('mensagens/contatos', { usuario: usuarioAtual.email });
+  if (!res.ok) { listaEl.innerHTML = '<div style="padding:8px 10px;font-size:0.72rem;color:#f87171;">Erro ao carregar contatos.</div>'; return; }
+  let html = '';
+  if (res.grupos?.length) {
+    html += '<div style="padding:4px 10px 2px;font-size:0.65rem;font-weight:700;color:#adb5bd;text-transform:uppercase;">Grupos</div>';
+    html += res.grupos.map(g => `
+      <div onclick="abrirConversa('${escAttr(g.conversa_id)}','${escAttr(g.nome)}','grupo')"
+           style="padding:6px 10px;cursor:pointer;font-size:0.78rem;display:flex;align-items:center;gap:6px;"
+           onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background=''">
+        <i class="ti ti-users" style="color:#6f42c1;font-size:0.9rem;"></i>
+        <span>${escHtml(g.nome)}</span>
+      </div>`).join('');
+  }
+  if (res.individuais?.length) {
+    html += '<div style="padding:4px 10px 2px;margin-top:4px;font-size:0.65rem;font-weight:700;color:#adb5bd;text-transform:uppercase;">Individual</div>';
+    html += res.individuais.map(c => `
+      <div onclick="abrirConversa('${escAttr(c.conversa_id)}','${escAttr(c.nome)}','dm')"
+           style="padding:6px 10px;cursor:pointer;font-size:0.78rem;display:flex;align-items:center;gap:6px;"
+           onmouseenter="this.style.background='rgba(255,255,255,0.05)'" onmouseleave="this.style.background=''">
+        <i class="ti ti-user" style="color:#0b509e;font-size:0.9rem;"></i>
+        <span>${escHtml(c.nome)}</span>
+      </div>`).join('');
+  }
+  listaEl.innerHTML = html || '<div style="padding:8px 10px;font-size:0.72rem;color:#adb5bd;">Nenhum contato.</div>';
+}
+
+async function abrirConversa(conversaId, nome, tipo) {
+  _msgConversaAtual = conversaId;
+  const listaEl = document.getElementById('msg-lista-contatos');
+  const convEl  = document.getElementById('msg-conversa');
+  const nomeEl  = document.getElementById('msg-conversa-nome');
+  const histEl  = document.getElementById('msg-historico');
+  if (!listaEl || !convEl || !nomeEl || !histEl) return;
+  listaEl.style.display = 'none';
+  convEl.style.display  = 'block';
+  nomeEl.textContent    = nome;
+  histEl.innerHTML      = '<div style="font-size:0.72rem;color:#adb5bd;text-align:center;padding:8px;">Carregando...</div>';
+  const res = await api('mensagens/listar', { conversa_id: conversaId, usuario: usuarioAtual.email });
+  if (!res.ok) { histEl.innerHTML = '<div style="font-size:0.72rem;color:#f87171;text-align:center;padding:8px;">Erro ao carregar.</div>'; return; }
+  _renderMensagens(res.mensagens || []);
+  document.getElementById('msg-input')?.focus();
+}
+
+function _renderMensagens(msgs) {
+  const histEl = document.getElementById('msg-historico');
+  if (!histEl) return;
+  if (!msgs.length) { histEl.innerHTML = '<div style="font-size:0.72rem;color:#adb5bd;text-align:center;padding:8px;">Sem mensagens ainda.</div>'; return; }
+  histEl.innerHTML = msgs.map(m => {
+    const meu = String(m.de_usuario).toLowerCase() === String(usuarioAtual.email).toLowerCase();
+    const hora = m.enviado_em ? new Date(m.enviado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div style="max-width:90%;padding:5px 8px;border-radius:8px;font-size:0.76rem;line-height:1.4;
+      align-self:${meu?'flex-end':'flex-start'};
+      background:${meu?'#0b509e':'rgba(255,255,255,0.12)'};color:#fff;">
+      ${!meu?`<div style="font-size:0.65rem;color:#93c5fd;margin-bottom:2px;">${escHtml(m.de_nome)}</div>`:''}
+      ${escHtml(m.texto)}
+      <div style="font-size:0.62rem;color:rgba(255,255,255,0.5);text-align:right;margin-top:2px;">${hora}</div>
+    </div>`;
+  }).join('');
+  histEl.scrollTop = histEl.scrollHeight;
+}
+
+async function enviarMensagem() {
+  const input = document.getElementById('msg-input');
+  const texto = (input?.value || '').trim();
+  if (!texto || !_msgConversaAtual) return;
+  input.value = '';
+  const res = await api('mensagens/enviar', { de_usuario: usuarioAtual.email, conversa_id: _msgConversaAtual, texto });
+  if (!res.ok) { mostrarToast('Erro ao enviar mensagem.'); return; }
+  const hist = await api('mensagens/listar', { conversa_id: _msgConversaAtual, usuario: usuarioAtual.email });
+  if (hist.ok) _renderMensagens(hist.mensagens || []);
+}
+
+function voltarListaContatos() {
+  _msgConversaAtual = null;
+  document.getElementById('msg-lista-contatos').style.display = 'block';
+  document.getElementById('msg-conversa').style.display = 'none';
 }
 
 // ==================== REGISTRO DE CONCLUÍDOS ====================
@@ -793,6 +1203,9 @@ async function fixarEvidenciaDaMemoria(id) {
 // ==================== CONSTRUTOR DA TELA DE PROCESSO ====================
 // Busca o processo no backend e monta o texto integral dos documentos a partir
 // de lá (documentos/listar + conteudo/listar) — não mais do localStorage.
+const COR_ALERTA   = { vermelho:'#dc3545', amarelo:'#f5c518', laranja:'#fd7e14', azul:'#0dcaf0' };
+const ICONE_ALERTA = { vermelho:'ti-alert-octagon', amarelo:'ti-alert-triangle', laranja:'ti-clock-pause', azul:'ti-file-check' };
+
 async function abrirProcesso(identificador) {
   const content = document.getElementById('content');
   if (!content) return;
@@ -801,7 +1214,9 @@ async function abrirProcesso(identificador) {
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
-  _ultimoTextoRevisadoHash = null; // novo processo aberto — nenhuma revisão feita ainda nesta sessão
+  api('processos/marcar-lido', { processo_id: resProc.processo.id, usuario: usuarioAtual.email }).catch(()=>{});
+  _renderBotoesStatus(resProc.processo.status);
+  _ultimoTextoRevisadoHash = null;
 
   const [resDocs, resConteudo, resTram] = await Promise.all([
     api('documentos/listar', { processo_id: processoAtual.id }),
@@ -845,11 +1260,11 @@ async function abrirProcesso(identificador) {
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
         <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
           ${_ultimaTramitacaoRecebida ? `<button class="btn btn-sm" onclick="devolverProcesso()" style="background-color:#d97706; color:#fff; border:none; font-weight:bold;"><i class="ti ti-corner-up-left"></i> Devolver</button>` : ''}
           <button class="btn btn-sm" onclick="modalEncaminhar()" style="background-color:#495057; color:#fff; border:none; font-weight:bold;"><i class="ti ti-share"></i> Encaminhar</button>
           <button class="btn btn-sm" onclick="finalizarProcesso()" style="background-color:#16a34a; color:#fff; border:none; font-weight:bold;"><i class="ti ti-check"></i> Finalizar</button>
-          <button class="btn btn-sm" onclick="abrirPainelEvidencias()" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"><i class="ti ti-columns"></i> Abrir Modo Tela Dupla</button>
+          <button class="btn btn-sm" onclick="abrirPainelEvidencias()" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"><i class="ti ti-columns"></i> Tela Dupla</button>
         </div>
     </div>
 
@@ -867,6 +1282,9 @@ async function abrirProcesso(identificador) {
       </div>
       <div style="margin-top:15px;display:flex;gap:10px;">
         <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
+        <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
+        <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada</button>
+        <div id="btn-status-processo" style="display:inline-flex;gap:6px;align-items:center;"></div>
       </div>
     </div>
 
@@ -946,7 +1364,8 @@ async function abrirProcesso(identificador) {
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Revisão Técnica e Textual</h3>
       <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole o seu parecer finalizado abaixo. A IA cruzará o seu texto com os documentos originais e fará apontamentos de mérito e clareza — a decisão de aprovar é sempre sua.</p>
       <textarea id="editor-final" placeholder="Cole o seu parecer do Word ou do SEI aqui para ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
-      <div style="display: flex; align-items: center; gap: 15px;">
+      <div style="display: flex; align-items: center; gap: 15px; flex-wrap:wrap;">
+          <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
       </div>
@@ -993,6 +1412,38 @@ async function abrirProcesso(identificador) {
     const statusEl = document.getElementById('ia-status');
     if (statusEl) statusEl.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;"><i class="ti ti-history"></i> Última checagem: ${new Date(ultima.data).toLocaleString('pt-BR')} — execute de novo se os documentos mudaram desde então.</div>`;
   }).catch(e => console.warn('Falha ao carregar última checagem:', e.message));
+}
+
+
+// ==================== BOTÕES DE FLUXO DE STATUS ====================
+const _FLUXO_STATUS = [
+  { de: 'Aguardando Revisão Inicial',   para: 'Em Análise',               label: 'Iniciar análise',      icone: 'ti-player-play',  cor: '#0b509e' },
+  { de: 'Em Análise',                   para: 'Aguardando Revisão Final',  label: 'Enviar para revisão',  icone: 'ti-send',         cor: '#6f42c1' },
+  { de: 'Aguardando Revisão Final',     para: 'Pronto para Assinar no SEI',label: 'Aprovar para assinar', icone: 'ti-circle-check', cor: '#2b8a3e' },
+];
+
+function _renderBotoesStatus(statusAtual) {
+  const el = document.getElementById('btn-status-processo');
+  if (!el) return;
+  const acao = _FLUXO_STATUS.find(f => f.de === statusAtual);
+  const badge = `<span style="font-size:0.72rem;background:#f8f9fa;border:0.5px solid #dee2e6;padding:3px 10px;border-radius:10px;color:#6c757d;">${escHtml(statusAtual)}</span>`;
+  if (!acao) { el.innerHTML = badge; return; }
+  el.innerHTML = badge + `
+    <button class="btn btn-sm" style="background:${acao.cor};color:#fff;border:none;padding:4px 12px;border-radius:6px;font-size:0.78rem;cursor:pointer;"
+      onclick="avancarStatusProcesso('${escAttr(acao.para)}','${escAttr(acao.label)}')">
+      <i class="ti ${acao.icone}"></i> ${escHtml(acao.label)}
+    </button>`;
+}
+
+async function avancarStatusProcesso(novoStatus, label) {
+  if (!processoAtual) return;
+  if (!confirm(`Mover processo para "${novoStatus}"?`)) return;
+  const res = await api('processos/atualizar-status', { id: processoAtual.id, status: novoStatus });
+  if (!res.ok) return alert('Erro ao atualizar: ' + (res.erro || ''));
+  processoAtual.status = novoStatus;
+  _renderBotoesStatus(novoStatus);
+  mostrarToast(`Processo movido para "${novoStatus}".`);
+  await atualizarContagensSidebar();
 }
 
 // ==================== ENCAMINHAR PROCESSO (tramitação entre usuários) ====================
@@ -1087,6 +1538,77 @@ async function finalizarProcesso() {
 }
 
 // ==================== UPLOAD (agora grava no backend, não no localStorage) ====================
+
+// ==================== VERSÃO ASSINADA (volta do SEI) ====================
+let _origemVersaoAssinada = 'processo';
+
+function modalImportarVersaoAssinada(origem) {
+  _origemVersaoAssinada = origem || 'processo';
+  criarModal(`
+    <h2 style="margin-bottom:8px; font-size:1.15rem;">Importar versão assinada (SEI)</h2>
+    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">Depois de assinar no SEI, exporte o documento e importe aqui. Ele fica marcado como a versão oficial deste processo.</p>
+    <input type="file" id="arquivo-versao-assinada" accept=".html,.htm,.pdf,.docx,.doc" onchange="processarVersaoAssinada(this.files[0])">
+    <div id="status-versao-assinada" style="margin-top:12px;"></div>`);
+}
+
+async function processarVersaoAssinada(file) {
+  if (!file) return;
+  const status = document.getElementById('status-versao-assinada');
+  status.innerHTML = '<span class="spinner"></span> Lendo o documento assinado...';
+  try {
+    const buf = await file.arrayBuffer();
+    const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
+    if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
+    await salvarDocumentoNoBackend(file.name, texto, [], 'FINAL_ASSINADO');
+    await api('log/registrar', { usuario: usuarioAtual.email, acao: 'VERSAO_ASSINADA', processo_id: processoAtual.id, detalhes: file.name });
+    status.innerHTML = '<div class="alert alert-success" style="background:#d1e7dd;color:#0f5132;padding:10px;border-radius:6px;">✓ Versão assinada registrada neste processo.</div>';
+    setTimeout(() => {
+      fecharModal();
+      abrirProcesso(processoAtual.numero_sei || String(processoAtual.id));
+    }, 1500);
+  } catch(e) {
+    status.innerHTML = `<div class="alert alert-danger">Não foi possível importar: ${escHtml(e.message)}</div>`;
+  }
+}
+
+function abrirCriarDocumento() {
+  criarModal(`
+    <h2 style="margin-bottom:8px; font-size:1.15rem;">Criar documento</h2>
+    <p style="font-size:0.88rem; line-height:1.6;">Esta função está aguardando os modelos padrão de nota técnica, parecer, minuta e ofício da DGMCG/GGPCG.</p>
+    <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Enquanto isso, use "Gerar tabela de dados" pra levar os números do processo pro seu documento, com a origem de cada um.</p>`);
+}
+
+function abrirTabelaDadosProcesso() {
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) return alert('Importe os documentos do processo primeiro.');
+  const docs = dividirPorDocumento(textoIntegralAtual);
+  const linhas = [];
+  docs.forEach(d => {
+    extrairValoresMonetarios(d.texto).forEach(v => linhas.push({ tipo:'Valor', valor:v.valor, trecho:v.contexto, doc:d.nome }));
+    extrairDatas(d.texto).forEach(v => linhas.push({ tipo:'Data', valor:v.valor, trecho:v.contexto, doc:d.nome }));
+    extrairCEPs(d.texto).forEach(v => linhas.push({ tipo:'CEP', valor:v.valor, trecho:v.contexto, doc:d.nome }));
+  });
+  if (!linhas.length) return alert('Nenhum valor, data ou CEP encontrado nos documentos.');
+  const th = 'style="border:1px solid #ccc;padding:4px 8px;background:#eee;text-align:left;font-size:0.8rem;"';
+  const td = 'style="border:1px solid #ccc;padding:4px 8px;font-size:0.8rem;vertical-align:top;"';
+  const tabela = `<table style="border-collapse:collapse;width:100%;">
+    <tr><th ${th}>Tipo</th><th ${th}>Valor</th><th ${th}>Trecho</th><th ${th}>Documento</th></tr>
+    ${linhas.map(l => `<tr><td ${td}>${escHtml(l.tipo)}</td><td ${td}><strong>${escHtml(l.valor)}</strong></td><td ${td}>${escHtml(l.trecho)}</td><td ${td}>${escHtml(l.doc)}</td></tr>`).join('')}
+  </table>`;
+  criarModal(`
+    <h2 style="margin-bottom:12px;font-size:1.15rem;">Tabela de dados do processo</h2>
+    <p style="font-size:0.8rem;color:var(--text-muted);margin-bottom:10px;">Dados extraídos diretamente dos documentos por código — sem IA. Cole no Word ou no SEI.</p>
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <button class="btn btn-primary btn-sm" onclick="
+        const el=document.getElementById('area-tab-dados');
+        const sel=window.getSelection();sel.removeAllRanges();
+        const range=document.createRange();range.selectNodeContents(el);sel.addRange(range);
+        document.execCommand('copy');sel.removeAllRanges();
+        mostrarToast('Tabela copiada — cole no documento.');
+      "><i class="ti ti-copy"></i> Copiar tabela</button>
+    </div>
+    <div id="area-tab-dados" style="max-height:50vh;overflow:auto;">${tabela}</div>`, false);
+}
+
 function modalUploadZIP() {
   criarModal(`
     <h2 style="margin-bottom:15px; font-size:1.2rem;">Importar Arquivos</h2>
@@ -1107,12 +1629,11 @@ function modalUploadZIP() {
 // Envia um documento já extraído para o backend, quebrando o texto em blocos
 // (o Sheets tem limite prático de tamanho por célula).
 const BLOCO_MAX_CHARS = 45000;
-async function salvarDocumentoNoBackend(nomeArquivo, texto) {
-  // Uma única chamada de rede — antes eram 1 (criar documento) + N (uma por bloco de
-  // texto). A demora do upload nunca foi ler o arquivo (isso é local e instantâneo);
-  // é a ida-e-volta ao Apps Script se repetindo várias vezes por documento.
+async function salvarDocumentoNoBackend(nomeArquivo, texto, sensiveis, tipoDocumento) {
   const res = await api('documentos/adicionar-completo', {
-    processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email
+    processo_id: processoAtual.id, nome_arquivo: nomeArquivo, texto, adicionado_por: usuarioAtual.email,
+    resumo_sensiveis: sensiveis && sensiveis.length ? JSON.stringify(sensiveis) : '',
+    tipo_documento: tipoDocumento || ''
   });
   if (!res.ok) throw new Error('Falha ao salvar documento: ' + res.erro);
 }
@@ -1475,10 +1996,22 @@ function desmascararTexto(texto, mapa) {
   return resultado;
 }
 
+
+const PROVEDORES_INFO = {
+  gemini:     { nome: 'Gemini' },
+  groq:       { nome: 'Groq' },
+  kimi:       { nome: 'Kimi' },
+  openrouter: { nome: 'OpenRouter' },
+  deepseek:   { nome: 'DeepSeek' },
+  ollama:     { nome: 'Ollama' }
+};
+
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   const erros = [];
   const estados = {};
   ORDEM_PROVEDORES_IDS.forEach(id => { estados[id] = 'pendente'; });
+
+  // Marca como pulado os que estão sem chave ou desabilitados
   if (!GEMINI_KEY     || !GEMINI_ATIVO)     estados.gemini     = 'pulado';
   if (!GROQ_KEY       || !GROQ_ATIVO)       estados.groq       = 'pulado';
   if (!KIMI_KEY       || !KIMI_ATIVO)       estados.kimi       = 'pulado';
@@ -1486,107 +2019,43 @@ async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
   if (!DEEPSEEK_KEY   || !DEEPSEEK_ATIVO)   estados.deepseek   = 'pulado';
   if (!OLLAMA_ATIVO)                         estados.ollama     = 'pulado';
 
-  // Mascara só uma vez, reaproveitado nas 3 tentativas em nuvem — o Ollama (local)
-  // usa o "prompt" original, sem máscara, mais abaixo.
   const { textoMascarado: promptMascarado, mapa, totalMascarado } = mascararDadosSensiveis(prompt);
   const avisoMascara = totalMascarado > 0
-    ? ` (${totalMascarado} dado${totalMascarado > 1 ? 's' : ''} sensíve${totalMascarado > 1 ? 'is' : 'l'} mascarado${totalMascarado > 1 ? 's' : ''} antes de enviar à nuvem)`
-    : '';
+    ? ` (${totalMascarado} dado(s) sensível(is) mascarado(s) antes de enviar à nuvem)` : '';
 
-  if (GEMINI_KEY) {
-    estados.gemini = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Gemini...' + avisoMascara);
+  // Mapa de invocadores — Ollama usa prompt original (local, sem necessidade de máscara)
+  const MAPA_INVOCAR = {
+    gemini:     { ativo: !!(GEMINI_KEY     && GEMINI_ATIVO),     fn: () => invocarGeminiPremium(promptMascarado, isChat, statusEl) },
+    groq:       { ativo: !!(GROQ_KEY       && GROQ_ATIVO),       fn: () => invocarGroq(promptMascarado, isChat, statusEl) },
+    kimi:       { ativo: !!(KIMI_KEY       && KIMI_ATIVO),       fn: () => invocarKimi(promptMascarado, isChat, statusEl) },
+    openrouter: { ativo: !!(OPENROUTER_KEY && OPENROUTER_ATIVO), fn: () => invocarOpenRouter(promptMascarado, isChat, statusEl) },
+    deepseek:   { ativo: !!(DEEPSEEK_KEY   && DEEPSEEK_ATIVO),   fn: () => invocarDeepSeek(promptMascarado, isChat, statusEl) },
+    ollama:     { ativo: !!OLLAMA_ATIVO,                          fn: () => invocarOllama(prompt, isChat, statusEl) }
+  };
+
+  // Itera na ordem configurada pelo usuário (ORDEM_PROVEDORES_IDS)
+  for (const id of ORDEM_PROVEDORES_IDS) {
+    const provedor = MAPA_INVOCAR[id];
+    if (!provedor || !provedor.ativo) continue;
+
+    const info = PROVEDORES_INFO[id];
+    estados[id] = 'tentando';
+    renderPainelProvedores(statusEl, estados, `Chamando ${info ? info.nome : id}...${id !== 'ollama' ? avisoMascara : ''}`);
+
     try {
-      const r = await invocarGeminiPremium(promptMascarado, isChat, statusEl);
-      estados.gemini = 'ok';
+      const r = await provedor.fn();
+      estados[id] = 'ok';
       renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
+      // Ollama é local — resposta não foi mascarada, não precisa desmascarar
+      return id === 'ollama' ? r : desmascararTexto(r, mapa);
     } catch (e) {
-      estados.gemini = 'falhou';
-      erros.push('Gemini: ' + e.message);
+      estados[id] = 'falhou';
+      erros.push((info ? info.nome : id) + ': ' + e.message);
     }
-  } else {
-    erros.push('Gemini: chave não configurada');
-  }
-
-  if (GROQ_KEY) {
-    estados.groq = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Gemini não respondeu — chamando Groq...');
-    try {
-      const r = await invocarGroq(promptMascarado, isChat, statusEl);
-      estados.groq = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.groq = 'falhou';
-      erros.push('Groq: ' + e.message);
-    }
-  } else {
-    erros.push('Groq: chave não configurada');
-  }
-
-  if (OPENROUTER_KEY) {
-    estados.openrouter = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Gemini e Groq não responderam — chamando OpenRouter...');
-    try {
-      const r = await invocarOpenRouter(promptMascarado, isChat, statusEl);
-      estados.openrouter = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.openrouter = 'falhou';
-      erros.push('OpenRouter: ' + e.message);
-    }
-  } else {
-    erros.push('OpenRouter: chave não configurada');
-  }
-
-  if (KIMI_KEY) {
-    estados.kimi = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando Kimi...');
-    try {
-      const r = await invocarKimi(promptMascarado, isChat, statusEl);
-      estados.kimi = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.kimi = 'falhou';
-      erros.push('Kimi: ' + e.message);
-    }
-  } else {
-    erros.push('Kimi: chave não configurada');
-  }
-
-  if (DEEPSEEK_KEY) {
-    estados.deepseek = 'tentando';
-    renderPainelProvedores(statusEl, estados, 'Chamando DeepSeek...');
-    try {
-      const r = await invocarDeepSeek(promptMascarado, isChat, statusEl);
-      estados.deepseek = 'ok';
-      renderPainelProvedores(statusEl, estados, 'Concluído.');
-      return desmascararTexto(r, mapa);
-    } catch (e) {
-      estados.deepseek = 'falhou';
-      erros.push('DeepSeek: ' + e.message);
-    }
-  } else {
-    erros.push('DeepSeek: chave não configurada');
-  }
-
-  // Ollama é local — usa o texto ORIGINAL, sem máscara (não há por quê mascarar pra si mesmo).
-  estados.ollama = 'tentando';
-  renderPainelProvedores(statusEl, estados, 'Nenhum provedor em nuvem respondeu — chamando Ollama local...');
-  try {
-    const r = await invocarOllama(prompt, isChat, statusEl);
-    estados.ollama = 'ok';
-    renderPainelProvedores(statusEl, estados, 'Concluído.');
-    return r;
-  } catch (e) {
-    estados.ollama = 'falhou';
-    erros.push('Ollama: ' + e.message);
   }
 
   renderPainelProvedores(statusEl, estados, 'Nenhum provedor respondeu.');
+  if (!erros.length) throw new Error('Nenhum serviço de IA está habilitado. Vá em "Motor de IA" e ligue ao menos um.');
   throw new Error('Todos os provedores de IA falharam:\n' + erros.join('\n'));
 }
 
@@ -1977,6 +2446,114 @@ function toggleFonte(tipo) {
   }
 }
 
+
+// ==================== CONFERÊNCIA DE CONTAS POR CÓDIGO ====================
+function _numeroBR(txt) {
+  let t = String(txt).replace(/R\$\s?/g, '').replace(/\s+/g, '');
+  if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+  else t = t.replace(/\./g, '');
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+function _formatarBR(n) {
+  return n.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+}
+function _numerosDaLinha(linha) {
+  const limpa = linha
+    .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
+    .replace(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g, ' ')
+    .replace(/\b\d{2}\.?\d{3}-\d{3}\b/g, ' ');
+  return (limpa.match(/\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?/g) || [])
+    .map(_numeroBR).filter(n => n !== null);
+}
+function _paginaNaPosicao(texto, posicao) {
+  const marcas = [...texto.substring(0, posicao).matchAll(/--- PÁGINA (\d+) ---/g)];
+  return marcas.length ? marcas[marcas.length - 1][1] : null;
+}
+function conferirSomasPorCodigo(textoIntegral) {
+  const achados = [];
+  const vistosPorDoc = {};
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    vistosPorDoc[d.nome] = new Set();
+    let achadosNesteDoc = 0;
+    const linhas = d.texto.split('\n');
+    let posicao = 0;
+    const posicaoDaLinha = linhas.map(l => { const p = posicao; posicao += l.length + 1; return p; });
+    linhas.forEach((linha, i) => {
+      if (!/\btotal\b/i.test(linha)) return;
+      const numsTotal = _numerosDaLinha(linha);
+      if (!numsTotal.length) return;
+      const itens = [];
+      for (let j = i - 1; j >= 0 && itens.length < 40; j--) {
+        const l = linhas[j];
+        if (/--- PÁGINA \d+ ---/.test(l) || /total/i.test(l)) break;
+        const nums = _numerosDaLinha(l);
+        if (!nums.length) break;
+        itens.unshift(nums);
+      }
+      if (itens.length < 2) return;
+      const mesmaQtd = itens.every(n => n.length === numsTotal.length);
+      const colunas = mesmaQtd ? numsTotal.map((_,c) => c) : [null];
+      colunas.forEach(c => {
+        const valorTotal = c === null ? numsTotal[numsTotal.length-1] : numsTotal[c];
+        const soma = itens.reduce((acc,n) => acc + (c===null ? n[n.length-1] : n[c]), 0);
+        if (Math.abs(soma - valorTotal) <= 0.01) return;
+        if (achadosNesteDoc >= 3) return;
+        const assinatura = `${_formatarBR(soma)}→${_formatarBR(valorTotal)}`;
+        if (vistosPorDoc[d.nome].has(assinatura)) return;
+        vistosPorDoc[d.nome].add(assinatura);
+        achadosNesteDoc++;
+        const pagina = _paginaNaPosicao(d.texto, posicaoDaLinha[i]);
+        achados.push({
+          tag: 'Cálculo', setor: 'SFCG',
+          titulo: 'Soma da tabela não bate com o total informado',
+          evidencia: linha.trim(),
+          explicacao: `As ${itens.length} linha(s) acima somam ${_formatarBR(soma)}, mas o total informado é ${_formatarBR(valorTotal)} (diferença de ${_formatarBR(Math.abs(soma-valorTotal))}). Conta feita por código, não pela IA.`,
+          sugestao: `Refaça a soma${pagina?' (página '+pagina+')':''} e corrija o valor errado — pode ser o total ou uma das linhas.`,
+          doc_origem: d.nome, pagina, verificar: true, conferido_por_codigo: true
+        });
+      });
+    });
+  });
+  return achados;
+}
+function conferirValoresRotuladosPorCodigo(textoIntegral) {
+  const porRotulo = {};
+  const regex = /(valor\s+(?:global|total|mensal|anual|estimado|contratual|do\s+contrato)(?:\s+do\s+contrato)?(?:\s+de\s+gest[aã]o)?)[^\n]{0,60}?(R\$\s?[\d.]+,\d{2})/gi;
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    let m;
+    while ((m = regex.exec(d.texto)) !== null) {
+      const rotulo = m[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+      (porRotulo[rotulo] = porRotulo[rotulo]||[]).push({ valorTxt: m[2], valor: _numeroBR(m[2]), doc: d.nome, pagina: _paginaNaPosicao(d.texto, m.index) });
+    }
+    regex.lastIndex = 0;
+  });
+  const achados = [];
+  Object.entries(porRotulo).forEach(([rotulo, ocorrencias]) => {
+    const distintos = [...new Set(ocorrencias.map(o => o.valor))];
+    if (distintos.length < 2) return;
+    const lista = ocorrencias.slice(0,8).map(o => `${o.valorTxt} em ${o.doc}${o.pagina?' (pág.'+o.pagina+')':''}`).join('; ');
+    achados.push({
+      tag: 'Cálculo', setor: 'SFCG',
+      titulo: `"${rotulo}" aparece com valores diferentes no processo`,
+      evidencia: lista,
+      explicacao: `O mesmo tipo de valor aparece com ${distintos.length} números diferentes: ${lista}.`,
+      sugestao: 'Se um aditivo alterou esse valor, a diferença é esperada — confirme o documento mais recente. Se nenhum documento explica a mudança, corrija o valor divergente.',
+      doc_origem: ocorrencias[0].doc, pagina: ocorrencias[0].pagina, verificar: true, conferido_por_codigo: true
+    });
+  });
+  return achados;
+}
+function conferirContasPorCodigo(textoIntegral) {
+  try {
+    const todos = [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral)];
+    return todos.slice(0, 10);
+  } catch(e) {
+    console.warn('Conferência de contas por código falhou:', e.message);
+    return [];
+  }
+}
+
 // === 1. CHECAGEM PREMIUM ===
 async function rodarRaioX() {
   const st = document.getElementById('ia-status');
@@ -2018,6 +2595,10 @@ async function rodarRaioX() {
 
   try {
     const dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
+    const achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
+    const promptContas = achadosCodigo.length
+      ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n'
+      : '';
 
   // Cruzamento com o histórico contratual da unidade (pasta Drive "LEIS E DECRETOS") —
   // fonte curada, roda ANTES de qualquer chamada à IA. Ligado por padrão.
@@ -2162,17 +2743,16 @@ Retorne EXCLUSIVAMENTE um objeto JSON válido, sem markdown:
 ${normasExternasBloco}
 ${jurisprudenciaBloco}
 
-TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
+${promptContas}TEXTO BRUTO DOS DOCUMENTOS (use apenas para o item 8 — erros de digitação/redação):
 ${textoIntegralAtual}`;
 
   const jsonStr = await invocarIAComFallback(prompt, false, st);
   const jsonObj = JSON.parse(jsonStr);
-  window.achadosAtuais = (jsonObj.cards || []).map(c => {
-      // Trava reforçada: achado baseado em busca externa OU no histórico da unidade é SEMPRE
-      // "verificar", mesmo que a IA (por erro) tenha marcado false — não confiamos só no prompt.
-      if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade || c.baseado_em_jurisprudencia) c.verificar = true;
+  const achadosIA = (jsonObj.cards || []).map(c => {
+      if (c.baseado_em_norma_externa || c.baseado_em_historico_unidade || c.baseado_em_jurisprudencia || c.baseado_em_fonte_externa) c.verificar = true;
       return c;
     });
+    window.achadosAtuais = [...achadosCodigo, ...achadosIA];
 
     contadorEl.innerHTML = window.achadosAtuais.length > 0
       ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${window.achadosAtuais.length} inconsistência(s)</span>`
@@ -2195,6 +2775,16 @@ ${textoIntegralAtual}`;
   }
 }
 
+function _separadorCamada(titulo, qtd, cor) {
+  return `<div style="display:flex;align-items:center;gap:10px;margin:18px 0 8px;">
+    <div style="flex:1;height:1px;background:#dee2e6;"></div>
+    <span style="font-size:0.72rem;font-weight:700;color:${cor};text-transform:uppercase;letter-spacing:.05em;white-space:nowrap;">
+      ${titulo} — ${qtd} achado(s)
+    </span>
+    <div style="flex:1;height:1px;background:#dee2e6;"></div>
+  </div>`;
+}
+
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
   let html = '';
@@ -2204,17 +2794,23 @@ function renderizarCards(cards) {
       <button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()" style="background-color: #6c757d; color: white;"><i class="ti ti-file-type-doc"></i> Exportar Relatório de Achados (.DOC)</button>
   </div>`;
 
-  cards.forEach((c, idx) => {
+  // Separar por origem
+  const codigo   = cards.filter(c => c.conferido_por_codigo);
+  const processo = cards.filter(c => !c.conferido_por_codigo && !c.baseado_em_fonte_externa);
+  const externos = cards.filter(c => c.baseado_em_fonte_externa);
+  if (codigo.length)   html += _separadorCamada('🔢 Conferência de contas por código', codigo.length, '#1864ab');
+  if (processo.length) html += _separadorCamada('📄 Documentos do processo', processo.length, '#495057');
+  if (externos.length) html += _separadorCamada('🌐 Fonte externa', externos.length, '#e67700');
+  const ordenados = [...codigo, ...processo, ...externos];
+  ordenados.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
-    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao, doc: c.doc_origem };
-    // Referência estável do achado (tag+título) — é assim que o encaminhamento e as
-    // notas amarram de volta pro mesmo achado entre uma sessão e outra.
+    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? '\n\n💡 O que fazer: ' + c.sugestao : ''), doc: c.doc_origem };
     const referenciaAchado = `${c.tag}: ${c.titulo}`;
     // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador,
     // não ".pdf"/".docx" no final, que só polui visualmente o card.
     const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
     const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
-    const tagVerificar = c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`;
+    const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`) + (c.conferido_por_codigo ? `<span style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
 
     html += `
     <div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(referenciaAchado)}">
@@ -2232,6 +2828,10 @@ function renderizarCards(cards) {
         <div class="rx-evidence">${escHtml(c.evidencia)}</div>
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
+        ${c.sugestao ? `<div style="margin-top:10px;background:#e6fcf5;border-left:3px solid #12b886;border-radius:4px;padding:8px 12px;">
+          <div style="font-size:0.72rem;font-weight:700;color:#087f5b;text-transform:uppercase;margin-bottom:3px;"><i class="ti ti-bulb"></i> O que fazer</div>
+          <div style="font-size:0.85rem;color:#0b6157;">${escHtml(c.sugestao)}</div>
+        </div>` : ''}
         <div style="margin-top: 15px; display: flex; gap: 10px; flex-wrap:wrap;">
           <button class="btn btn-sm" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
           <button class="btn btn-sm" style="background-color: #495057; color: #fff; border: none; font-weight: bold;" onclick="modalEncaminharAchado('${escAttr(referenciaAchado)}')"><i class="ti ti-send"></i> Encaminhar este achado</button>
@@ -2575,8 +3175,27 @@ ${txtAnalista}`;
 // Traduz uma mensagem de erro técnica em algo que o funcionário entende: uma frase
 // objetiva + uma sugestão do que fazer. O detalhe técnico continua acessível (link
 // pequeno), só não fica exposto por padrão.
+function _motivoCurtoProvedor(m) {
+  if (/engine_overloaded/i.test(m)) return 'servidor sobrecarregado — só esperar';
+  if (/rate_limit_reached/i.test(m)) return 'limite por minuto/dia da conta';
+  if (/exceeded_current_quota|insufficient/i.test(m)) return 'saldo insuficiente';
+  if (/HTTP 429/.test(m)) return 'limite de uso atingido';
+  if (/HTTP 40[13]|invalid.*(api.?key|authentication)/i.test(m)) return 'chave inválida';
+  if (/não respondeu em|aborted/i.test(m)) return 'demorou demais para responder';
+  if (/Failed to fetch|falha de rede|não foi possível conectar/i.test(m)) return 'sem conexão';
+  if (/HTTP 5\d\d/.test(m)) return 'serviço fora do ar';
+  return 'erro não identificado';
+}
+
 function _mensagemErroAmigavel(msg) {
   msg = String(msg || '');
+  if (/Todos os provedores de IA falharam/i.test(msg)) {
+    const porServico = msg.split('\n').slice(1).filter(l => l.includes(':')).map(l => {
+      const i = l.indexOf(':');
+      return `${l.slice(0,i).trim()}: ${_motivoCurtoProvedor(l.slice(i+1))}`;
+    });
+    return { titulo: 'Nenhum serviço de IA respondeu agora.', sugestao: porServico.join(' · ') || 'Confira a configuração em "Motor de IA".' };
+  }
   if (/HTTP 503/.test(msg) || /sobrecarregad[oa]/i.test(msg)) {
     return { titulo: 'O serviço de IA está sobrecarregado no momento.', sugestao: 'Isso costuma passar rápido — aguarde um minuto e tente de novo.' };
   }
