@@ -44,84 +44,9 @@ let painelEvidenciasWin = null;
 window.memoriaEvidencias = {};
 window.achadosAtuais = [];
 
-
-// ==================== VERSAO / HOMENAGEM AOS MUNICIPIOS DE PERNAMBUCO ====================
-// Cada versao do sistema leva o nome de um municipio pernambucano, comecando
-// pelos de menor populacao (dados: Censo/estimativas IBGE), com um fato
-// curioso e verificado sobre a cidade, revelado ao passar o mouse (ou tocar,
-// no celular) sobre a marca da versao na tela de login.
-// Para lancar a proxima versao, so mudar VERSAO_ATUAL_INDICE para o proximo
-// numero da lista (comeca em 0).
-const CIDADES_PERNAMBUCO_VERSAO = [
-  { nome: 'Itacuruba', fato: 'Menor municipio de Pernambuco em populacao. Fica no Sertao do Sao Francisco, com vegetacao de caatinga hiperxerofila, e vive de criacao de ovelhas, cabras e da plantacao de cebola e tomate.' },
-  { nome: 'Ingazeira', fato: 'Foi, por anos, a menor cidade de Pernambuco em populacao, ate ser superada por Itacuruba nos ultimos censos. Faz parte do Sertao do Pajeu.' },
-  { nome: 'Calumbi', fato: 'Uma das cidades com menor populacao do Sertao pernambucano, na regiao do Pajeu.' },
-  { nome: 'Salgadinho', fato: 'Nasceu de uma fazenda do seculo 18 da familia Alves Camelo, que construiu uma capela com uma imagem de pedra de 1,5m dedicada a Nossa Senhora das Dores. Ao redor da capela, surgiu o povoado.' },
-  { nome: 'Solidao', fato: 'Um dos nomes mais incomuns entre os municipios brasileiros. Esta no Sertao do Pajeu, uma das regioes com os menores municipios do estado.' },
-  { nome: 'Quixaba', fato: 'So se tornou municipio em 1 de outubro de 1991 - antes disso, era distrito de Carnaiba. O nome vem de uma antiga fazenda de gado e algodao fundada no processo de povoamento do Sertao do Pajeu.' },
-  { nome: 'Terezinha', fato: 'Criada por lei estadual em 20 de dezembro de 1963, comecou como um povoado ao redor de uma mercearia no Sitio Limeira. O nome homenageia Santa Terezinha.' },
-  { nome: 'Palmeirina', fato: 'O nome vem das palmeiras que cresciam ao longo do riacho Rochedo, que corta a cidade. Surgiu como povoado chamado Palmeira, antes pertencente a Canhotinho.' },
-  { nome: 'Granito', fato: 'Fez parte da 1a Diocese do Sertao Nordestino, criada em 1910, ao lado de cidades como Petrolina, Salgueiro e Floresta. Foi elevada a cidade em 1909.' },
-  { nome: 'Ibirajuba', fato: 'O nome vem do tupi "ybira" (arvore, tronco) e "yuba" (amarelo) - "arvore amarela". Nasceu do povoado de Gameleira, batizado por uma arvore comum na regiao.' },
-  { nome: 'Vertente do Lerio', fato: 'O nome vem de uma fonte de agua que, numa grande seca por volta de 1880, abastecia gente de varios quilometros ao redor. As pessoas diziam: "vem da Vertente do Lerio".' },
-  { nome: 'Camutanga', fato: 'Nome de origem indigena: "Comum a Tanga", que remete a uma especie de vespa ou papagaio de varias cores que os primeiros moradores conheciam bem.' },
-  { nome: 'Brejinho', fato: 'Fica no Alto Sertao do Pajeu, a 737 metros de altitude, na fronteira com a Paraiba. Tem clima semiarido e vegetacao de caatinga.' },
-  { nome: 'Tuparetama', fato: 'O nome vem do tupi-guarani "tupa" (Deus) e "retama" (terra, lugar) - "Terra de Tupa". A cidade e banhada pelas aguas do Rio Feiticeiro.' },
-  { nome: 'Terra Nova', fato: 'A fama do nome foi tanta que uma cidade do Mato Grosso, ao escolher o mesmo nome, precisou virar "Terra Nova do Norte" para nao se confundir com a de Pernambuco.' },
-  { nome: 'Iguaraci', fato: 'Comecou como o distrito de "Macacos", em homenagem a uma familia local. O nome mudou para Iguaraci (do tupi "guara": ser vivente, e "ci": mae - "mae do sol") para evitar problemas no futuro.' },
-  { nome: 'Manari', fato: 'Fica no Sertao do Moxoto. Foi fundada por dois fazendeiros portugueses, Antonio e Manoel Pereira, que compraram terras da familia Aranha na regiao.' },
-  { nome: 'Tacaratu', fato: 'O nome vem do tupi antigo e significa "serra de muitas pontas ou muitas cabecas". A cidade foi fundada por indios das etnias Pancararu, Umau e Geritico, do tronco linguistico Kariri.' },
-  { nome: 'Betania', fato: 'Ate 1912 se chamava "Caicara dos Orfaos". O nome mudou por sugestao de um padre em missao evangelica pelo sertao, e foi aceito pela populacao local.' },
-  { nome: 'Jatoba', fato: 'O primeiro nome do povoado veio de uma arvore de jatoba que ficava na confluencia de dois riachos que cruzam a cidade, no Sertao do Sao Francisco.' }
-];
-
-// Indice da cidade atual na lista acima. Avancar 1 numero a cada nova versao lancada.
-const VERSAO_ATUAL_INDICE = 0;
-const VERSAO_ATUAL_CIDADE = CIDADES_PERNAMBUCO_VERSAO[VERSAO_ATUAL_INDICE];
-
-function injetarVersaoCidade() {
-  const wrap = document.getElementById('versao-cidade-wrap');
-  if (!wrap || !VERSAO_ATUAL_CIDADE) return;
-
-  // Badge discreto dentro da login-box
-  wrap.innerHTML = `
-    <div id="versao-cidade-badge">
-      <span class="versao-ponto"></span>
-      <span>v${VERSAO_ATUAL_INDICE + 1} · ${VERSAO_ATUAL_CIDADE.nome}, PE</span>
-    </div>`;
-
-  // Tooltip global no <body> — position:fixed evita corte pelo overflow da login-box
-  const tooltipExistente = document.getElementById('versao-tooltip-global');
-  if (tooltipExistente) tooltipExistente.remove();
-
-  const tip = document.createElement('div');
-  tip.id = 'versao-tooltip-global';
-  tip.innerHTML = `<strong>${VERSAO_ATUAL_CIDADE.nome} — Pernambuco</strong>${VERSAO_ATUAL_CIDADE.fato}`;
-  document.body.appendChild(tip);
-
-  const badge = document.getElementById('versao-cidade-badge');
-
-  badge.addEventListener('mouseenter', () => {
-    const r = badge.getBoundingClientRect();
-    const tipW = 240;
-    let left = r.left + r.width / 2 - tipW / 2;
-    if (left < 8) left = 8;
-    if (left + tipW > window.innerWidth - 8) left = window.innerWidth - tipW - 8;
-    const top = r.top - tip.offsetHeight - 10;
-    tip.style.left = left + 'px';
-    tip.style.top = (top < 8 ? r.bottom + 10 : top) + 'px';
-    tip.classList.add('visivel');
-  });
-
-  badge.addEventListener('mouseleave', () => {
-    tip.classList.remove('visivel');
-  });
-}
-
 window.onload = () => {
   verificarIA();
   injetarMarcaDagua();
-  injetarVersaoCidade();
 };
 
 function injetarMarcaDagua() {
