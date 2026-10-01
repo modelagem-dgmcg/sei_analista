@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 01/10/2026 11:54 (horário de Recife)
+  Versão gerada em 01/10/2026 15:08 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -101,6 +101,7 @@
     <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
     <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
     <a href="#" data-aba="usuarios" onclick="abrirAba('usuarios'); return false;">Usuários</a>
+    <a href="#" data-aba="chaves" onclick="abrirAba('chaves'); return false;">Chaves de IA</a>
   </nav>
   <main id="conteudo"></main>
   <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
@@ -110,8 +111,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.1';
-const VERSAO_GESTAO_DATA = '01/10/2026 11:54';
+const VERSAO_GESTAO = 'v1.2';
+const VERSAO_GESTAO_DATA = '01/10/2026 15:08';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -125,7 +126,7 @@ const NOMES_ACOES = {
   RODOU_CHECAGEM: 'Rodou checagem', REVISOU_PARECER: 'Revisou parecer', PERGUNTOU_AO_PROCESSO: 'Perguntou ao processo',
   PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
-  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
+  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
   GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
   GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login'
@@ -191,7 +192,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios })[aba]();
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios, chaves: telaChaves })[aba]();
 }
 function recarregar() { painel = null; abrirAba(abaAtual); }
 
@@ -535,6 +536,88 @@ async function desbloquear(id) {
   if (!res.ok) return alert('Não foi possível liberar: ' + (res.erro || ''));
   _avisoUsuarios = `Login ${u.login} liberado; a pessoa já pode tentar de novo.`;
   telaUsuarios();
+}
+
+// ==================== ABA CHAVES DE IA ====================
+// O gestor cadastra as chaves e diz para quem cada uma vale. A chave completa nunca volta
+// para esta tela: depois de salva, só aparecem o serviço, o rótulo e os 4 últimos caracteres.
+let _chaves = [], _chavesUsuarios = [], _servicosIA = {};
+
+async function telaChaves() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Buscando as chaves cadastradas...');
+  const res = await api('adm/chaves-listar', {});
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  _chaves = res.chaves || []; _chavesUsuarios = res.usuarios || []; _servicosIA = res.servicos || {};
+  const nomeDe = e => (_chavesUsuarios.find(u => u.email === e) || {}).nome || e;
+  const linhas = _chaves.map(k => `<tr style="${k.ativa ? '' : 'opacity:.55;'}">
+      <td class="n"><b>${k.ordem}</b></td>
+      <td><b>${esc(k.servico_nome)}</b><br><span style="color:var(--mudo); font-size:.75rem;">${esc(k.rotulo)}</span></td>
+      <td><span style="font-family:monospace;">••••${esc(k.final)}</span></td>
+      <td>${k.para === '*' ? '<span class="etq azul">Todos os usuários</span>' : k.para.map(e => `<span class="etq" style="margin:0 4px 4px 0;">${esc(nomeDe(e))}</span>`).join('')}</td>
+      <td>${k.ativa ? '<span class="etq azul">Ativa</span>' : '<span class="etq">Desligada</span>'}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn" style="padding:4px 9px; font-size:.75rem;" onclick="formChave('${esc(k.id)}')"><i class="ti ti-pencil"></i> Editar</button>
+        <button class="btn" style="padding:4px 9px; font-size:.75rem;" onclick="removerChave('${esc(k.id)}')"><i class="ti ti-trash"></i></button></td></tr>`).join('');
+  c.innerHTML = `<div class="bloco">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+        <h2 style="margin:0;"><i class="ti ti-key"></i> Chaves de IA <small>${_chaves.length} cadastrada(s)</small></h2>
+        <button class="btn btn-escuro" onclick="formChave('')"><i class="ti ti-plus"></i> Nova chave</button></div>
+      <div style="font-size:.8rem; color:var(--mudo); line-height:1.5; margin-bottom:12px;">
+        Cada pessoa recebe, ao entrar no SEI Analista, as chaves liberadas para ela, e lá só pode ligar, desligar e testar.
+        A ordem diz qual serviço é tentado primeiro. Atenção: chaves criadas na <b>mesma conta</b> do serviço dividem o mesmo limite de uso;
+        para cada pessoa ter a sua própria cota, a chave precisa vir de uma conta diferente.</div>
+      ${_chaves.length ? `<div class="rolagem"><table class="tabela"><tr><th>Ordem</th><th>Serviço</th><th>Chave</th><th>Liberada para</th><th>Situação</th><th></th></tr>${linhas}</table></div>`
+        : '<div class="vazio">Nenhuma chave cadastrada. Enquanto não houver, os analistas ficam sem IA (só o Ollama local, se instalado).</div>'}
+    </div>`;
+}
+
+function formChave(id) {
+  const k = id ? _chaves.find(x => x.id === id) : null;
+  const todos = !k || k.para === '*';
+  const fundo = document.createElement('div');
+  fundo.className = 'janela-fundo'; fundo.id = 'janela-chave';
+  fundo.innerHTML = `<div class="janela">
+    <h2>${k ? 'Editar chave' : 'Nova chave de IA'}</h2>
+    <label>Serviço</label><select id="fk-servico">${Object.entries(_servicosIA).map(([v, n]) => `<option value="${v}" ${k && k.servico === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    <label>Rótulo (para você identificar)</label><input id="fk-rotulo" value="${esc(k ? k.rotulo : '')}" placeholder="ex.: DeepSeek da GGPCG">
+    <label>Chave</label><input id="fk-chave" type="password" autocomplete="off" placeholder="${k ? 'Deixe em branco para manter a atual (final ' + esc(k.final) + ')' : 'Cole a chave do serviço'}">
+    <div class="dica">Depois de salva, a chave não aparece mais aqui; só os 4 últimos caracteres.</div>
+    <label>Ordem de tentativa</label><select id="fk-ordem">${[1,2,3,4,5,6].map(n => `<option ${k && k.ordem === n ? 'selected' : (!k && n === 1 ? 'selected' : '')}>${n}</option>`).join('')}</select>
+    <label>Para quem vale</label>
+    <label class="marcar"><input type="radio" name="fk-para" value="todos" ${todos ? 'checked' : ''} onchange="$('fk-pessoas').style.display='none'"> Todos os usuários</label>
+    <label class="marcar"><input type="radio" name="fk-para" value="alguns" ${todos ? '' : 'checked'} onchange="$('fk-pessoas').style.display='block'"> Só algumas pessoas</label>
+    <div id="fk-pessoas" style="display:${todos ? 'none' : 'block'}; max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:6px; padding:6px 10px; margin-top:4px;">
+      ${_chavesUsuarios.map(u => `<label class="marcar" style="margin:3px 0;"><input type="checkbox" class="fk-pessoa" value="${esc(u.email)}" ${k && Array.isArray(k.para) && k.para.includes(u.email) ? 'checked' : ''}> ${esc(u.nome)} <span class="dica" style="margin:0;">(${esc(u.email)})</span></label>`).join('')}
+    </div>
+    <label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fk-ativa" ${!k || k.ativa ? 'checked' : ''}> Ativa (desmarque para suspender sem apagar)</label>
+    <div id="fk-erro" class="erro hidden"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn" onclick="$('janela-chave')?.remove()">Cancelar</button>
+      <button class="btn btn-escuro" id="fk-salvar" onclick="salvarChave('${k ? esc(k.id) : ''}')"><i class="ti ti-check"></i> Salvar</button>
+    </div></div>`;
+  document.body.appendChild(fundo);
+}
+
+async function salvarChave(id) {
+  const erro = $('fk-erro'); erro.classList.add('hidden');
+  const todos = document.querySelector('input[name="fk-para"]:checked').value === 'todos';
+  const para = todos ? '*' : [...document.querySelectorAll('.fk-pessoa:checked')].map(c => c.value);
+  const botao = $('fk-salvar'); botao.disabled = true;
+  const res = await api('adm/chaves-salvar', { id: id || '', servico: $('fk-servico').value, rotulo: $('fk-rotulo').value.trim(),
+    chave: $('fk-chave').value.trim(), ordem: Number($('fk-ordem').value), para, ativa: $('fk-ativa').checked });
+  botao.disabled = false;
+  if (!res.ok) { erro.textContent = res.erro || 'Não foi possível salvar.'; erro.classList.remove('hidden'); return; }
+  $('janela-chave')?.remove();
+  telaChaves();
+}
+
+async function removerChave(id) {
+  const k = _chaves.find(x => x.id === id);
+  if (!k || !confirm(`Apagar a chave ${k.servico_nome} "${k.rotulo}" (final ${k.final})? Quem usa essa chave fica sem esse serviço no próximo login.`)) return;
+  const res = await api('adm/chaves-remover', { id });
+  if (!res.ok) { alert(res.erro || 'Não foi possível apagar.'); return; }
+  telaChaves();
 }
 </script>
 </body>
