@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v23.6 — app.js
-// Versão gerada em 30/09/2026 09:03 (horário de Recife)
+// SEI ANALISTA v23.8 — app.js
+// Versão gerada em 30/09/2026 14:17 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v23.6';
-const VERSAO_APP_DATA = '30/09/2026 09:03';
+const VERSAO_APP = 'v23.8';
+const VERSAO_APP_DATA = '30/09/2026 14:17';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
@@ -300,6 +300,7 @@ async function fazerLogin() {
       showView('dashboard', 'panorama');
       iniciarMonitoramentoNovosItens();
       carregarAlertasSidebar();
+      _mostrarBotaoGestao();
       if (!window._intervaloAlertas) window._intervaloAlertas = setInterval(carregarAlertasSidebar, 300000);
     } else {
       mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
@@ -677,6 +678,24 @@ async function renderDashboard(caixa = 'entrada') {
     }
   }
   content.innerHTML = html + '</div>';
+}
+
+// ==================== BOTÃO "ABRIR SEI GESTÃO" (só para quem tem acesso) ====================
+// Quem decide o acesso de verdade é o servidor, no login do Gestão; o botão só evita
+// mostrar um caminho que a pessoa não vai conseguir usar.
+function _mostrarBotaoGestao() {
+  const existente = document.getElementById('nav-gestao');
+  const apps = Array.isArray(usuarioAtual?.apps) ? usuarioAtual.apps : [];
+  const temAcesso = usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
+  if (!temAcesso) { existente?.remove(); return; }
+  if (existente) return;
+  const config = document.getElementById('nav-config');
+  if (!config) return;
+  const link = document.createElement('a');
+  link.id = 'nav-gestao'; link.href = 'gestao/'; link.target = '_blank'; link.rel = 'noopener';
+  link.innerHTML = '<i class="ti ti-chart-dots"></i> Abrir SEI Gestão';
+  link.style.cssText = 'display:flex; align-items:center; gap:8px; padding:8px 0; font-size:0.8rem; opacity:0.85; text-decoration:none; color:inherit;';
+  config.parentNode.insertBefore(link, config);
 }
 
 // ==================== CORES DOS ALERTAS ====================
@@ -2476,6 +2495,7 @@ function _gerarArquivoRelatorioAchados() {
   let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
   window.achadosAtuais.forEach((c, index) => {
     htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}`;
+    if (Array.isArray(c.calculo) && c.calculo.length) htmlReport += `<br/><strong>Memória de cálculo:</strong><br/>` + c.calculo.map(l => `${escHtml(l[0])}: <strong>${escHtml(l[1])}</strong>`).join('<br/>');
     if (c.sugestao) htmlReport += `<br/><strong>O que fazer:</strong> ${c.sugestao}`;
     htmlReport += `</p>`;
   });
@@ -2630,9 +2650,70 @@ function conferirValoresRotuladosPorCodigo(textoIntegral) {
   return achados;
 }
 
+// 3) Valor ANUAL x valor MENSAL (ex.: orçamento anual de um anexo x repasse mensal de um
+// aditivo). Faz a conta por código — anual ÷ 12 contra o mensal — e mostra a memória de
+// cálculo no cartão. Só compara valores da mesma ordem de grandeza, para não cruzar o
+// orçamento do contrato com o valor mensal de um item qualquer.
+const REGEX_VALOR_ANUAL = /(valor\s+(?:global\s+)?anual|or[çc]amento\s+anual|valor\s+global\s+do\s+exerc[íi]cio)[^\n]{0,90}?(R\$\s?[\d.]+,\d{2})/gi;
+const REGEX_VALOR_MENSAL = /(valor\s+(?:global\s+)?mensal(?:\s+de\s+repasse)?|repasse\s+mensal|parcela\s+mensal)[^\n]{0,90}?(R\$\s?[\d.]+,\d{2})/gi;
+
+function _coletarRotulados(textoIntegral, regex) {
+  const achados = [];
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    let m;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(d.texto)) !== null) {
+      const valor = _numeroBR(m[2]);
+      if (valor) achados.push({ valor, valorTxt: m[2].replace(/\s+/g, ' '), rotulo: m[1].replace(/\s+/g, ' ').trim(), doc: d.nome, pagina: _paginaNaPosicao(d.texto, m.index), trecho: m[0].replace(/\s+/g, ' ').trim() });
+    }
+  });
+  return achados;
+}
+
+const _inicial = s => s.charAt(0).toUpperCase() + s.slice(1);
+
+function _reais(n) {
+  return 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function conferirAnualMensalPorCodigo(textoIntegral) {
+  const anuais = _coletarRotulados(textoIntegral, REGEX_VALOR_ANUAL);
+  const mensais = _coletarRotulados(textoIntegral, REGEX_VALOR_MENSAL);
+  const vistos = new Set(), achados = [];
+  anuais.forEach(a => mensais.forEach(m => {
+    const equivalente = Math.round(a.valor / 12 * 100) / 100;
+    const razao = m.valor / equivalente;
+    if (razao < 0.5 || razao > 1.5) return;             // ordens de grandeza diferentes: não é o mesmo valor
+    const difMensal = Math.round((equivalente - m.valor) * 100) / 100;
+    if (Math.abs(difMensal) <= 0.01) return;             // bate: nada a apontar
+    const chave = a.valor + '|' + m.valor;
+    if (vistos.has(chave) || achados.length >= 3) return;
+    vistos.add(chave);
+    const difAnual = Math.round(difMensal * 12 * 100) / 100;
+    const onde = x => x.doc + (x.pagina ? ' (pág. ' + x.pagina + ')' : '');
+    achados.push({
+      tag: 'Cálculo', setor: 'SFCG',
+      titulo: 'Valor anual e valor mensal não batem',
+      evidencia: `"${a.trecho}" — "${m.trecho}"`,
+      explicacao: `${onde(a)} informa ${a.rotulo.toLowerCase()} de ${_reais(a.valor)}, o que dá ${_reais(equivalente)} por mês. ${onde(m)} informa ${m.rotulo.toLowerCase()} de ${_reais(m.valor)}. A diferença é de ${_reais(Math.abs(difMensal))} por mês, ${_reais(Math.abs(difAnual))} em 12 meses. Conta feita por código, não pela IA.`,
+      sugestao: `Confira se o valor mensal mudou a partir de um mês específico (por aditivo ou apostilamento): nesse caso, o valor anual pode combinar dois valores mensais e a diferença pode ser legítima. Se não houve mudança no meio do ano, retifique o documento com o valor desatualizado ou registre a justificativa formal.`,
+      calculo: [
+        [_inicial(`${a.rotulo} (${onde(a)})`), _reais(a.valor)],
+        ['Equivalente mensal (anual ÷ 12)', _reais(equivalente)],
+        [_inicial(`${m.rotulo} (${onde(m)})`), _reais(m.valor)],
+        [difMensal > 0 ? 'Mensal informado está ABAIXO do equivalente em' : 'Mensal informado está ACIMA do equivalente em', _reais(Math.abs(difMensal)) + ' por mês'],
+        ['Efeito em 12 meses', _reais(Math.abs(difAnual))],
+        ['Mensal informado × 12', _reais(Math.round(m.valor * 12 * 100) / 100)]
+      ],
+      doc_origem: m.doc, pagina: m.pagina, verificar: true, conferido_por_codigo: true
+    });
+  }));
+  return achados;
+}
+
 function conferirContasPorCodigo(textoIntegral) {
   try {
-    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral)];
+    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral), ...conferirAnualMensalPorCodigo(textoIntegral)];
   } catch (e) {
     console.warn('Conferência de contas por código falhou:', e.message);
     return [];
@@ -2954,7 +3035,7 @@ function renderizarCards(cards) {
   let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
-    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
+    window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
     // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
     const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
@@ -2974,6 +3055,11 @@ function renderizarCards(cards) {
         ${c.evidencia ? `<div class="rx-evidence">${escHtml(c.evidencia)}</div>` : ''}
         <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
         <p>${escHtml(c.explicacao)}</p>
+        ${Array.isArray(c.calculo) && c.calculo.length ? `
+        <div style="margin-top:10px; border:1px solid #dee2e6; border-radius:6px; overflow:hidden;">
+          <div style="font-size:0.72rem; font-weight:700; color:#495057; text-transform:uppercase; letter-spacing:0.4px; padding:6px 10px; background:#f8f9fa;"><i class="ti ti-calculator"></i> Memória de cálculo (feita por código)</div>
+          <table style="width:100%; border-collapse:collapse; font-size:0.82rem;">${c.calculo.map(l => `<tr><td style="padding:5px 10px; border-top:1px solid #f1f3f5;">${escHtml(l[0])}</td><td style="padding:5px 10px; border-top:1px solid #f1f3f5; text-align:right; white-space:nowrap; font-weight:600;">${escHtml(l[1])}</td></tr>`).join('')}</table>
+        </div>` : ''}
         ${c.sugestao ? `
         <div style="margin-top:10px; background:#e6fcf5; border-left:3px solid #12b886; border-radius:4px; padding:8px 12px;">
           <div style="font-size:0.72rem; font-weight:700; color:#087f5b; text-transform:uppercase; letter-spacing:0.4px; margin-bottom:3px;"><i class="ti ti-bulb"></i> O que fazer</div>
