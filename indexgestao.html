@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1a1d20">
+<title>SEI Gestão</title>
+<link rel="icon" href="../icons/mascote-analista.png" type="image/png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<!--
+  SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
+  Versão gerada em 30/09/2026 11:02 (horário de Recife)
+  © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
+  Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
+  Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
+  (Lei 9.609/98, art. 2º, §1º; Lei 9.610/98, art. 24, I).
+  Usa o MESMO servidor (Code.gs) e a MESMA planilha do SEI Analista. Só entra quem tem perfil admin.
+-->
+<style>
+  :root { --grafite:#1a1d20; --grafite2:#2a2e33; --fundo:#f0f2f5; --texto:#212529; --mudo:#6c757d; --borda:#dee2e6;
+          --ambar:#d97706; --bordo:#8e1628; --bordo-claro:#f8d7da; --ok:#198754; }
+  * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', system-ui, sans-serif; }
+  body { background:var(--fundo); color:var(--texto); }
+  .hidden { display:none !important; }
+  #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--grafite); }
+  .login-box { background:#fff; padding:36px; border-radius:8px; width:100%; max-width:380px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  h1.marca { font-size:1.7rem; text-align:center; margin-bottom:6px; } h1.marca span { color:var(--ambar); }
+  .sub { text-align:center; color:var(--mudo); font-size:.8rem; margin-bottom:24px; }
+  label { display:block; font-size:.85rem; font-weight:500; color:#495057; margin:12px 0 5px; }
+  input, select { width:100%; padding:9px 10px; border:1px solid #ced4da; border-radius:6px; font-size:.9rem; outline:none; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-size:.85rem; font-weight:500; background:#e9ecef; color:var(--texto); }
+  .btn:hover { background:#dee2e6; } .btn-escuro { background:#5c636a; color:#fff; } .btn-escuro:hover { background:#495057; }
+  .erro { background:var(--bordo-claro); color:var(--bordo); padding:10px; border-radius:6px; font-size:.85rem; margin-top:12px; }
+  header { background:var(--grafite); color:#f8f9fa; padding:12px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:1.15rem; } header h1 span { color:var(--ambar); }
+  header .dir { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.8rem; color:#adb5bd; }
+  header select { width:auto; padding:5px 8px; font-size:.8rem; background:var(--grafite2); color:#f8f9fa; border-color:#495057; }
+  nav.abas { background:#fff; border-bottom:1px solid var(--borda); padding:0 24px; display:flex; gap:4px; flex-wrap:wrap; }
+  nav.abas a { padding:12px 14px; font-size:.88rem; color:var(--mudo); text-decoration:none; border-bottom:3px solid transparent; }
+  nav.abas a.ativa { color:var(--texto); border-bottom-color:var(--ambar); font-weight:600; }
+  main { padding:24px; max-width:1400px; margin:0 auto; }
+  .grade { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; margin-bottom:6px; }
+  .num { background:#fff; border:1px solid var(--borda); border-left:4px solid #5c636a; border-radius:8px; padding:14px 16px; }
+  .num b { display:block; font-size:1.6rem; line-height:1.1; } .num span { font-size:.76rem; color:var(--mudo); }
+  .bloco { background:#fff; border:1px solid var(--borda); border-radius:8px; padding:16px 18px; margin-bottom:16px; }
+  .bloco h2 { font-size:.95rem; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .bloco h2 small { font-weight:400; color:var(--mudo); font-size:.75rem; }
+  .tabela { width:100%; border-collapse:collapse; font-size:.82rem; } .rolagem { overflow-x:auto; }
+  .tabela th { text-align:left; background:#f8f9fa; color:#495057; font-weight:600; padding:7px 8px; border-bottom:1px solid var(--borda); white-space:nowrap; }
+  .tabela td { padding:7px 8px; border-bottom:1px solid #f1f3f5; vertical-align:top; }
+  .tabela td.n { text-align:center; } .zero { color:#ced4da; }
+  .vazio { color:var(--mudo); font-style:italic; font-size:.85rem; }
+  .etq { display:inline-block; padding:2px 8px; border-radius:10px; font-size:.72rem; font-weight:600; background:#e9ecef; color:#495057; }
+  .etq.vermelho { background:var(--bordo-claro); color:var(--bordo); } .etq.amarelo { background:#fff3cd; color:#664d03; } .etq.azul { background:#e7f5ff; color:#1864ab; }
+  .filtros { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; }
+  .filtros > div { min-width:160px; } .filtros label { margin-top:0; }
+  .barra { height:14px; background:#e9ecef; border-radius:7px; overflow:hidden; } .barra div { height:100%; background:#5c636a; }
+  .barra div.alto { background:var(--bordo); }
+  .config-blocos { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; font-size:.8rem; }
+  .config-blocos .item { background:#fff; border:1px solid var(--borda); border-radius:6px; padding:4px 8px; display:flex; gap:6px; align-items:center; }
+  .config-blocos button { border:none; background:none; cursor:pointer; color:var(--mudo); padding:0 2px; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gira .75s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes gira { to { transform:rotate(360deg); } }
+  footer { text-align:center; font-size:.72rem; color:#adb5bd; padding:20px; }
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="login-box">
+    <h1 class="marca">SEI <span>Gestão</span></h1>
+    <div class="sub">Painel da gestão — acesso restrito a administradores</div>
+    <label for="l-usuario">Login institucional</label><input id="l-usuario" placeholder="nome.sobrenome">
+    <label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') entrar()">
+    <button class="btn btn-escuro" style="width:100%; justify-content:center; margin-top:18px; padding:11px;" onclick="entrar()"><i class="ti ti-login-2"></i> Entrar</button>
+    <div id="l-erro" class="erro hidden"></div>
+    <div style="text-align:center; margin-top:16px; font-size:.78rem;"><a href="../" style="color:#495057;">Ir para o SEI Analista</a></div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1>SEI <span>Gestão</span></h1>
+    <div class="dir">
+      <label style="margin:0; color:#adb5bd;">Gerência</label>
+      <select id="f-gerencia" onchange="recarregar()"><option value="">Todas</option></select>
+      <button class="btn" onclick="recarregar()" title="Buscar os dados de novo"><i class="ti ti-refresh"></i> Atualizar</button>
+      <span id="quem"></span>
+      <button class="btn" onclick="sair()"><i class="ti ti-logout"></i> Sair</button>
+    </div>
+  </header>
+  <nav class="abas">
+    <a href="#" data-aba="hoje" onclick="abrirAba('hoje'); return false;">Hoje</a>
+    <a href="#" data-aba="processos" onclick="abrirAba('processos'); return false;">Processos</a>
+    <a href="#" data-aba="achados" onclick="abrirAba('achados'); return false;">Achados</a>
+    <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
+    <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
+  </nav>
+  <main id="conteudo"></main>
+  <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
+</div>
+
+<script>
+// ============================================================
+// SEI GESTÃO — lógica da página
+// ============================================================
+const VERSAO_GESTAO = 'v1.0';
+const VERSAO_GESTAO_DATA = '30/09/2026 11:02';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
+
+let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
+
+// Nomes das ações do registro em linguagem simples
+const NOMES_ACOES = {
+  ENTROU: 'Entrou', SAIU: 'Saiu', LOGIN_RECUSADO: 'Login recusado', ABRIU_PROCESSO: 'Abriu processo',
+  CRIOU_PROCESSO: 'Importou processo', ENCAMINHOU_PROCESSO: 'Encaminhou processo', DEVOLVEU_PROCESSO: 'Devolveu processo',
+  FINALIZOU_PROCESSO: 'Finalizou processo', MUDOU_STATUS: 'Mudou status', REMOVEU_PROCESSO: 'Removeu processo',
+  IMPORTOU_DOCUMENTO: 'Importou documento', IMPORTOU_VERSAO_ASSINADA: 'Importou versão assinada',
+  RODOU_CHECAGEM: 'Rodou checagem', REVISOU_PARECER: 'Revisou parecer', PERGUNTOU_AO_PROCESSO: 'Perguntou ao processo',
+  PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
+  CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
+  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
+  GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro'
+};
+const nomeAcao = a => NOMES_ACOES[a] || String(a || '').replace(/_/g, ' ').toLowerCase();
+
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+const $ = id => document.getElementById(id);
+const dataHora = d => d ? new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
+const n0 = v => v ? `<b>${v}</b>` : '<span class="zero">0</span>';
+
+async function sha256(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Toda chamada vai por POST com o token no corpo (nunca no endereço).
+async function api(acao, corpo) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 45000);
+  try {
+    const r = await fetch(API_URL + '?action=' + encodeURIComponent(acao), {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, signal: ctrl.signal,
+      body: JSON.stringify(Object.assign({}, corpo || {}, { token: TOKEN }))
+    });
+    let res;
+    try { res = JSON.parse(await r.text()); } catch (e) { return { ok: false, erro: 'O servidor respondeu de um jeito inesperado. Tente de novo em instantes.' }; }
+    if (res && res.sessao_expirada && acao !== 'auth/login') { sessaoVencida(); }
+    return res || { ok: false, erro: 'Resposta vazia do servidor.' };
+  } catch (e) {
+    return { ok: false, erro: e.name === 'AbortError' ? 'O servidor demorou demais para responder. Tente de novo.' : 'Sem conexão com o servidor: ' + e.message };
+  } finally { clearTimeout(timer); }
+}
+
+function sessaoVencida() {
+  TOKEN = null;
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+  const e = $('l-erro'); e.textContent = 'Sua sessão venceu. Entre de novo.'; e.classList.remove('hidden');
+  if (usuario) $('l-usuario').value = usuario.email;
+}
+
+async function entrar() {
+  const erro = $('l-erro'); erro.classList.add('hidden');
+  const email = $('l-usuario').value.trim(), senha = $('l-senha').value;
+  if (!email || !senha) { erro.textContent = 'Preencha login e senha.'; erro.classList.remove('hidden'); return; }
+  const res = await api('auth/login', { email, senha_hash: await sha256(senha), app: 'gestao' });
+  if (!res.ok) { erro.textContent = res.erro || 'Não foi possível entrar.'; erro.classList.remove('hidden'); return; }
+  TOKEN = res.token; usuario = res.usuario; versaoServidor = res.versao_backend || '';
+  $('l-senha').value = '';
+  $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('quem').textContent = usuario.nome;
+  $('rodape-versao').textContent = `Gestão ${VERSAO_GESTAO} · ${VERSAO_GESTAO_DATA} — Servidor ${versaoServidor || 'sem versão (antigo)'}`;
+  abrirAba('hoje');
+}
+
+async function sair() {
+  await api('auth/logout', {});
+  TOKEN = null; usuario = null; painel = null;
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+}
+
+function abrirAba(aba) {
+  abaAtual = aba;
+  document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco })[aba]();
+}
+function recarregar() { painel = null; abrirAba(abaAtual); }
+
+async function carregarPainel() {
+  if (painel) return painel;
+  const res = await api('adm/painel', { gerencia: $('f-gerencia').value, dias_parado: Number(localStorage.getItem('gestao_dias_parado')) || 7 });
+  if (!res.ok) throw new Error(res.erro || 'Não foi possível carregar o painel.');
+  const sel = $('f-gerencia'), atual = sel.value;
+  sel.innerHTML = '<option value="">Todas</option>' + res.gerencias.map(g => `<option ${g === atual ? 'selected' : ''}>${esc(g)}</option>`).join('');
+  painel = res;
+  return res;
+}
+
+// ==================== ABA HOJE (blocos que o gestor escolhe e ordena) ====================
+const BLOCOS = {
+  resumo:    { nome: 'Resumo',                  montar: blocoResumo },
+  equipe:    { nome: 'Caixas da equipe',        montar: blocoEquipe },
+  parados:   { nome: 'Processos parados',       montar: blocoParados },
+  perguntas: { nome: 'Perguntas sem resposta',  montar: blocoPerguntas },
+  alertas:   { nome: 'Alertas',                 montar: blocoAlertas },
+  atividade: { nome: 'Atividade de hoje',       montar: blocoAtividade }
+};
+function arrumacao() {
+  let a;
+  try { a = JSON.parse(localStorage.getItem('gestao_blocos') || 'null'); } catch (e) { a = null; }
+  const todos = Object.keys(BLOCOS);
+  if (!Array.isArray(a)) a = todos.map(id => ({ id, ver: true }));
+  a = a.filter(b => BLOCOS[b.id]);
+  todos.forEach(id => { if (!a.some(b => b.id === id)) a.push({ id, ver: true }); });
+  return a;
+}
+function salvarArrumacao(a) { localStorage.setItem('gestao_blocos', JSON.stringify(a)); telaHoje(); }
+function alternarBloco(id) { const a = arrumacao(); const b = a.find(x => x.id === id); b.ver = !b.ver; salvarArrumacao(a); }
+function moverBloco(id, dir) {
+  const a = arrumacao(); const i = a.findIndex(x => x.id === id), j = i + dir;
+  if (j < 0 || j >= a.length) return;
+  [a[i], a[j]] = [a[j], a[i]]; salvarArrumacao(a);
+}
+
+async function telaHoje() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Montando o painel...');
+  let p;
+  try { p = await carregarPainel(); } catch (e) { c.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  const arr = arrumacao();
+  const config = `<div class="config-blocos"><span style="color:var(--mudo); align-self:center;">Blocos:</span>` + arr.map(b => `
+    <div class="item"><label style="margin:0; display:flex; gap:4px; align-items:center; font-weight:400; cursor:pointer;">
+      <input type="checkbox" style="width:auto;" ${b.ver ? 'checked' : ''} onchange="alternarBloco('${b.id}')"> ${esc(BLOCOS[b.id].nome)}</label>
+      <button title="Subir" onclick="moverBloco('${b.id}',-1)"><i class="ti ti-chevron-up"></i></button><button title="Descer" onclick="moverBloco('${b.id}',1)"><i class="ti ti-chevron-down"></i></button></div>`).join('') + `</div>`;
+  const cab = `<div style="font-size:.75rem; color:var(--mudo); margin-bottom:10px;">Dados de ${dataHora(p.gerado_em)}${p.filtro_gerencia ? ' · gerência ' + esc(p.filtro_gerencia) : ' · todas as gerências'}. Clique em "Atualizar" para buscar de novo.</div>`;
+  c.innerHTML = cab + config + arr.filter(b => b.ver).map(b => BLOCOS[b.id].montar(p)).join('');
+}
+
+function blocoResumo(p) {
+  const st = p.por_status, q = p.qualidade;
+  const cartao = (rotulo, v, cor) => `<div class="num" style="border-left-color:${cor || '#5c636a'};"><b>${v || 0}</b><span>${esc(rotulo)}</span></div>`;
+  return `<div class="bloco"><h2><i class="ti ti-layout-dashboard"></i> Resumo</h2><div class="grade">
+    ${cartao('Processos no total', q.total_processos)}
+    ${cartao('Aguardando revisão inicial', st['Aguardando Revisão Inicial'], '#0b509e')}
+    ${cartao('Em análise', st['Em Análise'], '#6f42c1')}
+    ${cartao('Aguardando revisão final', st['Aguardando Revisão Final'], '#6f42c1')}
+    ${cartao('Pronto para assinar', st['Pronto para Assinar no SEI'], '#198754')}
+    ${cartao('Concluídos', st['Concluído'], '#198754')}
+    ${cartao('Sem nenhuma checagem', q.sem_checagem, q.sem_checagem ? '#8e1628' : '')}
+    ${cartao('Concluídos sem versão assinada', q.concluidos_sem_assinatura, q.concluidos_sem_assinatura ? '#8e1628' : '')}
+  </div></div>`;
+}
+
+function blocoEquipe(p) {
+  const linhas = p.por_pessoa.slice().sort((a, b) => (b.entrada + b.andamento) - (a.entrada + a.andamento)).map(x => `<tr>
+    <td><b>${esc(x.nome)}</b><br><span style="color:var(--mudo); font-size:.72rem;">${esc(x.gerencia)}</span></td>
+    <td class="n">${n0(x.entrada)}</td><td class="n">${n0(x.andamento)}</td><td class="n">${n0(x.acompanhando)}</td>
+    <td class="n">${n0(x.concluidos_hoje)}</td><td class="n">${x.perguntas_pendentes ? `<span class="etq amarelo">${x.perguntas_pendentes}</span>` : '<span class="zero">0</span>'}</td>
+    <td>${x.ultima_atividade ? dataHora(x.ultima_atividade) : '<span class="zero">nenhuma</span>'}</td></tr>`).join('');
+  return `<div class="bloco"><h2><i class="ti ti-users"></i> Caixas da equipe <small>${p.por_pessoa.length} pessoa(s)</small></h2>
+    <div class="rolagem"><table class="tabela"><tr><th>Pessoa</th><th>Entrada</th><th>Andamento</th><th>Acompanhando</th><th>Concluídos hoje</th><th>Perguntas a responder</th><th>Última atividade</th></tr>${linhas}</table></div></div>`;
+}
+
+function blocoParados(p) {
+  const seletor = `<select style="width:auto; padding:3px 6px; font-size:.75rem;" onchange="localStorage.setItem('gestao_dias_parado', this.value); recarregar();">
+    ${[3, 5, 7, 15, 30].map(d => `<option value="${d}" ${d === p.dias_parado ? 'selected' : ''}>${d} dias</option>`).join('')}</select>`;
+  const corpo = p.parados.length ? `<div class="rolagem"><table class="tabela"><tr><th>Parado há</th><th>Processo</th><th>Unidade</th><th>Status</th><th>Com</th></tr>` +
+    p.parados.map(x => `<tr><td><span class="etq ${x.dias >= 15 ? 'vermelho' : 'amarelo'}">${x.dias} dias</span></td><td><b>${esc(x.numero_sei || '(sem nº)')}</b><br>${esc(x.titulo)}</td><td>${esc(x.unidade)}</td><td>${esc(x.status)}</td><td>${esc(x.com)}</td></tr>`).join('') + '</table></div>'
+    : '<div class="vazio">Nenhum processo parado por esse tempo.</div>';
+  return `<div class="bloco"><h2><i class="ti ti-clock-pause"></i> Processos parados <small>sem movimento há pelo menos</small> ${seletor}</h2>${corpo}</div>`;
+}
+
+function blocoPerguntas(p) {
+  const corpo = p.perguntas_sem_resposta.length ? `<div class="rolagem"><table class="tabela"><tr><th>Esperando há</th><th>De</th><th>Para</th><th>Processo</th><th>Achado</th></tr>` +
+    p.perguntas_sem_resposta.map(x => `<tr><td>${x.dias} dia(s)</td><td>${esc(x.de)}</td><td><b>${esc(x.para)}</b></td><td>${esc(x.numero_sei)}</td><td>${esc(x.achado)}</td></tr>`).join('') + '</table></div>'
+    : '<div class="vazio">Nenhuma pergunta esperando resposta.</div>';
+  return `<div class="bloco"><h2><i class="ti ti-message-question"></i> Perguntas sem resposta <small>${p.perguntas_sem_resposta.length}</small></h2>${corpo}</div>`;
+}
+
+function blocoAlertas(p) {
+  const corpo = p.alertas.length ? `<div class="rolagem"><table class="tabela"><tr><th>Alerta</th><th>Processo</th><th>Com</th></tr>` +
+    p.alertas.map(x => `<tr><td><span class="etq ${esc(x.cor)}">${esc(x.mensagem)}</span></td><td><b>${esc(x.numero_sei || '(sem nº)')}</b> ${esc(x.titulo)}</td><td>${esc(x.com)}</td></tr>`).join('') + '</table></div>'
+    : '<div class="vazio">Nenhum alerta.</div>';
+  return `<div class="bloco"><h2><i class="ti ti-bell"></i> Alertas <small>prazos e concluídos sem versão assinada</small></h2>${corpo}</div>`;
+}
+
+function blocoAtividade(p) {
+  const a = p.atividade_hoje;
+  const acoes = Object.entries(a.por_acao).sort((x, y) => y[1] - x[1]).map(([k, v]) => `<span class="etq" style="margin:0 6px 6px 0;">${esc(nomeAcao(k))}: ${v}</span>`).join('');
+  const pessoas = Object.entries(a.por_pessoa).sort((x, y) => y[1] - x[1]).map(([k, v]) => `<span class="etq azul" style="margin:0 6px 6px 0;">${esc(k)}: ${v}</span>`).join('');
+  const ultimos = a.ultimos.length ? `<div class="rolagem"><table class="tabela"><tr><th>Hora</th><th>Quem</th><th>O quê</th><th>Processo</th></tr>` +
+    a.ultimos.map(e => `<tr><td>${new Date(e.data).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</td><td>${esc(e.quem)}</td><td>${esc(nomeAcao(e.acao))}</td><td>${esc(e.numero_sei || e.processo_id || '')}</td></tr>`).join('') + '</table></div>' : '';
+  return `<div class="bloco"><h2><i class="ti ti-activity"></i> Atividade de hoje <small>${a.total} registro(s)</small></h2>
+    ${a.total ? `<div style="margin-bottom:6px;">${acoes}</div><div style="margin-bottom:10px;">${pessoas}</div>${ultimos}` : '<div class="vazio">Nenhuma atividade registrada hoje.</div>'}</div>`;
+}
+
+// ==================== ABA PROCESSOS (todos, com filtros) ====================
+let _processos = [];
+async function telaProcessos() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Buscando processos de todos os usuários...');
+  const [res, pn] = await Promise.all([api('processos/listar', {}), carregarPainel().catch(() => null)]);
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  const ger = $('f-gerencia').value;
+  _processos = (res.processos || []).filter(x => !ger || x.gerencia === ger);
+  const pessoas = pn ? pn.por_pessoa : [];
+  const status = [...new Set(_processos.map(x => x.status).filter(Boolean))].sort();
+  c.innerHTML = `<div class="bloco"><div class="filtros">
+      <div><label>Com quem está</label><select id="fp-pessoa" onchange="filtrarProcessos()"><option value="">Todos</option>${pessoas.map(x => `<option value="${esc(x.email)}">${esc(x.nome)}</option>`).join('')}</select></div>
+      <div><label>Status</label><select id="fp-status" onchange="filtrarProcessos()"><option value="">Todos</option>${status.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
+      <div style="flex:1;"><label>Buscar</label><input id="fp-busca" placeholder="Nº SEI, título, unidade ou OSS" oninput="filtrarProcessos()"></div>
+    </div><div id="lista-processos"></div></div>`;
+  filtrarProcessos();
+}
+function filtrarProcessos() {
+  const pessoa = $('fp-pessoa').value, st = $('fp-status').value, b = $('fp-busca').value.trim().toLowerCase();
+  const lista = _processos.filter(x => (!pessoa || String(x.responsavel_atual).toLowerCase() === pessoa) && (!st || x.status === st)
+    && (!b || [x.numero_sei, x.titulo, x.unidade, x.oss].join(' ').toLowerCase().includes(b)));
+  $('lista-processos').innerHTML = lista.length ? `<div style="font-size:.78rem; color:var(--mudo); margin-bottom:6px;">${lista.length} processo(s)</div><div class="rolagem"><table class="tabela">
+    <tr><th>Processo</th><th>Unidade / OSS</th><th>Status</th><th>Com</th><th>Achados</th><th>Atualizado</th></tr>` +
+    lista.map(x => `<tr><td><b>${esc(x.numero_sei || '(sem nº)')}</b><br>${esc(x.titulo)}</td><td>${esc(x.unidade)}${x.oss ? '<br><span style="color:var(--mudo);">' + esc(x.oss) + '</span>' : ''}</td>
+      <td>${esc(x.status)}</td><td>${esc(x.responsavel_atual)}</td>
+      <td class="n">${x.ultima_auditoria_qtd_achados === null || x.ultima_auditoria_qtd_achados === undefined || x.ultima_auditoria_qtd_achados === '' ? '<span class="zero">sem checagem</span>' : (Number(x.ultima_auditoria_qtd_achados) ? `<span class="etq vermelho">${x.ultima_auditoria_qtd_achados}</span>` : '0')}</td>
+      <td>${dataHora(x.atualizado_em)}</td></tr>`).join('') + '</table></div>' : '<div class="vazio">Nenhum processo com esses filtros.</div>';
+}
+
+// ==================== ABA ACHADOS ====================
+let _achados = [];
+async function telaAchados() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Buscando todos os achados...');
+  const res = await api('adm/achados-todos', {});
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  const ger = $('f-gerencia').value;
+  _achados = (res.achados || []).filter(x => !ger || x.gerencia === ger);
+  const unidades = [...new Set(_achados.map(x => x.unidade).filter(Boolean))].sort();
+  const tipos = [...new Set(_achados.map(x => x.tipo_achado).filter(Boolean))].sort();
+  c.innerHTML = `<div class="bloco"><div class="filtros">
+      <div><label>Unidade</label><select id="fa-unidade" onchange="filtrarAchados()"><option value="">Todas</option>${unidades.map(u => `<option>${esc(u)}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select id="fa-tipo" onchange="filtrarAchados()"><option value="">Todos</option>${tipos.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
+      <div style="flex:1;"><label>Buscar</label><input id="fa-busca" placeholder="Palavra no achado ou nº SEI" oninput="filtrarAchados()"></div>
+    </div><div id="lista-achados"></div></div>`;
+  filtrarAchados();
+}
+function filtrarAchados() {
+  const u = $('fa-unidade').value, t = $('fa-tipo').value, b = $('fa-busca').value.trim().toLowerCase();
+  const lista = _achados.filter(x => (!u || x.unidade === u) && (!t || x.tipo_achado === t) && (!b || [x.descricao, x.numero_sei, x.titulo].join(' ').toLowerCase().includes(b)));
+  $('lista-achados').innerHTML = lista.length ? `<div style="font-size:.78rem; color:var(--mudo); margin-bottom:6px;">${lista.length} achado(s)</div><div class="rolagem"><table class="tabela">
+    <tr><th>Data</th><th>Processo</th><th>Unidade</th><th>Tipo</th><th>Achado</th></tr>` +
+    lista.slice(0, 500).map(x => `<tr><td>${dataHora(x.data_auditoria)}</td><td><b>${esc(x.numero_sei || '')}</b></td><td>${esc(x.unidade)}</td>
+      <td><span class="etq">${esc(x.tipo_achado)}</span>${x.conferido_por_codigo ? ' <span class="etq azul">por código</span>' : ''}</td>
+      <td>${esc(x.descricao)}${x.sugestao ? '<br><span style="color:#087f5b; font-size:.76rem;">O que fazer: ' + esc(x.sugestao) + '</span>' : ''}</td></tr>`).join('') + '</table></div>'
+    + (lista.length > 500 ? '<div class="vazio" style="margin-top:6px;">Mostrando os 500 mais recentes. Use os filtros para refinar.</div>' : '')
+    : '<div class="vazio">Nenhum achado com esses filtros.</div>';
+}
+
+// ==================== ABA REGISTRO DE ATIVIDADES ====================
+async function telaRegistro() {
+  const c = $('conteudo');
+  let pn = null; try { pn = await carregarPainel(); } catch (e) { /* segue sem lista de pessoas */ }
+  const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+  c.innerHTML = `<div class="bloco"><div class="filtros">
+      <div><label>Pessoa</label><select id="fr-pessoa"><option value="">Todas</option>${(pn ? pn.por_pessoa : []).map(x => `<option value="${esc(x.email)}">${esc(x.nome)}</option>`).join('')}</select></div>
+      <div><label>Ação</label><select id="fr-acao"><option value="">Todas</option>${Object.keys(NOMES_ACOES).map(k => `<option value="${k}">${esc(NOMES_ACOES[k])}</option>`).join('')}</select></div>
+      <div><label>De</label><input type="date" id="fr-ini" value="${hoje}"></div>
+      <div><label>Até</label><input type="date" id="fr-fim" value="${hoje}"></div>
+      <div style="min-width:auto;"><button class="btn btn-escuro" onclick="buscarRegistro()"><i class="ti ti-search"></i> Buscar</button></div>
+    </div>
+    <div style="font-size:.76rem; color:var(--mudo); margin-bottom:8px;">A planilha guarda os últimos 60 dias. O registro mais antigo fica no arquivo do ano, no Drive ("SEI Analista - Registro de atividades").</div>
+    <div id="lista-registro"></div></div>`;
+  buscarRegistro();
+}
+async function buscarRegistro() {
+  const alvo = $('lista-registro'); alvo.innerHTML = carregando();
+  const res = await api('adm/log', { filtro_usuario: $('fr-pessoa').value, filtro_acao: $('fr-acao').value, data_inicio: $('fr-ini').value, data_fim: $('fr-fim').value, limite: 1000 });
+  if (!res.ok) { alvo.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  const ev = res.eventos || [];
+  alvo.innerHTML = ev.length ? `<div style="font-size:.78rem; color:var(--mudo); margin-bottom:6px;">${res.total} registro(s)${res.total > ev.length ? ', mostrando ' + ev.length : ''}</div><div class="rolagem"><table class="tabela">
+    <tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Processo</th><th>Detalhes</th><th>App</th></tr>` +
+    ev.map(e => `<tr><td>${dataHora(e.data)}</td><td>${esc(e.usuario)}</td><td>${e.acao === 'ACAO_RECUSADA' || e.acao === 'LOGIN_RECUSADO' ? `<span class="etq vermelho">${esc(nomeAcao(e.acao))}</span>` : esc(nomeAcao(e.acao))}</td>
+      <td>${esc(e.processo_id)}</td><td>${esc(e.detalhes)}</td><td>${esc(e.app)}</td></tr>`).join('') + '</table></div>' : '<div class="vazio">Nenhum registro nesse período.</div>';
+}
+
+// ==================== ABA BANCO DE DADOS ====================
+async function telaBanco() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Medindo a planilha...');
+  let p;
+  try { p = await carregarPainel(); } catch (e) { c.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  const b = p.banco, fmt = v => Number(v || 0).toLocaleString('pt-BR');
+  const alto = b.percentual >= 70;
+  const ritmo = b.crescimento_semanal === null
+    ? 'O ritmo de crescimento aparece depois de uma semana de uso do painel (ele guarda uma medição por dia).'
+    : `Crescendo cerca de ${fmt(b.crescimento_semanal)} células por semana` + (b.semanas_ate_o_teto !== null ? ` — nesse ritmo, o teto chega em ${fmt(b.semanas_ate_o_teto)} semana(s).` : '.');
+  c.innerHTML = `<div class="bloco"><h2><i class="ti ti-database"></i> Tamanho da planilha</h2>
+      <div style="font-size:.88rem; margin-bottom:8px;"><b>${fmt(b.total_celulas)}</b> de ${fmt(b.teto)} células usadas (<b>${b.percentual}%</b>)</div>
+      <div class="barra"><div class="${alto ? 'alto' : ''}" style="width:${Math.min(b.percentual, 100)}%;"></div></div>
+      <div style="font-size:.8rem; color:var(--mudo); margin-top:8px;">${esc(ritmo)}</div>
+      ${alto ? '<div class="erro">A planilha passou de 70% do limite do Google. É hora de planejar o arquivamento de dados antigos ou a mudança para um banco de dados de verdade.</div>' : ''}
+      <div style="font-size:.76rem; color:var(--mudo); margin-top:8px;">O Google conta todas as células reservadas de cada aba, mesmo vazias. O texto dos documentos (aba ConteudoBlocos) costuma ser o que mais pesa.</div></div>
+    <div class="bloco"><h2><i class="ti ti-table"></i> Por aba</h2><div class="rolagem"><table class="tabela"><tr><th>Aba</th><th>Registros</th><th>Células reservadas</th><th>% do total</th></tr>` +
+    b.abas.map(a => `<tr><td>${esc(a.nome)}</td><td class="n">${fmt(a.linhas)}</td><td class="n">${fmt(a.celulas)}</td><td class="n">${b.total_celulas ? Math.round(a.celulas / b.total_celulas * 1000) / 10 : 0}%</td></tr>`).join('') + `</table></div></div>
+    <div class="bloco"><h2><i class="ti ti-checklist"></i> Qualidade dos dados</h2><div class="grade">
+      <div class="num"><b>${fmt(p.qualidade.total_processos)}</b><span>Processos</span></div>
+      <div class="num"><b>${fmt(p.qualidade.documentos)}</b><span>Documentos importados</span></div>
+      <div class="num" style="border-left-color:${p.qualidade.sem_checagem ? '#8e1628' : '#5c636a'};"><b>${fmt(p.qualidade.sem_checagem)}</b><span>Processos sem nenhuma checagem</span></div>
+      <div class="num" style="border-left-color:${p.qualidade.concluidos_sem_assinatura ? '#8e1628' : '#5c636a'};"><b>${fmt(p.qualidade.concluidos_sem_assinatura)}</b><span>Concluídos sem versão assinada</span></div>
+    </div></div>`;
+}
+</script>
+</body>
+</html>
