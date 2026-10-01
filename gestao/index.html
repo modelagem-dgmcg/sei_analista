@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 30/09/2026 11:02 (horário de Recife)
+  Versão gerada em 01/10/2026 11:54 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -61,6 +61,12 @@
   .config-blocos button { border:none; background:none; cursor:pointer; color:var(--mudo); padding:0 2px; }
   .spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gira .75s linear infinite; vertical-align:middle; margin-right:6px; }
   @keyframes gira { to { transform:rotate(360deg); } }
+  .janela-fundo { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  .janela { background:#fff; border-radius:8px; padding:22px; width:100%; max-width:460px; max-height:90vh; overflow:auto; box-shadow:0 10px 30px rgba(0,0,0,.3); }
+  .janela h2 { font-size:1.05rem; margin-bottom:6px; }
+  .marcar { display:flex; align-items:center; gap:6px; font-weight:400; margin:6px 0; } .marcar input { width:auto; }
+  .ok-msg { background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:.84rem; margin-bottom:12px; }
+  .dica { font-size:.76rem; color:var(--mudo); margin-top:4px; }
   footer { text-align:center; font-size:.72rem; color:#adb5bd; padding:20px; }
 </style>
 </head>
@@ -94,6 +100,7 @@
     <a href="#" data-aba="achados" onclick="abrirAba('achados'); return false;">Achados</a>
     <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
     <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
+    <a href="#" data-aba="usuarios" onclick="abrirAba('usuarios'); return false;">Usuários</a>
   </nav>
   <main id="conteudo"></main>
   <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
@@ -103,8 +110,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.0';
-const VERSAO_GESTAO_DATA = '30/09/2026 11:02';
+const VERSAO_GESTAO = 'v1.1';
+const VERSAO_GESTAO_DATA = '01/10/2026 11:54';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -119,7 +126,9 @@ const NOMES_ACOES = {
   PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
   ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
-  GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro'
+  GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
+  GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
+  GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login'
 };
 const nomeAcao = a => NOMES_ACOES[a] || String(a || '').replace(/_/g, ' ').toLowerCase();
 
@@ -182,7 +191,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco })[aba]();
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios })[aba]();
 }
 function recarregar() { painel = null; abrirAba(abaAtual); }
 
@@ -406,6 +415,126 @@ async function telaBanco() {
       <div class="num" style="border-left-color:${p.qualidade.sem_checagem ? '#8e1628' : '#5c636a'};"><b>${fmt(p.qualidade.sem_checagem)}</b><span>Processos sem nenhuma checagem</span></div>
       <div class="num" style="border-left-color:${p.qualidade.concluidos_sem_assinatura ? '#8e1628' : '#5c636a'};"><b>${fmt(p.qualidade.concluidos_sem_assinatura)}</b><span>Concluídos sem versão assinada</span></div>
     </div></div>`;
+}
+
+// ==================== ABA USUÁRIOS (cadastro) ====================
+// O login não muda depois de criado (é por ele que o registro identifica a pessoa) e não
+// existe "apagar": desativar mantém o histórico e corta o acesso.
+let _usuarios = [], _avisoUsuarios = '';
+const SENHA_TESTE_PADRAO = '123'; // fase de testes com logins ".teste"; trocar antes do uso real
+
+async function telaUsuarios() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Buscando usuários...');
+  const res = await api('adm/usuarios-listar', {});
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  _usuarios = res.usuarios || [];
+  const ativos = _usuarios.filter(u => u.ativo).length;
+  const acesso = u => {
+    const lista = u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao'] : ['analista']);
+    return lista.map(a => a === 'gestao' ? 'Gestão' : 'Analista').join(' + ') + (u.apps ? '' : ' <span style="color:var(--mudo);">(padrão)</span>');
+  };
+  c.innerHTML = `${_avisoUsuarios ? `<div class="ok-msg">${esc(_avisoUsuarios)}</div>` : ''}
+    <div class="bloco">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+        <h2 style="margin:0;"><i class="ti ti-users"></i> Usuários <small>${ativos} ativo(s) de ${_usuarios.length}</small></h2>
+        <button class="btn btn-escuro" style="margin-left:auto;" onclick="formUsuario()"><i class="ti ti-user-plus"></i> Novo usuário</button>
+      </div>
+      <div class="rolagem"><table class="tabela"><tr><th>Nome</th><th>Login</th><th>Gerência</th><th>Perfil</th><th>Acesso</th><th>Situação</th><th></th></tr>` +
+      _usuarios.map(u => `<tr style="${u.ativo ? '' : 'opacity:.55;'}">
+        <td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${esc(u.gerencia)}</td>
+        <td>${u.perfil === 'admin' ? '<span class="etq azul">Administrador</span>' : 'Analista'}</td>
+        <td>${acesso(u)}</td>
+        <td>${!u.ativo ? '<span class="etq">Desativado</span>' : u.bloqueado ? '<span class="etq vermelho">Bloqueado por senha errada</span>' : '<span class="etq" style="background:#d1e7dd;color:#0f5132;">Ativo</span>'}</td>
+        <td style="white-space:nowrap;">
+          <button class="btn" title="Editar" onclick="formUsuario(${u.id})"><i class="ti ti-pencil"></i></button>
+          <button class="btn" title="Redefinir senha" onclick="redefinirSenha(${u.id})"><i class="ti ti-key"></i></button>
+          ${u.bloqueado ? `<button class="btn" title="Liberar o login" onclick="desbloquear(${u.id})"><i class="ti ti-lock-open"></i></button>` : ''}
+        </td></tr>`).join('') + `</table></div>
+      <div class="dica" style="margin-top:10px;">Mudanças de perfil, acesso ou situação valem na hora: se a pessoa estiver logada, ela precisa entrar de novo.</div>
+    </div>`;
+  _avisoUsuarios = '';
+}
+
+function formUsuario(id) {
+  const u = id ? _usuarios.find(x => x.id === id) : null;
+  const lista = u ? (u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao'] : ['analista'])) : ['analista'];
+  const gerencias = [...new Set(_usuarios.map(x => x.gerencia).filter(Boolean))].sort();
+  const fundo = document.createElement('div');
+  fundo.className = 'janela-fundo'; fundo.id = 'janela-usuario';
+  fundo.innerHTML = `<div class="janela">
+    <h2>${u ? 'Editar usuário' : 'Novo usuário'}</h2>
+    <label>Nome completo</label><input id="fu-nome" value="${esc(u ? u.nome : '')}">
+    <label>Login</label>${u ? `<input value="${esc(u.login)}" disabled><div class="dica">O login não muda depois de criado.</div>` : `<input id="fu-login" placeholder="nome.sobrenome ou nome.teste"><div class="dica">Letras minúsculas, sem espaço nem acento.</div>`}
+    <label>Gerência</label><input id="fu-gerencia" list="fu-gerencias" value="${esc(u ? u.gerencia : '')}"><datalist id="fu-gerencias">${gerencias.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
+    <label>Perfil</label><select id="fu-perfil" onchange="ajustarAcessoGestao()">
+      <option value="usuario" ${u && u.perfil === 'admin' ? '' : 'selected'}>Analista</option>
+      <option value="admin" ${u && u.perfil === 'admin' ? 'selected' : ''}>Administrador (pode usar o SEI Gestão)</option></select>
+    <label>Acesso aos aplicativos</label>
+    <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> SEI Analista</label>
+    <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> SEI Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
+    ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
+        : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
+    <div id="fu-erro" class="erro hidden"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button class="btn" onclick="fecharJanela()">Cancelar</button>
+      <button class="btn btn-escuro" id="fu-salvar" onclick="salvarUsuario(${u ? u.id : 0})"><i class="ti ti-check"></i> Salvar</button>
+    </div></div>`;
+  document.body.appendChild(fundo);
+  ajustarAcessoGestao();
+  (u ? $('fu-nome') : $('fu-nome')).focus();
+}
+
+function ajustarAcessoGestao() {
+  const admin = $('fu-perfil').value === 'admin', cx = $('fu-app-gestao');
+  cx.disabled = !admin;
+  if (!admin) cx.checked = false;
+}
+function fecharJanela() { $('janela-usuario')?.remove(); }
+
+async function salvarUsuario(id) {
+  const erro = $('fu-erro'); erro.classList.add('hidden');
+  const perfil = $('fu-perfil').value;
+  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null].filter(Boolean);
+  if (!marcados.length) { erro.textContent = 'Marque pelo menos um aplicativo.'; erro.classList.remove('hidden'); return; }
+  // Se o acesso marcado é o padrão do perfil, grava vazio (padrão); senão grava a lista.
+  const padrao = perfil === 'admin' ? 'analista,gestao' : 'analista';
+  const corpo = { nome_usuario: $('fu-nome').value.trim(), gerencia_usuario: $('fu-gerencia').value.trim(), perfil_usuario: perfil,
+    apps_usuario: marcados.join(',') === padrao ? '' : marcados.join(',') };
+  if (id) { corpo.id_usuario = id; corpo.ativo_usuario = $('fu-ativo').checked; }
+  else {
+    corpo.login_usuario = $('fu-login').value.trim().toLowerCase();
+    const senha = $('fu-senha').value;
+    if (!senha) { erro.textContent = 'Informe a senha inicial.'; erro.classList.remove('hidden'); return; }
+    corpo.senha_hash_usuario = await sha256(senha);
+  }
+  const btn = $('fu-salvar'); btn.disabled = true;
+  const res = await api('adm/usuarios-salvar', corpo);
+  btn.disabled = false;
+  if (!res.ok) { erro.textContent = res.erro || 'Não foi possível salvar.'; erro.classList.remove('hidden'); return; }
+  fecharJanela();
+  _avisoUsuarios = res.criado ? `Usuário ${res.usuario.login} criado.`
+    : `Alterações de ${res.usuario.login} salvas.` + (res.sessoes_encerradas ? ' A pessoa estava logada e vai precisar entrar de novo.' : '');
+  painel = null; telaUsuarios();
+}
+
+async function redefinirSenha(id) {
+  const u = _usuarios.find(x => x.id === id);
+  const nova = prompt(`Nova senha para ${u.nome} (${u.login}):`, SENHA_TESTE_PADRAO);
+  if (nova === null) return;
+  if (!nova) return alert('A senha não pode ficar vazia.');
+  const res = await api('adm/usuarios-senha', { id_usuario: id, senha_hash_usuario: await sha256(nova) });
+  if (!res.ok) return alert('A senha NÃO foi trocada: ' + (res.erro || ''));
+  _avisoUsuarios = `Senha de ${u.login} redefinida.` + (res.sessoes_encerradas ? ' A pessoa estava logada e vai precisar entrar de novo.' : '');
+  telaUsuarios();
+}
+
+async function desbloquear(id) {
+  const u = _usuarios.find(x => x.id === id);
+  const res = await api('adm/usuarios-desbloquear', { id_usuario: id });
+  if (!res.ok) return alert('Não foi possível liberar: ' + (res.erro || ''));
+  _avisoUsuarios = `Login ${u.login} liberado; a pessoa já pode tentar de novo.`;
+  telaUsuarios();
 }
 </script>
 </body>
