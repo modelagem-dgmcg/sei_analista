@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v23.8 — app.js
-// Versão gerada em 30/09/2026 14:17 (horário de Recife)
+// SEI ANALISTA v23.9 — app.js
+// Versão gerada em 01/10/2026 15:08 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,15 +15,16 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v23.8';
-const VERSAO_APP_DATA = '30/09/2026 14:17';
+const VERSAO_APP = 'v23.9';
+const VERSAO_APP_DATA = '01/10/2026 15:08';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
-let GEMINI_KEY = localStorage.getItem('sei_gemini_key') || '';
-let GROQ_KEY = localStorage.getItem('sei_groq_key') || '';
-let KIMI_KEY = localStorage.getItem('sei_kimi_key') || '';
-let OPENROUTER_KEY = localStorage.getItem('sei_openrouter_key') || '';
-let DEEPSEEK_KEY = localStorage.getItem('sei_deepseek_key') || '';
+// As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
+// depois do login (ver _carregarChavesDaGestao). Ficam só na memória desta aba; chaves
+// antigas guardadas no navegador são apagadas para não ficarem esquecidas ali.
+let GEMINI_KEY = '', GROQ_KEY = '', KIMI_KEY = '', OPENROUTER_KEY = '', DEEPSEEK_KEY = '';
+let CHAVES_DA_GESTAO = []; // [{ servico, nome, rotulo, final }] — sem a chave
+['gemini', 'groq', 'kimi', 'openrouter', 'deepseek'].forEach(s => { try { localStorage.removeItem('sei_' + s + '_key'); } catch (e) { /* sem acesso ao armazenamento */ } });
 let OLLAMA_URL = localStorage.getItem('sei_ollama_url') || 'http://localhost:11434';
 let OLLAMA_MODEL = localStorage.getItem('sei_ollama_model') || 'qwen2.5:7b';
 
@@ -277,6 +278,7 @@ async function fazerLogin() {
         document.getElementById('login-screen').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
         iniciarMonitoramentoNovosItens();
+        _carregarChavesDaGestao();
         await _concluirPendenciasAposLogin();
         return;
       }
@@ -292,6 +294,7 @@ async function fazerLogin() {
 
       usuarioAtual = res.usuario;
       _mostrarVersaoServidor(res.versao_backend);
+      _carregarChavesDaGestao();
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
@@ -369,7 +372,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_concluidos: 'Registro de Concluídos',
     dashboard_panorama: 'Panorama',
     dashboard_perguntas: 'Perguntas sobre achados',
-    novo: 'Importar Processo', config: 'Configuração IA Premium'
+    novo: 'Importar Processo', config: 'Configurações'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
@@ -401,60 +404,44 @@ async function showView(v, subCaixa = 'entrada') {
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
   } else if (v === 'config') {
-    // Número que aparece pré-selecionado em cada seletor = posição atual de cada
-    // provedor na ordem salva — assim a tela sempre reflete o que está configurado
-    // agora, não um valor fixo de fábrica.
-    const opcoesPrioridade = (id) => [1, 2, 3, 4, 5, 6].map(n =>
-      `<option value="${n}" ${ORDEM_PROVEDORES_IDS.indexOf(id) + 1 === n ? 'selected' : ''}>${n}</option>`
-    ).join('');
-    const checkboxAtivo = (id, ativo) => `
-      <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-        <label title="Ligado/desligado — desligar não apaga a chave, só faz o sistema não usar esse provedor por ora" style="display:flex; align-items:center; gap:4px; font-size:0.72rem; color:var(--text-muted); cursor:pointer; white-space:nowrap;">
-          <input type="checkbox" id="ativo-${id}" ${ativo ? 'checked' : ''} style="cursor:pointer;"> Habilitado
-        </label>
-        <button type="button" class="btn btn-secondary btn-sm" style="font-size:0.72rem; padding:2px 10px;" onclick="testarConexaoProvedor('${id}')">Testar conexão</button>
-        <span id="teste-${id}" style="font-size:0.75rem;"></span>
-      </div>`;
+    const ativoDe = { gemini: GEMINI_ATIVO, groq: GROQ_ATIVO, kimi: KIMI_ATIVO, openrouter: OPENROUTER_ATIVO, deepseek: DEEPSEEK_ATIVO };
+    const nomes = { gemini: 'Gemini', groq: 'Groq', kimi: 'Kimi', openrouter: 'OpenRouter', deepseek: 'DeepSeek' };
+    const liberados = CHAVES_DA_GESTAO.map(c => c.servico);
+    const ordemTela = [...liberados, ...Object.keys(nomes).filter(s => !liberados.includes(s))];
+    const cartao = (id) => {
+      const k = CHAVES_DA_GESTAO.find(c => c.servico === id);
+      if (!k) return `<div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid #e9ecef; border-radius:8px; margin-bottom:8px; background:#f8f9fa; opacity:.6;">
+          <i class="ti ti-lock" style="font-size:1.1rem; color:#adb5bd;"></i>
+          <div><b>${nomes[id]}</b><div style="font-size:0.75rem; color:var(--text-muted);">Não liberado pela gestão para o seu usuário.</div></div></div>`;
+      return `<div style="display:flex; align-items:center; gap:12px; padding:12px 14px; border:1px solid #dee2e6; border-radius:8px; margin-bottom:8px; background:#fff; flex-wrap:wrap;">
+          <i class="ti ti-plug-connected" style="font-size:1.1rem; color:#495057;"></i>
+          <div style="flex:1; min-width:180px;"><b>${nomes[id]}</b>
+            <div style="font-size:0.75rem; color:var(--text-muted);">${escHtml(k.rotulo)} · chave fornecida pela gestão (final ••••${escHtml(k.final)})</div></div>
+          <label style="display:flex; align-items:center; gap:5px; font-size:0.8rem; cursor:pointer; white-space:nowrap;">
+            <input type="checkbox" id="ativo-${id}" ${ativoDe[id] ? 'checked' : ''} onchange="salvarConfig()"> Habilitado</label>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="testarConexaoProvedor('${id}')">Testar conexão</button>
+          <span id="teste-${id}" style="font-size:0.75rem; width:100%;"></span></div>`;
+    };
     content.innerHTML = `
-      <div style="max-width:640px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
-        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:16px;">
-          O número ao lado de cada provedor é a ordem de tentativa — 1 é tentado primeiro, e só passa
-          pro próximo se o anterior der erro de verdade. Pode repetir número — nesse caso, a ordem entre
-          eles fica a de sempre (Gemini, Groq, Kimi, OpenRouter, Ollama). "Habilitado" desliga o provedor
-          sem apagar a chave — útil se ele estiver com problema por ora e você não quiser ter que colar
-          a chave de novo depois. Ollama, por rodar local, continua exigindo estar instalado e aberto na
-          sua máquina.
-        </p>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-gemini" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('gemini')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Gemini</label><input type="password" id="cfg-gemini" value="${GEMINI_KEY}" placeholder="Chave do Google AI Studio...">${checkboxAtivo('gemini', GEMINI_ATIVO)}</div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-groq" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('groq')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Groq (grátis)</label><input type="password" id="cfg-groq" value="${GROQ_KEY}" placeholder="Chave grátis em console.groq.com...">${checkboxAtivo('groq', GROQ_ATIVO)}</div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-kimi" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('kimi')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>Kimi (Moonshot AI)</label><input type="password" id="cfg-kimi" value="${KIMI_KEY}" placeholder="Chave em platform.moonshot.ai...">${checkboxAtivo('kimi', KIMI_ATIVO)}</div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-openrouter" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('openrouter')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>OpenRouter (grátis)</label><input type="password" id="cfg-openrouter" value="${OPENROUTER_KEY}" placeholder="Chave grátis em openrouter.ai/keys...">${checkboxAtivo('openrouter', OPENROUTER_ATIVO)}</div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;">
-          <select id="prio-deepseek" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('deepseek')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;"><label>DeepSeek</label><input type="password" id="cfg-deepseek" value="${DEEPSEEK_KEY}" placeholder="Chave em platform.deepseek.com/api-keys...">${checkboxAtivo('deepseek', DEEPSEEK_ATIVO)}</div>
-        </div>
-        <div style="display:flex; gap:10px; align-items:flex-start; margin-bottom:16px;">
-          <select id="prio-ollama" title="Ordem de tentativa" style="width:52px; padding:8px 2px; border:1px solid #ced4da; border-radius:6px; font-weight:700; text-align:center;">${opcoesPrioridade('ollama')}</select>
-          <div class="form-group" style="flex:1; margin-bottom:0;">
-            <label>Ollama (local, opcional)</label>
-            <input type="text" id="cfg-ollama-url" value="${OLLAMA_URL}" placeholder="http://localhost:11434" style="margin-bottom:6px;">
-            <input type="text" id="cfg-ollama-model" value="${OLLAMA_MODEL}" placeholder="qwen2.5:7b">
-            ${checkboxAtivo('ollama', OLLAMA_ATIVO)}
+      <div style="max-width:680px;background:#fff;padding:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.1);">
+        <h3 style="font-size:1.05rem; margin-bottom:6px;"><i class="ti ti-sparkles"></i> Serviços de inteligência artificial</h3>
+        <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:14px;">
+          As chaves são fornecidas pela gestão. Aqui você liga ou desliga cada serviço liberado para você e testa a conexão.
+          Desligar não apaga nada; só faz o sistema pular esse serviço. A ordem de tentativa é definida pela gestão.</p>
+        ${ordemTela.map(cartao).join('')}
+        <h3 style="font-size:0.95rem; margin:20px 0 6px;"><i class="ti ti-device-desktop"></i> Ollama (opcional, roda no seu computador)</h3>
+        <div style="padding:12px 14px; border:1px solid #dee2e6; border-radius:8px;">
+          <div style="display:flex; gap:8px; flex-wrap:wrap;">
+            <input type="text" id="cfg-ollama-url" value="${escHtml(OLLAMA_URL)}" placeholder="http://localhost:11434" style="flex:2; min-width:180px; padding:7px; border:1px solid #ced4da; border-radius:6px;">
+            <input type="text" id="cfg-ollama-model" value="${escHtml(OLLAMA_MODEL)}" placeholder="qwen2.5:7b" style="flex:1; min-width:120px; padding:7px; border:1px solid #ced4da; border-radius:6px;">
           </div>
+          <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;">
+            <label style="display:flex; align-items:center; gap:5px; font-size:0.8rem; cursor:pointer;"><input type="checkbox" id="ativo-ollama" ${OLLAMA_ATIVO ? 'checked' : ''}> Habilitado</label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="testarConexaoProvedor('ollama')">Testar conexão</button>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="salvarConfig()">Salvar endereço</button>
+            <span id="teste-ollama" style="font-size:0.75rem;"></span></div>
         </div>
-        <button class="btn btn-primary" onclick="salvarConfig()"><i class="ti ti-check"></i> Salvar</button>
+
       </div>`;
   }
 }
@@ -678,6 +665,22 @@ async function renderDashboard(caixa = 'entrada') {
     }
   }
   content.innerHTML = html + '</div>';
+}
+
+
+// ==================== CHAVES DE IA ENTREGUES PELA GESTÃO ====================
+async function _carregarChavesDaGestao() {
+  const res = await api('ia/minhas-chaves', {});
+  const lista = (res && res.ok && res.chaves) || [];
+  const chave = s => (lista.find(c => c.servico === s) || {}).chave || '';
+  GEMINI_KEY = chave('gemini'); GROQ_KEY = chave('groq'); KIMI_KEY = chave('kimi');
+  OPENROUTER_KEY = chave('openrouter'); DEEPSEEK_KEY = chave('deepseek');
+  CHAVES_DA_GESTAO = lista.map(c => ({ servico: c.servico, nome: c.nome, rotulo: c.rotulo, final: c.final, ordem: c.ordem }));
+  // A ordem de tentativa é a definida pelo gestor; o Ollama (local) fica por último.
+  const daGestao = lista.map(c => c.servico);
+  ORDEM_PROVEDORES_IDS = [...daGestao, ...['gemini', 'groq', 'kimi', 'openrouter', 'deepseek'].filter(s => !daGestao.includes(s)), 'ollama'];
+  verificarIA();
+  if (!res || !res.ok) console.warn('Não foi possível buscar as chaves de IA:', res && res.erro);
 }
 
 // ==================== BOTÃO "ABRIR SEI GESTÃO" (só para quem tem acesso) ====================
@@ -1076,11 +1079,6 @@ async function testarConexaoProvedor(id) {
   const resultadoEl = document.getElementById('teste-' + id);
   if (resultadoEl) resultadoEl.innerHTML = '<span class="spinner" style="width:11px;height:11px;border-width:2px;margin:0;"></span> Testando...';
 
-  if (id === 'gemini') GEMINI_KEY = (document.getElementById('cfg-gemini')?.value || '').trim();
-  if (id === 'groq') GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
-  if (id === 'kimi') KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
-  if (id === 'openrouter') OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
-  if (id === 'deepseek') DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
   if (id === 'ollama') {
     OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
     OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
@@ -1098,47 +1096,16 @@ async function testarConexaoProvedor(id) {
 }
 
 function salvarConfig() {
-  const inputEl = document.getElementById('cfg-gemini');
-  if (!inputEl) return;
-  GEMINI_KEY = inputEl.value.trim();
-  localStorage.setItem('sei_gemini_key', GEMINI_KEY);
-  GROQ_KEY = (document.getElementById('cfg-groq')?.value || '').trim();
-  localStorage.setItem('sei_groq_key', GROQ_KEY);
-  KIMI_KEY = (document.getElementById('cfg-kimi')?.value || '').trim();
-  localStorage.setItem('sei_kimi_key', KIMI_KEY);
-  OPENROUTER_KEY = (document.getElementById('cfg-openrouter')?.value || '').trim();
-  localStorage.setItem('sei_openrouter_key', OPENROUTER_KEY);
-  DEEPSEEK_KEY = (document.getElementById('cfg-deepseek')?.value || '').trim();
-  localStorage.setItem('sei_deepseek_key', DEEPSEEK_KEY);
-  OLLAMA_URL = (document.getElementById('cfg-ollama-url')?.value || '').trim() || 'http://localhost:11434';
-  localStorage.setItem('sei_ollama_url', OLLAMA_URL);
-  OLLAMA_MODEL = (document.getElementById('cfg-ollama-model')?.value || '').trim() || 'qwen2.5:7b';
-  localStorage.setItem('sei_ollama_model', OLLAMA_MODEL);
-
-  GEMINI_ATIVO = !!document.getElementById('ativo-gemini')?.checked;
-  localStorage.setItem('sei_gemini_ativo', String(GEMINI_ATIVO));
-  GROQ_ATIVO = !!document.getElementById('ativo-groq')?.checked;
-  localStorage.setItem('sei_groq_ativo', String(GROQ_ATIVO));
-  KIMI_ATIVO = !!document.getElementById('ativo-kimi')?.checked;
-  localStorage.setItem('sei_kimi_ativo', String(KIMI_ATIVO));
-  OPENROUTER_ATIVO = !!document.getElementById('ativo-openrouter')?.checked;
-  localStorage.setItem('sei_openrouter_ativo', String(OPENROUTER_ATIVO));
-  DEEPSEEK_ATIVO = !!document.getElementById('ativo-deepseek')?.checked;
-  localStorage.setItem('sei_deepseek_ativo', String(DEEPSEEK_ATIVO));
-  OLLAMA_ATIVO = !!document.getElementById('ativo-ollama')?.checked;
-  localStorage.setItem('sei_ollama_ativo', String(OLLAMA_ATIVO));
-
-  // Ordena pelo número escolhido em cada seletor — em caso de empate, o sort estável do
-  // JS preserva a ordem de partida abaixo (a ordem de fábrica), então empate nunca é
-  // ambíguo, sempre cai de volta no padrão de sempre entre os que empataram.
-  const idsBase = ['gemini', 'groq', 'kimi', 'openrouter', 'deepseek', 'ollama'];
-  const comPrioridade = idsBase.map(id => ({ id, prioridade: Number(document.getElementById('prio-' + id)?.value) || 99 }));
-  comPrioridade.sort((a, b) => a.prioridade - b.prioridade);
-  ORDEM_PROVEDORES_IDS = comPrioridade.map(p => p.id);
-  localStorage.setItem('sei_ordem_provedores', JSON.stringify(ORDEM_PROVEDORES_IDS));
-
-  alert('Configurações de IA salvas!');
+  const marcado = (id, atual) => { const el = document.getElementById('ativo-' + id); return el ? el.checked : atual; };
+  GEMINI_ATIVO = marcado('gemini', GEMINI_ATIVO); GROQ_ATIVO = marcado('groq', GROQ_ATIVO); KIMI_ATIVO = marcado('kimi', KIMI_ATIVO);
+  OPENROUTER_ATIVO = marcado('openrouter', OPENROUTER_ATIVO); DEEPSEEK_ATIVO = marcado('deepseek', DEEPSEEK_ATIVO); OLLAMA_ATIVO = marcado('ollama', OLLAMA_ATIVO);
+  [['gemini', GEMINI_ATIVO], ['groq', GROQ_ATIVO], ['kimi', KIMI_ATIVO], ['openrouter', OPENROUTER_ATIVO], ['deepseek', DEEPSEEK_ATIVO], ['ollama', OLLAMA_ATIVO]]
+    .forEach(([id, v]) => localStorage.setItem('sei_' + id + '_ativo', String(v)));
+  const url = document.getElementById('cfg-ollama-url'), modelo = document.getElementById('cfg-ollama-model');
+  if (url) { OLLAMA_URL = url.value.trim() || 'http://localhost:11434'; localStorage.setItem('sei_ollama_url', OLLAMA_URL); }
+  if (modelo) { OLLAMA_MODEL = modelo.value.trim() || 'qwen2.5:7b'; localStorage.setItem('sei_ollama_model', OLLAMA_MODEL); }
   verificarIA();
+  mostrarToast('Configurações salvas.');
 }
 
 async function prePreencherDeArquivo(file) {
@@ -2267,6 +2234,12 @@ function renderPainelMascaramento(detalhes) {
 
 
 async function invocarIAComFallback(prompt, isChat = false, statusEl = null) {
+  _iaTrabalhando(true);
+  try { return await _invocarIAComFallbackInterno(prompt, isChat, statusEl); }
+  finally { _iaTrabalhando(false); }
+}
+
+async function _invocarIAComFallbackInterno(prompt, isChat = false, statusEl = null) {
   const erros = [];
   const estados = {};
   ORDEM_PROVEDORES_IDS.forEach(id => {
@@ -3544,21 +3517,59 @@ function criarModal(h, comRodapePadrao = true) {
   document.body.appendChild(m);
 }
 function fecharModal() { document.getElementById('modal-ov')?.remove(); }
+// Indicador da IA: o mascote no lugar da bolinha verde. Colorido = há serviço ligado;
+// apagado = nenhum; pulsando = a IA está trabalhando agora. Clicar abre as Configurações.
+function _garantirMascoteIA() {
+  const dot = document.getElementById('ai-dot');
+  if (!dot || document.getElementById('ia-mascote')) return;
+  if (!document.getElementById('estilo-ia-mascote')) {
+    const st = document.createElement('style'); st.id = 'estilo-ia-mascote';
+    st.textContent = `
+      .ia-mascote { width:26px; height:26px; border-radius:50%; object-fit:cover; flex-shrink:0; transition:filter .4s ease, opacity .4s ease, box-shadow .4s ease; }
+      .ia-mascote.off { filter:grayscale(1); opacity:.45; }
+      .ia-mascote.on { box-shadow:0 0 0 2px rgba(25,135,84,.7), 0 0 8px rgba(25,135,84,.45); }
+      .ia-mascote.trabalhando { animation:iaPulso 1.3s ease-in-out infinite; }
+      @keyframes iaPulso { 0%,100% { transform:scale(1); } 50% { transform:scale(1.14); } }
+      .ai-status { cursor:pointer; }`;
+    document.head.appendChild(st);
+  }
+  const img = document.createElement('img');
+  img.id = 'ia-mascote'; img.className = 'ia-mascote off'; img.alt = 'Assistente de IA'; img.src = 'icons/mascote-analista.png';
+  img.onerror = () => { img.remove(); dot.style.display = ''; };   // sem a imagem, volta a bolinha
+  dot.style.display = 'none';
+  dot.parentNode.insertBefore(img, dot);
+  dot.parentNode.addEventListener('click', () => { if (usuarioAtual) showView('config'); });
+  const nav = document.getElementById('nav-config');
+  if (nav) nav.innerHTML = '<i class="ti ti-settings"></i> Configurações';
+}
+
+function _iaTrabalhando(sim) {
+  window._iaEmUso = Math.max((window._iaEmUso || 0) + (sim ? 1 : -1), 0);
+  document.getElementById('ia-mascote')?.classList.toggle('trabalhando', window._iaEmUso > 0);
+}
+
 function verificarIA() {
+  _garantirMascoteIA();
   const dot = document.getElementById('ai-dot');
   const txt = document.getElementById('ai-status-txt');
-  if (!dot || !txt) return;
-  const provedoresNuvem = [];
-  if (GEMINI_KEY && GEMINI_KEY.trim() && GEMINI_ATIVO) provedoresNuvem.push('Gemini');
-  if (GROQ_KEY && GROQ_KEY.trim() && GROQ_ATIVO) provedoresNuvem.push('Groq');
-  if (KIMI_KEY && KIMI_KEY.trim() && KIMI_ATIVO) provedoresNuvem.push('Kimi');
-  if (OPENROUTER_KEY && OPENROUTER_KEY.trim() && OPENROUTER_ATIVO) provedoresNuvem.push('OpenRouter');
-  if (DEEPSEEK_KEY && DEEPSEEK_KEY.trim() && DEEPSEEK_ATIVO) provedoresNuvem.push('DeepSeek');
-  if (provedoresNuvem.length) {
-    dot.className = 'ai-dot on';
-    txt.innerText = 'IA conectada (' + provedoresNuvem.join(' + ') + ')';
-  } else {
-    dot.className = 'ai-dot off';
-    txt.innerText = 'Nenhuma IA em nuvem configurada — só Ollama, se estiver rodando';
-  }
+  const img = document.getElementById('ia-mascote');
+  if (!txt) return;
+  const ligados = [];
+  if (GEMINI_KEY && GEMINI_ATIVO) ligados.push('Gemini');
+  if (GROQ_KEY && GROQ_ATIVO) ligados.push('Groq');
+  if (KIMI_KEY && KIMI_ATIVO) ligados.push('Kimi');
+  if (OPENROUTER_KEY && OPENROUTER_ATIVO) ligados.push('OpenRouter');
+  if (DEEPSEEK_KEY && DEEPSEEK_ATIVO) ligados.push('DeepSeek');
+  const on = ligados.length > 0;
+  if (dot) dot.className = 'ai-dot ' + (on ? 'on' : 'off');
+  if (img) { img.classList.toggle('on', on); img.classList.toggle('off', !on); }
+  let frase;
+  if (on) frase = 'IA pronta · ' + ligados.join(', ');
+  else if (!usuarioAtual) frase = 'IA: entre para conectar';
+  else if (CHAVES_DA_GESTAO.length) frase = 'IA desligada nas Configurações';
+  else frase = 'Nenhuma IA liberada para você';
+  txt.textContent = frase;
+  const dica = on ? 'Conectado: ' + ligados.join(', ') + '. Clique para ver as Configurações.' : frase + '. Clique para ver as Configurações.';
+  if (img) img.title = dica;
+  txt.title = dica;
 }
