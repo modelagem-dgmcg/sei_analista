@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.0 — app.js
-// Versão gerada em 05/10/2026 08:50 (horário de Recife)
+// SEI ANALISTA v24.1 — app.js
+// Versão gerada em 05/10/2026 13:24 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.0';
-const VERSAO_APP_DATA = '05/10/2026 08:50';
+const VERSAO_APP = 'v24.1';
+const VERSAO_APP_DATA = '05/10/2026 13:24';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -95,6 +95,8 @@ window.memoriaEvidencias = {};
 window.achadosAtuais = [];
 
 window.onload = () => {
+  window.name = 'sei_analista';
+  _entrarComPasse('analista');
   verificarIA();
   injetarMarcaDagua();
   injetarBotaoSobre();
@@ -240,7 +242,7 @@ async function api(action, body = null, opcoes = {}) {
 function _tratarSessaoExpirada() {
   if (_sessaoExpiradaAviso || !usuarioAtual) return;
   _sessaoExpiradaAviso = true;
-  SESSAO_TOKEN = null;
+  SESSAO_TOKEN = null; window.__seiLogado = false;
   if (_intervaloMonitoramento) { clearInterval(_intervaloMonitoramento); _intervaloMonitoramento = null; }
   document.getElementById('app')?.classList.add('hidden');
   document.getElementById('login-screen')?.classList.remove('hidden');
@@ -264,7 +266,19 @@ async function fazerLogin() {
     const hash = await sha256(senhaInput);
     const res = await api('auth/login', { email: usuario, senha_hash: hash, app: 'analista' });
     if (res.ok) {
+      await _entrarComResposta(res);
+    } else {
+      mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
+    }
+  } catch (e) { mostrarErroLogin('Erro no motor JS: ' + e.message); }
+}
+
+// Entrada depois que o servidor aceitou: vale para o login com senha e para o passe vindo do SEI Gestão.
+async function _entrarComResposta(res) {
+  {
+    {
       SESSAO_TOKEN = res.token;
+      window.__seiLogado = true;
       document.getElementById('login-senha').value = '';
       document.getElementById('login-error')?.classList.add('hidden');
       const mesmaPessoa = usuarioAtual && String(usuarioAtual.email).toLowerCase() === String(res.usuario.email).toLowerCase();
@@ -305,10 +319,8 @@ async function fazerLogin() {
       carregarAlertasSidebar();
       _mostrarBotaoGestao();
       if (!window._intervaloAlertas) window._intervaloAlertas = setInterval(carregarAlertasSidebar, 300000);
-    } else {
-      mostrarErroLogin(res.erro || 'Erro ao conectar. Credenciais inválidas ou bloqueio de permissão no Google.');
     }
-  } catch (e) { mostrarErroLogin('Erro no motor JS: ' + e.message); }
+  }
 }
 
 // Depois de entrar de novo: reenvia o que era seguro reenviar e avisa, com clareza, o que
@@ -351,7 +363,7 @@ function mostrarErroLogin(msg) {
 // Sair encerra a sessão também no servidor (o token deixa de valer na hora).
 async function logout() {
   try { if (SESSAO_TOKEN) await api('auth/logout'); } catch (e) { /* sai de qualquer jeito */ }
-  SESSAO_TOKEN = null;
+  SESSAO_TOKEN = null; window.__seiLogado = false;
   location.reload();
 }
 
@@ -687,18 +699,52 @@ async function _carregarChavesDaGestao() {
 // Quem decide o acesso de verdade é o servidor, no login do Gestão; o botão só evita
 // mostrar um caminho que a pessoa não vai conseguir usar.
 function _mostrarBotaoGestao() {
-  const existente = document.getElementById('nav-gestao');
+  document.getElementById('nav-gestao')?.remove();        // link antigo da barra lateral, se existir
+  const existente = document.getElementById('btn-ir-gestao');
   const apps = Array.isArray(usuarioAtual?.apps) ? usuarioAtual.apps : [];
   const temAcesso = usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
   if (!temAcesso) { existente?.remove(); return; }
   if (existente) return;
-  const config = document.getElementById('nav-config');
-  if (!config) return;
-  const link = document.createElement('a');
-  link.id = 'nav-gestao'; link.href = 'gestao/'; link.target = '_blank'; link.rel = 'noopener';
-  link.innerHTML = '<i class="ti ti-chart-dots"></i> Abrir SEI Gestão';
-  link.style.cssText = 'display:flex; align-items:center; gap:8px; padding:8px 0; font-size:0.8rem; opacity:0.85; text-decoration:none; color:inherit;';
-  config.parentNode.insertBefore(link, config);
+  const sair = document.querySelector('header button[onclick="logout()"]');
+  if (!sair) return;
+  const botao = document.createElement('button');
+  botao.id = 'btn-ir-gestao'; botao.className = 'btn btn-secondary btn-sm'; botao.style.marginRight = '8px';
+  botao.innerHTML = '<i class="ti ti-chart-dots"></i> Ir para o Gestão';
+  botao.title = 'Abre o SEI Gestão em outra aba, sem pedir a senha de novo';
+  botao.addEventListener('click', () => irParaOutroApp('gestao'));
+  sair.parentNode.insertBefore(botao, sair);
+}
+
+// ==================== TROCA ENTRE OS APPS (passe de uso único) ====================
+// O primeiro clique abre o outro app numa aba própria; os seguintes só trazem essa aba
+// para a frente. O passe vale 60 segundos, uma vez só, e só para quem o pediu.
+async function irParaOutroApp(destino) {
+  const nomeAba = destino === 'gestao' ? 'sei_gestao' : 'sei_analista';
+  const endereco = destino === 'gestao' ? 'gestao/' : '../';
+  let aba = null;
+  try { aba = window.open('', nomeAba); } catch (e) { aba = null; }   // abre já no clique (evita bloqueio de pop-up)
+  try { if (aba && aba.__seiLogado) { aba.focus(); return; } } catch (e) { /* aba de outro endereço */ }
+  const res = await api('auth/ponte-criar', { destino });
+  if (!res.ok) {
+    try { if (aba && aba.location.href === 'about:blank') aba.close(); } catch (e) { /* ignora */ }
+    alert('Não foi possível abrir: ' + (res.erro || 'erro desconhecido'));
+    return;
+  }
+  try { localStorage.setItem('sei_ponte', JSON.stringify({ codigo: res.codigo, destino, criado: Date.now() })); } catch (e) { /* sem armazenamento: o outro app pede senha */ }
+  if (aba) { aba.location.href = endereco; aba.focus(); } else window.location.href = endereco;
+}
+
+// Ao abrir: se veio um passe para este app, entra sem pedir senha. O passe sai do navegador na hora.
+async function _entrarComPasse(app) {
+  let passe = null;
+  try { passe = JSON.parse(localStorage.getItem('sei_ponte') || 'null'); } catch (e) { passe = null; }
+  if (!passe || passe.destino !== app) return false;
+  try { localStorage.removeItem('sei_ponte'); } catch (e) { /* ignora */ }
+  if (Date.now() - Number(passe.criado || 0) > 60000) return false;
+  const res = await api('auth/ponte-usar', { codigo: passe.codigo, app });
+  if (!res.ok) { mostrarErroLogin(res.erro || 'Não foi possível entrar pelo atalho. Entre com login e senha.'); return false; }
+  await _entrarComResposta(res);
+  return true;
 }
 
 // ==================== CORES DOS ALERTAS ====================
