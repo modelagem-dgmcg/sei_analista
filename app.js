@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v23.9 — app.js
-// Versão gerada em 01/10/2026 15:08 (horário de Recife)
+// SEI ANALISTA v24.0 — app.js
+// Versão gerada em 05/10/2026 08:50 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v23.9';
-const VERSAO_APP_DATA = '01/10/2026 15:08';
+const VERSAO_APP = 'v24.0';
+const VERSAO_APP_DATA = '05/10/2026 08:50';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -2684,9 +2684,93 @@ function conferirAnualMensalPorCodigo(textoIntegral) {
   return achados;
 }
 
+// 4) Valor por extenso: escreve o número por extenso por código e compara com o que o
+// documento traz entre parênteses logo depois do valor. Só vira achado quando NÃO bate.
+const _UNID = ['', 'um', 'dois', 'tres', 'quatro', 'cinco', 'seis', 'sete', 'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'quatorze', 'quinze', 'dezesseis', 'dezessete', 'dezoito', 'dezenove'];
+const _DEZ = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta', 'setenta', 'oitenta', 'noventa'];
+const _CEM = ['', 'cento', 'duzentos', 'trezentos', 'quatrocentos', 'quinhentos', 'seiscentos', 'setecentos', 'oitocentos', 'novecentos'];
+
+function _trioPorExtenso(n) {
+  if (n === 100) return 'cem';
+  const partes = [], c = Math.floor(n / 100), r = n % 100;
+  if (c) partes.push(_CEM[c]);
+  if (r && r < 20) partes.push(_UNID[r]);
+  else if (r) partes.push(_DEZ[Math.floor(r / 10)] + (r % 10 ? ' e ' + _UNID[r % 10] : ''));
+  return partes.join(' e ');
+}
+
+function _inteiroPorExtenso(n) {
+  if (n === 0) return 'zero';
+  const grupos = [['bilhao', 'bilhoes'], ['milhao', 'milhoes'], ['mil', 'mil'], ['', '']];
+  const partes = [];
+  let resto = n;
+  [1e9, 1e6, 1e3, 1].forEach((div, i) => {
+    const q = Math.floor(resto / div); resto = resto % div;
+    if (!q) return;
+    const nome = q === 1 ? grupos[i][0] : grupos[i][1];
+    partes.push((i === 2 && q === 1 ? '' : _trioPorExtenso(q)) + (nome ? ' ' + nome : ''));
+  });
+  return partes.join(' ').trim();
+}
+
+function valorPorExtenso(valor) {
+  const reais = Math.floor(valor + 1e-9), centavos = Math.round((valor - reais) * 100);
+  const partes = [];
+  if (reais) partes.push(_inteiroPorExtenso(reais) + (reais % 1e6 === 0 ? ' de' : '') + (reais === 1 ? ' real' : ' reais'));
+  if (centavos) partes.push(_inteiroPorExtenso(centavos) + (centavos === 1 ? ' centavo' : ' centavos'));
+  return partes.join(' e ') || 'zero reais';
+}
+
+// Forma comparável: sem acento, sem pontuação, sem "e"/"de", "hum" = "um", "um mil" = "mil"
+function _normalizarExtenso(t) {
+  const p = String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/).filter(x => x && x !== 'e' && x !== 'de').map(x => x === 'hum' ? 'um' : x === 'catorze' ? 'quatorze' : x);
+  const saida = [];
+  p.forEach((x, i) => { if (x === 'um' && p[i + 1] === 'mil' && (i === 0 || !_ehNumeroPorExtenso(p[i - 1]))) return; saida.push(x); });
+  return saida.join(' ');
+}
+function _ehNumeroPorExtenso(x) {
+  return _UNID.includes(x) || _DEZ.includes(x) || _CEM.includes(x) || x === 'cem';
+}
+
+function conferirExtensoPorCodigo(textoIntegral) {
+  const achados = [], vistos = new Set();
+  const regex = /R\$\s?([\d.]+,\d{2})\s*\(([^)]{6,260})\)/g;
+  dividirPorDocumento(textoIntegral).forEach(d => {
+    let m;
+    regex.lastIndex = 0;
+    while ((m = regex.exec(d.texto)) !== null) {
+      const escrito = m[2].replace(/\s+/g, ' ').trim();
+      if (!/\b(reais|real|centavos?)\b/i.test(escrito)) continue;   // parênteses que não são o extenso
+      const valor = _numeroBR(m[1]);
+      if (valor === null) continue;
+      const correto = valorPorExtenso(valor);
+      if (_normalizarExtenso(escrito) === _normalizarExtenso(correto)) continue;
+      const chave = m[1] + '|' + _normalizarExtenso(escrito);
+      if (vistos.has(chave) || achados.length >= 10) continue;
+      vistos.add(chave);
+      const pagina = _paginaNaPosicao(d.texto, m.index);
+      achados.push({
+        tag: 'Cálculo', setor: 'SFCG',
+        titulo: 'Valor por extenso não corresponde ao número',
+        evidencia: m[0].replace(/\s+/g, ' ').trim(),
+        explicacao: `O documento traz R$ ${m[1]}, mas o extenso escrito ao lado diz outra coisa. Comparação feita por código, não pela IA.`,
+        sugestao: 'Confira qual dos dois está certo (o número ou o extenso) e corrija o outro. Em contratos e aditivos, a divergência entre número e extenso costuma gerar questionamento sobre qual vale.',
+        calculo: [
+          ['Valor em número', 'R$ ' + m[1]],
+          ['Extenso no documento', escrito],
+          ['Extenso correto do número', correto.replace(/milhao/g, 'milhão').replace(/milhoes/g, 'milhões').replace(/bilhao/g, 'bilhão').replace(/bilhoes/g, 'bilhões').replace(/\btres\b/g, 'três')]
+        ],
+        doc_origem: d.nome, pagina, verificar: true, conferido_por_codigo: true
+      });
+    }
+  });
+  return achados;
+}
+
 function conferirContasPorCodigo(textoIntegral) {
   try {
-    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral), ...conferirAnualMensalPorCodigo(textoIntegral)];
+    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral), ...conferirAnualMensalPorCodigo(textoIntegral), ...conferirExtensoPorCodigo(textoIntegral)];
   } catch (e) {
     console.warn('Conferência de contas por código falhou:', e.message);
     return [];
@@ -2798,6 +2882,28 @@ function _lerCardsDaResposta(txt) {
   }
   if (!cards.length) throw new Error('A IA respondeu, mas a resposta não pôde ser lida como lista de achados.');
   return cards;
+}
+
+
+// A IA às vezes devolve como "achado" algo que ela conferiu e estava certo ("o extenso está
+// correto", "nenhuma ação necessária"). Isso não é achado: sai da lista, mas fica visível
+// numa linha discreta, para nada sumir sem você saber.
+function _eConferenciaSemProblema(c) {
+  if (!c || c.conferido_por_codigo) return false;
+  const sug = String(c.sugestao || '').trim();
+  const exp = String(c.explicacao || '');
+  const semAcao = /^(nenhuma\s+(a[çc][ãa]o|corre[çc][ãa]o|provid[êe]ncia)|n[ãa]o\s+h[áa]\s+(nada|a[çc][ãa]o|necessidade)|nada\s+a\s+(fazer|corrigir)|sem\s+a[çc][ãa]o)/i.test(sug);
+  const semProblema = /n[ãa]o\s+h[áa]\s+(nenhuma\s+)?(inconsist[êe]ncia|diverg[êe]ncia|erro|problema)(\s+real)?(\s+neste\s+item)?\s*[.;]?\s*$/i.test(exp)
+    || /n[ãa]o\s+h[áa]\s+(nenhuma\s+)?(inconsist[êe]ncia|diverg[êe]ncia)\s+real/i.test(exp);
+  return semAcao || semProblema;
+}
+
+function _avisoConferidosCorretos(lista) {
+  if (!lista || !lista.length) return '';
+  return `<details style="margin-top:8px; font-size:0.8rem; color:#6c757d;">
+    <summary style="cursor:pointer;"><i class="ti ti-circle-check"></i> ${lista.length} item(ns) conferido(s) pela IA estavam corretos e não viraram achado</summary>
+    <ul style="margin:6px 0 0 18px; padding:0;">${lista.map(c => `<li>${escHtml(c.titulo || '')}${c.doc_origem ? ' — ' + escHtml(c.doc_origem) : ''}</li>`).join('')}</ul>
+  </details>`;
 }
 
 async function rodarRaioX() {
@@ -2926,7 +3032,9 @@ REGRAS DE CHECAGEM:
    que confirmar antes de decidir, em vez de chutar um lado. Nunca invente uma sugestão sem base.
 
 MUITO IMPORTANTE: se não houver inconsistência real e verificável, retorne {"cards": []}. Nunca
-invente achado pra preencher a resposta.
+invente achado pra preencher a resposta. NÃO inclua itens que você conferiu e estão corretos: só entra
+no JSON o que precisa de correção ou de verificação humana. Valores por extenso, somas de tabela e a
+relação entre valor anual e mensal já são conferidos por código; não repita essas conferências.
 
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
 {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}
@@ -2974,7 +3082,8 @@ ___TEXTO_DO_LOTE___`;
     }
     if (falhasLote.length === lotes.length) throw new Error(falhasLote[0].erro);
     const jsonStr = respostasIA.join('\n\n--- LOTE ---\n\n');
-    const achadosIA = cardsIA.map(c => {
+    const conferidosCorretos = cardsIA.filter(_eConferenciaSemProblema);
+    const achadosIA = cardsIA.filter(c => !_eConferenciaSemProblema(c)).map(c => {
       // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
       if (c.baseado_em_fonte_externa) c.verificar = true;
       return c;
@@ -2984,7 +3093,7 @@ ___TEXTO_DO_LOTE___`;
     renderizarCards(window.achadosAtuais);
     st.innerHTML = (falhasLote.length
       ? `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;"><i class="ti ti-alert-triangle"></i> ${falhasLote.length} de ${lotes.length} lote(s) não foram analisados pela IA (lote ${falhasLote.map(f => f.lote).join(', ')}). Os achados acima cobrem só os demais. Rode a checagem de novo em alguns minutos para completar.</div>`
-      : '') + renderPainelMascaramento(window._mascaramentoAcumulado);
+      : '') + _avisoConferidosCorretos(conferidosCorretos) + renderPainelMascaramento(window._mascaramentoAcumulado);
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     st.innerHTML = renderErroAmigavel(e.message);
