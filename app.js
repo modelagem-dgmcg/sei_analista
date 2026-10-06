@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.1 — app.js
-// Versão gerada em 05/10/2026 13:24 (horário de Recife)
+// SEI ANALISTA v24.2 — app.js
+// Versão gerada em 06/10/2026 08:10 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.1';
-const VERSAO_APP_DATA = '05/10/2026 13:24';
+const VERSAO_APP = 'v24.2';
+const VERSAO_APP_DATA = '06/10/2026 08:10';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -720,7 +720,10 @@ function _mostrarBotaoGestao() {
 // para a frente. O passe vale 60 segundos, uma vez só, e só para quem o pediu.
 async function irParaOutroApp(destino) {
   const nomeAba = destino === 'gestao' ? 'sei_gestao' : 'sei_analista';
-  const endereco = destino === 'gestao' ? 'gestao/' : '../';
+  // Endereço completo, sempre a partir da pasta do repositório (ex.: /sei_analista/), para não
+  // depender de o endereço atual terminar ou não com barra.
+  const repo = '/' + (location.pathname.split('/').filter(Boolean)[0] || 'sei_analista') + '/';
+  const endereco = location.origin + repo + (destino === 'gestao' ? 'gestao/' : '');
   let aba = null;
   try { aba = window.open('', nomeAba); } catch (e) { aba = null; }   // abre já no clique (evita bloqueio de pop-up)
   try { if (aba && aba.__seiLogado) { aba.focus(); return; } } catch (e) { /* aba de outro endereço */ }
