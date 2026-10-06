@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 05/10/2026 13:24 (horário de Recife)
+  Versão gerada em 06/10/2026 08:10 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -111,8 +111,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.4';
-const VERSAO_GESTAO_DATA = '05/10/2026 13:24';
+const VERSAO_GESTAO = 'v1.5';
+const VERSAO_GESTAO_DATA = '06/10/2026 08:10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -195,7 +195,10 @@ function _entrarGestao(res) {
 // ==================== TROCA ENTRE OS APPS (passe de uso único) ====================
 async function irParaOutroApp(destino) {
   const nomeAba = destino === 'gestao' ? 'sei_gestao' : 'sei_analista';
-  const endereco = destino === 'gestao' ? './' : '../';
+  // Endereço completo, sempre a partir da pasta do repositório (ex.: /sei_analista/), para não
+  // depender de o endereço atual terminar ou não com barra.
+  const repo = '/' + (location.pathname.split('/').filter(Boolean)[0] || 'sei_analista') + '/';
+  const endereco = location.origin + repo + (destino === 'gestao' ? 'gestao/' : '');
   let aba = null;
   try { aba = window.open('', nomeAba); } catch (e) { aba = null; }
   try { if (aba && aba.__seiLogado) { aba.focus(); return; } } catch (e) { /* ignora */ }
