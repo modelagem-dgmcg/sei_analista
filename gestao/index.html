@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 06/10/2026 08:10 (horário de Recife)
+  Versão gerada em 07/10/2026 08:10 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -111,8 +111,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.5';
-const VERSAO_GESTAO_DATA = '06/10/2026 08:10';
+const VERSAO_GESTAO = 'v1.6';
+const VERSAO_GESTAO_DATA = '07/10/2026 08:10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -223,8 +223,45 @@ async function _entrarComPasse(app) {
   _entrarGestao(res);
   return true;
 }
+
+// ==================== AVISO DE VERSÃO NOVA ====================
+// Cada aparelho compara a versão que está rodando com a que está publicada. Se mudou, aparece
+// uma faixa com o botão Atualizar. Nada recarrega sozinho, para não perder o que você está escrevendo.
+let _ultimaChecagemVersao = 0;
+function _mostrarFaixaVersaoNova(rotulo) {
+  if (document.getElementById('faixa-versao-nova')) return;
+  const f = document.createElement('div');
+  f.id = 'faixa-versao-nova';
+  f.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:2000; background:#1a1d20; color:#f8f9fa; padding:10px 14px; border-radius:8px; font-size:0.85rem; display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; box-shadow:0 6px 20px rgba(0,0,0,0.3); max-width:92vw;';
+  f.innerHTML = `<span>Há uma versão nova (${String(rotulo).replace(/</g, '&lt;')}). Salve o que estiver escrevendo e atualize.</span>
+    <button class="btn btn-sm" style="background:#d97706; color:#fff;" onclick="atualizarParaVersaoNova()">Atualizar</button>
+    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('faixa-versao-nova').remove()">Depois</button>`;
+  document.body.appendChild(f);
+}
+async function atualizarParaVersaoNova() {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); } catch (e) { /* sem service worker */ }
+  try { const chaves = await caches.keys(); await Promise.all(chaves.map(k => caches.delete(k))); } catch (e) { /* sem cache */ }
+  location.reload();
+}
+function _iniciarVigiaDeVersao() {
+  setTimeout(() => verificarVersaoNova(true), 4000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verificarVersaoNova(); });
+  setInterval(() => verificarVersaoNova(), 15 * 60 * 1000);
+}
+
+async function verificarVersaoNova(forcar = false) {
+  if (!forcar && Date.now() - _ultimaChecagemVersao < 5 * 60 * 1000) return;
+  _ultimaChecagemVersao = Date.now();
+  try {
+    const r = await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const t = await r.text();
+    const v = t.match(/const VERSAO_GESTAO\s*=\s*'([^']+)'/), d = t.match(/const VERSAO_GESTAO_DATA\s*=\s*'([^']+)'/);
+    if (v && (v[1] !== VERSAO_GESTAO || (d && d[1] !== VERSAO_GESTAO_DATA))) _mostrarFaixaVersaoNova(v[1] + (d ? ' · ' + d[1] : ''));
+  } catch (e) { /* sem rede: tenta de novo mais tarde */ }
+}
 window.name = 'sei_gestao';
-window.addEventListener('load', () => { _entrarComPasse('gestao'); });
+window.addEventListener('load', () => { _entrarComPasse('gestao'); _iniciarVigiaDeVersao(); });
 
 async function sair() {
   await api('auth/logout', {});
