@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 07/10/2026 08:10 (horário de Recife)
+  Versão gerada em 07/10/2026 12:05 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -99,6 +99,7 @@
     <a href="#" data-aba="hoje" onclick="abrirAba('hoje'); return false;">Hoje</a>
     <a href="#" data-aba="processos" onclick="abrirAba('processos'); return false;">Processos</a>
     <a href="#" data-aba="achados" onclick="abrirAba('achados'); return false;">Achados</a>
+    <a href="#" data-aba="incoerentes" onclick="abrirAba('incoerentes'); return false;">Incoerentes</a>
     <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
     <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
     <a href="#" data-aba="usuarios" onclick="abrirAba('usuarios'); return false;">Usuários e IA</a>
@@ -111,8 +112,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.6';
-const VERSAO_GESTAO_DATA = '07/10/2026 08:10';
+const VERSAO_GESTAO = 'v1.7';
+const VERSAO_GESTAO_DATA = '07/10/2026 12:05';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -126,7 +127,7 @@ const NOMES_ACOES = {
   RODOU_CHECAGEM: 'Rodou checagem', REVISOU_PARECER: 'Revisou parecer', PERGUNTOU_AO_PROCESSO: 'Perguntou ao processo',
   PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
-  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
+  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
   GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
   GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login'
@@ -272,7 +273,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios })[aba]();
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios, incoerentes: telaIncoerentes })[aba]();
 }
 function recarregar() { painel = null; abrirAba(abaAtual); }
 
@@ -738,6 +739,55 @@ async function removerChave(id) {
   const res = await api('adm/chaves-remover', { id });
   if (!res.ok) { alert(res.erro || 'Não foi possível apagar.'); return; }
   telaUsuarios();
+}
+
+// ==================== ABA INCOERENTES ====================
+// Achados que o analista analisou e marcou como incoerentes (com justificativa e senha).
+// Somem da tela do analista, mas ficam aqui para a gestão acompanhar. Nada é apagado.
+let _incoerencias = [];
+async function telaIncoerentes() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Buscando os achados marcados como incoerentes...');
+  const res = await api('adm/incoerencias-listar', {});
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  const ger = $('f-gerencia').value;
+  _incoerencias = (res.incoerencias || []).filter(x => !ger || x.gerencia === ger);
+  const ativos = _incoerencias.filter(x => x.situacao === 'INCOERENTE');
+  const contagem = {};
+  ativos.forEach(x => { const k = (x.tag ? x.tag + ': ' : '') + x.titulo; contagem[k] = (contagem[k] || 0) + 1; });
+  const topo = Object.entries(contagem).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const pessoas = [...new Set(_incoerencias.map(x => x.marcado_por_nome).filter(Boolean))].sort();
+  const tipos = [...new Set(_incoerencias.map(x => x.tag).filter(Boolean))].sort();
+  c.innerHTML = `<div class="bloco">
+    <h2><i class="ti ti-ban"></i> Achados marcados como incoerentes <small>${ativos.length} ativo(s), ${_incoerencias.length} no total</small></h2>
+    <div style="font-size:.8rem; color:var(--mudo); line-height:1.5; margin-bottom:10px;">Cada linha é um achado que o analista analisou e considerou fora de propósito neste processo, com a justificativa dele e a senha dele como confirmação. Um tipo de achado muito marcado costuma indicar uma regra do sistema que precisa de ajuste.</div>
+    ${topo.length ? `<div style="margin-bottom:12px;"><div style="font-size:.72rem; color:var(--mudo); text-transform:uppercase; margin-bottom:4px;">Tipos mais marcados</div>${topo.map(([k, n]) => `<span class="etq" style="margin:0 6px 6px 0;">${esc(k)}: ${n}</span>`).join('')}</div>` : ''}
+    <div class="filtros">
+      <div><label>Quem marcou</label><select id="fi-pessoa" onchange="filtrarIncoerentes()"><option value="">Todos</option>${pessoas.map(n => `<option>${esc(n)}</option>`).join('')}</select></div>
+      <div><label>Tipo</label><select id="fi-tipo" onchange="filtrarIncoerentes()"><option value="">Todos</option>${tipos.map(n => `<option>${esc(n)}</option>`).join('')}</select></div>
+      <div><label>Situação</label><select id="fi-situacao" onchange="filtrarIncoerentes()"><option value="">Todas</option><option value="INCOERENTE">Ativos</option><option value="REABERTO">Reabertos</option></select></div>
+      <div style="flex:1;"><label>Buscar</label><input id="fi-busca" placeholder="Achado, justificativa, processo ou unidade" oninput="filtrarIncoerentes()"></div>
+    </div><div id="lista-incoerentes"></div></div>`;
+  filtrarIncoerentes();
+}
+function filtrarIncoerentes() {
+  const pe = $('fi-pessoa').value, ti = $('fi-tipo').value, si = $('fi-situacao').value, b = $('fi-busca').value.trim().toLowerCase();
+  const lista = _incoerencias.filter(x => (!pe || x.marcado_por_nome === pe) && (!ti || x.tag === ti) && (!si || x.situacao === si)
+    && (!b || [x.titulo, x.justificativa, x.numero_sei, x.unidade, x.processo_titulo].join(' ').toLowerCase().includes(b)));
+  $('lista-incoerentes').innerHTML = lista.length ? `<div class="rolagem"><table class="tabela"><tr><th>Quando</th><th>Quem</th><th>Processo</th><th>Achado</th><th>Justificativa</th><th>Situação</th><th></th></tr>` +
+    lista.map(x => `<tr><td>${dataHora(x.marcado_em)}</td><td>${esc(x.marcado_por_nome)}</td>
+      <td><b>${esc(x.numero_sei || '(sem nº)')}</b><br>${esc(x.unidade)}</td>
+      <td>${x.tag ? `<span class="etq">${esc(x.tag)}</span><br>` : ''}${esc(x.titulo)}</td>
+      <td style="min-width:240px;">${esc(x.justificativa)}</td>
+      <td>${x.situacao === 'INCOERENTE' ? '<span class="etq azul">Ativo</span>' : `<span class="etq">Reaberto</span><br><span style="font-size:.72rem; color:var(--mudo);">por ${esc(x.reaberto_por_nome)} em ${dataHora(x.reaberto_em)}</span>`}</td>
+      <td>${x.situacao === 'INCOERENTE' ? `<button class="btn" onclick="reabrirIncoerenteGestao('${esc(x.id)}')" title="Faz o achado voltar para a tela do analista"><i class="ti ti-arrow-back-up"></i> Reabrir</button>` : ''}</td></tr>`).join('') + '</table></div>'
+    : '<div class="vazio">Nenhum achado marcado como incoerente com esses filtros.</div>';
+}
+async function reabrirIncoerenteGestao(id) {
+  if (!confirm('Reabrir este achado? Ele volta a aparecer na tela do analista.')) return;
+  const res = await api('achados/reabrir', { id });
+  if (!res.ok) { alert(res.erro || 'Não foi possível reabrir.'); return; }
+  telaIncoerentes();
 }
 </script>
 </body>
