@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.4 — app.js
-// Versão gerada em 07/10/2026 09:15 (horário de Recife)
+// SEI ANALISTA v24.5 — app.js
+// Versão gerada em 07/10/2026 10:40 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.4';
-const VERSAO_APP_DATA = '07/10/2026 09:15';
+const VERSAO_APP = 'v24.5';
+const VERSAO_APP_DATA = '07/10/2026 10:40';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1552,7 +1552,7 @@ async function abrirProcesso(identificador) {
     <!-- 2. PERGUNTAS AO PROCESSO -->
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-message-circle"></i> 2. Pergunte ao Processo</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Tire dúvidas específicas sobre os anexos. O sistema investiga os arquivos e aponta o embasamento com precisão cirúrgica.</p>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Tire dúvidas específicas sobre os anexos, ou peça um texto (nota técnica, despacho, parecer, ofício): o sistema confirma com você o tipo e os temas e monta o rascunho no card 3. <a href="#" onclick="usarExemploPedido(); return false;">Usar um exemplo de pedido</a></p>
       <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:stretch;">
         <div style="flex:1 1 420px; min-width:0; display:flex; flex-direction:column;">
           <div style="font-size:0.78rem; font-weight:600; color:#495057; margin-bottom:6px;"><i class="ti ti-messages"></i> Conversa de agora</div>
@@ -1560,7 +1560,7 @@ async function abrirProcesso(identificador) {
               <div id="chat-vazio" style="color: #adb5bd; font-size: 0.85rem; text-align: center; font-style: italic;">Faça uma pergunta abaixo. Tudo o que for perguntado neste processo fica guardado no histórico ao lado.</div>
           </div>
           <div style="display:flex; gap:10px;">
-             <input type="text" id="chat-input" placeholder="Ex: Qual o índice de reajuste da cláusula 4?" style="flex:1; min-width:0; padding:12px; border:1px solid #ced4da; border-radius:6px; outline:none; font-size: 0.95rem;" onkeypress="if(event.key === 'Enter') fazerPerguntaAoProcesso()">
+             <input type="text" id="chat-input" placeholder="Pergunte (ex.: qual o índice de reajuste da cláusula 4?) ou peça um texto (ex.: preciso de um despacho sobre...)" style="flex:1; min-width:0; padding:12px; border:1px solid #ced4da; border-radius:6px; outline:none; font-size: 0.95rem;" onkeypress="if(event.key === 'Enter') fazerPerguntaAoProcesso()">
              <button class="btn btn-primary" onclick="fazerPerguntaAoProcesso()" id="btn-perguntar"><i class="ti ti-send"></i> Perguntar</button>
           </div>
         </div>
@@ -1576,9 +1576,10 @@ async function abrirProcesso(identificador) {
 
     <!-- 3. PAINEL DE REVISÃO E LINGUAGEM SIMPLES -->
     <div style="background:#f8f9fa; border:1px dashed #adb5bd; padding:20px; border-radius:8px; margin-bottom:30px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Revisão e Auditoria de Parecer</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Cole seu parecer, nota técnica, ofício ou qualquer minuta abaixo. A IA cruza seu texto com os documentos originais do processo para apontar melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
-      <textarea id="editor-final" placeholder="Cole aqui o texto que você escreveu, pra ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
+      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Redação e Revisão</h3>
+      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Peça um rascunho no card 2, escrevendo o que precisa (por exemplo: "Preciso de uma nota técnica sobre a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade. Monte um modelo."). O rascunho aparece aqui, já preenchido com o que foi lido dos documentos e do histórico da unidade. Você também pode escrever ou colar um texto seu. A revisão cruza o texto com o processo e aponta melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
+      <div id="redacao-notas"></div>
+      <textarea id="editor-final" placeholder="O rascunho pedido no card 2 aparece aqui. Ou escreva/cole um texto seu, para ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
       <div style="display: flex; align-items: center; gap: 15px;">
           <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
@@ -1882,8 +1883,9 @@ async function processarVersaoAssinada(file) {
 function abrirCriarDocumento() {
   criarModal(`
     <h2 style="margin-bottom:8px; font-size:1.15rem;">Criar documento</h2>
-    <p style="font-size:0.88rem; line-height:1.6;">Esta função está aguardando os modelos padrão de nota técnica, parecer, minuta e ofício da DGMCG/GGPCG.</p>
-    <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Enquanto isso, use "Gerar tabela de dados" (no topo do processo) pra levar os números do processo pro seu documento, com a origem de cada um.</p>`);
+    <p style="font-size:0.88rem; line-height:1.6;">Descreva o que precisa no card 2 (Pergunte ao Processo). O sistema confirma o tipo e os temas e monta o rascunho no card 3, já preenchido com o que foi lido dos documentos.</p>
+    <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Exemplo: “${escHtml(EXEMPLO_PEDIDO_REDACAO)}”</p>
+    <button class="btn btn-primary btn-sm" onclick="usarExemploPedido()"><i class="ti ti-pencil"></i> Usar este exemplo no card 2</button>`);
 }
 
 // Identidade de um documento do SEI: o número que vem no nome do arquivo (ex.: 93592445 em
@@ -3776,11 +3778,199 @@ function fixarConsultaDoHistorico(chave) {
   fixarEvidenciaDaMemoria(chave);
 }
 
-async function fazerPerguntaAoProcesso() {
+// ==================== PEDIDO DE TEXTO NO "PERGUNTE AO PROCESSO" ====================
+// O card 2 vira o lugar de pedir ("preciso de uma nota técnica sobre..."); o sistema confirma o
+// tipo e os temas e monta o rascunho no card 3, já preenchido com o que foi lido dos documentos
+// e do histórico da unidade, com a fonte de cada fato entre colchetes e o que faltar como [preencher].
+const EXEMPLO_PEDIDO_REDACAO = 'Preciso de uma nota técnica sobre a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade. Monte um modelo.';
+
+const TIPOS_REDACAO = [
+  { nome: 'nota técnica', re: 'nota\\s+t[ée]cnica' },
+  { nome: 'parecer técnico', re: 'parecer(?:\\s+t[ée]cnico)?' },
+  { nome: 'despacho', re: 'despacho' },
+  { nome: 'ofício', re: 'of[ií]cio' },
+  { nome: 'relatório', re: 'relat[óo]rio' },
+  { nome: 'minuta', re: 'minuta' },
+  { nome: 'memorando', re: 'memorando' }
+];
+
+const ESTRUTURAS_RASCUNHO = {
+  'nota técnica': 'cabeçalho (NOTA TÉCNICA Nº [preencher]/ANO, assunto, unidade, OSS e processo SEI); 1. OBJETO; 2. HISTÓRICO E FUNDAMENTAÇÃO CONTRATUAL (contrato, aditivos e apostilamentos em ordem de data); 3. ANÁLISE (uma subseção por tema, com previsto, realizado e diferença quando houver números); 4. CONCLUSÃO E ENCAMINHAMENTO; local, data e assinatura em [preencher]',
+  'parecer técnico': 'ementa; 1. RELATÓRIO; 2. ANÁLISE TÉCNICA (um item por tema); 3. CONCLUSÃO; local, data e assinatura em [preencher]',
+  'despacho': 'DESPACHO; destinatário [preencher]; um parágrafo de referência ao processo; um a dois parágrafos de síntese dos pontos; um parágrafo com a providência solicitada; fecho em [preencher]',
+  'ofício': 'OFÍCIO Nº [preencher]; local e data; destinatário [preencher]; assunto; saudação; corpo em dois a quatro parágrafos; fecho; assinatura [preencher]',
+  'relatório': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]',
+  'minuta': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]',
+  'memorando': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]'
+};
+
+// Só considera pedido de texto quando há verbo de redigir ligado ao tipo de documento
+// ("fazer uma nota técnica", "preciso de um despacho"). "O que fazer com o despacho?" é pergunta.
+function _detectarPedidoDeRedacao(texto) {
+  const t = String(texto || '');
+  const det = '(?:(?:um|uma|o|a|os|as|nova|novo|outra|outro|essa|esse|nossa|nosso|minha|meu)\\s+){0,2}';
+  const verbos = '(?:fazer|redigir|montar|monte|escrever|escreva|elaborar|elabore|preparar|prepare|produzir|criar|crie|gerar|gere|minutar|minute|rascunhar|rascunhe)';
+  for (const tp of TIPOS_REDACAO) {
+    const p1 = new RegExp('\\b' + verbos + '\\s+' + det + tp.re + '\\b', 'i');
+    const p2 = new RegExp('\\b(?:preciso|precisamos|quero|queremos|necessito|necessitamos)\\s+d[eoa]\\s+' + det + tp.re + '\\b', 'i');
+    if (p1.test(t) || p2.test(t)) return { tipo: tp.nome, temas: _extrairTemasDoPedido(t) };
+  }
+  return null;
+}
+
+function _extrairTemasDoPedido(t) {
+  const m = String(t).match(/\b(?:sobre|acerca\s+d[eoa]s?|a\s+respeito\s+d[eoa]s?|referente\s+(?:a|ao|à)s?|com\s+foco\s+em|com\s+base\s+em)\s+(.+)/i);
+  if (!m) return [];
+  let resto = m[1].split(/[.!?\n]/)[0];
+  resto = resto.replace(/\s+(?:desta|dessa|da|nesta|nessa)\s+unidade\b.*$/i, '');   // "desta unidade" não é tema
+  return resto.split(/\s+(?:ou|e)\s+|,|;/i)
+    .map(s => s.trim().replace(/^(?:a|o|as|os|um|uma)\s+/i, ''))
+    .filter(s => s.length > 3).slice(0, 5);
+}
+
+function usarExemploPedido() {
+  fecharModal();
+  const i = document.getElementById('chat-input');
+  if (!i) return;
+  i.value = EXEMPLO_PEDIDO_REDACAO;
+  i.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  i.focus();
+}
+
+function _mostrarConfirmacaoRedacao(pergunta, pedido) {
+  const history = document.getElementById('chat-history');
+  document.getElementById('redacao-confirma')?.remove();
+  window._redacaoPendente = { pergunta, tipo: pedido.tipo, temas: pedido.temas };
+  const temas = pedido.temas.map(t => `<label style="display:flex; gap:6px; align-items:flex-start; font-size:0.85rem; margin:3px 0;"><input type="checkbox" class="redacao-tema" value="${escAttr(t)}" checked style="margin-top:3px;"> <span>${escHtml(t)}</span></label>`).join('');
+  history.insertAdjacentHTML('beforeend', `<div id="redacao-confirma" style="background:#fff; border:1px solid #adb5bd; border-radius:10px; padding:12px 14px; max-width:94%; font-size:0.88rem;">
+    <div style="margin-bottom:6px;"><i class="ti ti-file-text"></i> Entendi como pedido de texto: <strong>${escHtml(pedido.tipo)}</strong></div>
+    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:6px;">Seu pedido: “${escHtml(pergunta)}”</div>
+    ${temas ? `<div style="font-size:0.78rem; color:var(--text-muted);">Temas (desmarque o que não quer no texto):</div>${temas}` : '<div style="font-size:0.82rem; color:#854d0e;">Não identifiquei o tema. Escreva abaixo.</div>'}
+    <input id="redacao-outro-tema" placeholder="Outro tema ou observação (opcional)" style="width:100%; margin:8px 0; padding:8px; border:1px solid #ced4da; border-radius:6px; font-size:0.85rem;">
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" id="btn-montar-rascunho" onclick="montarRascunhoRedacao()"><i class="ti ti-pencil"></i> Montar rascunho no card 3</button>
+      <button class="btn btn-secondary btn-sm" onclick="tratarComoPergunta()">Não, é uma pergunta</button>
+    </div></div>`);
+  history.scrollTop = history.scrollHeight;
+}
+
+function tratarComoPergunta() {
+  const pend = window._redacaoPendente;
+  document.getElementById('redacao-confirma')?.remove();
+  if (pend) fazerPerguntaAoProcesso(pend.pergunta);
+}
+
+function _lerRespostaDoRascunho(resposta) {
+  const s = String(resposta || '');
+  let obj = null;
+  try { obj = JSON.parse(s); } catch (e) { obj = null; }
+  if (!obj) {
+    const m = s.match(/"texto"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"[a-z_]+"\s*:|\})\s*$/);
+    if (m) {
+      try { obj = { texto: JSON.parse('"' + m[1] + '"') }; } catch (e) { obj = { texto: m[1].replace(/\\n/g, '\n').replace(/\\"/g, '"') }; }
+    }
+  }
+  if (obj && typeof obj.texto === 'string' && obj.texto.trim()) {
+    return { texto: obj.texto.trim(), assumi: Array.isArray(obj.assumi) ? obj.assumi : [], faltou: Array.isArray(obj.faltou) ? obj.faltou : [] };
+  }
+  return { texto: s.replace(/```json|```/g, '').trim(), assumi: [], faltou: [] };
+}
+
+async function montarRascunhoRedacao() {
+  const pend = window._redacaoPendente;
+  if (!pend || !processoAtual) return;
+  const marcados = [...document.querySelectorAll('.redacao-tema:checked')].map(c => c.value);
+  const outro = (document.getElementById('redacao-outro-tema')?.value || '').trim();
+  const temas = outro ? [...marcados, outro] : marcados;
+  if (!temas.length) { alert('Escolha ou escreva pelo menos um tema.'); return; }
+  const botao = document.getElementById('btn-montar-rascunho');
+  if (botao) botao.disabled = true;
+  const notas = document.getElementById('redacao-notas');
+  const p = processoAtual;
+  notas.innerHTML = '<div style="font-size:0.85rem;"><span class="spinner"></span> Montando o rascunho a partir dos documentos e do histórico da unidade...</div>';
+  notas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  try {
+    const consulta = `${pend.tipo} ${temas.join(' ')} ${pend.pergunta}`;
+    const contexto = textoIntegralAtual.length > LIMITE_CHARS_LOTE
+      ? extrairTrechosRelevantes(textoIntegralAtual, consulta).substring(0, LIMITE_CHARS_LOTE)
+      : textoIntegralAtual;
+    let valores = '';
+    try { valores = _dadosExtraidosCompactos(textoIntegralAtual).substring(0, 40000); } catch (e) { valores = ''; }
+    const achados = (window.achadosAtuais || []).slice(0, 30).map(a => `- ${a.titulo}: ${a.explicacao}`).join('\n');
+    let historico = '';
+    if (p.unidade) {
+      try {
+        const r = await api('normas/buscar-por-unidade', { unidade: p.unidade });
+        if (r.ok && r.encontrado) historico = r.arquivos.map(a => `--- ${a.nome} ---\nVALORES: ${(a.valores || []).map(v => v.valor).join('; ')}\nDATAS: ${(a.datas || []).map(v => v.valor).join('; ')}`).join('\n');
+      } catch (e) { historico = ''; }
+    }
+    const prompt = `Você redige minutas para um analista da Secretaria de Saúde de Pernambuco (contratos de gestão com Organizações Sociais de Saúde). Monte um RASCUNHO de ${pend.tipo}.
+
+PEDIDO DO ANALISTA: "${pend.pergunta}"
+TEMAS A TRATAR:
+${temas.map(t => '- ' + t).join('\n')}
+UNIDADE: ${p.unidade || '[preencher]'} | OSS: ${p.oss || '[preencher]'} | PROCESSO SEI: ${p.numero_sei || '[preencher]'}
+
+REGRAS OBRIGATÓRIAS:
+1. Use SOMENTE fatos que estejam nos DOCUMENTOS, nos VALORES EXTRAÍDOS ou no HISTÓRICO abaixo. Nunca invente número, data, cláusula, nome ou norma.
+2. Ao lado de cada afirmação de fato, coloque a fonte entre colchetes: [SEI nº NÚMERO, p. PÁGINA]. O número SEI é o que aparece no nome do arquivo (ex.: 83015982_Anexo... vira 83015982); a página vem dos marcadores "--- PÁGINA N ---", quando houver. Sem página, só o número.
+3. O que faltar para sustentar um ponto vira um marcador [preencher: o que falta]. Não complete com suposição.
+4. Quando os temas vierem ligados por "ou", examine qual deles os documentos sustentam e escreva a conclusão conforme os números. Se os documentos mostrarem que o tema não se sustenta (por exemplo, meta atingida), diga isso com os números. Não force a conclusão.
+5. A informação mais recente prevalece: se contrato, aditivos e apostilamentos tratam do mesmo dado, use o mais recente e diga qual.
+6. Texto em português claro, parágrafos curtos, linguagem simples e formal. Texto puro: SEM markdown, sem asteriscos e sem listas com hífen no início da linha. Títulos das seções em MAIÚSCULAS e numerados.
+7. Deixe [preencher] em número do documento, data, destinatário e assinatura.
+8. Os PONTOS APONTADOS PELA CHECAGEM são pontos a confirmar, nunca fatos provados.
+
+ESTRUTURA: ${ESTRUTURAS_RASCUNHO[pend.tipo] || ESTRUTURAS_RASCUNHO['relatório']}
+
+Responda SOMENTE com JSON: {"assumi": ["o que você interpretou ou assumiu do pedido"], "faltou": ["informações que não encontrou nos documentos e ficaram como [preencher]"], "texto": "o rascunho completo"}
+
+VALORES EXTRAÍDOS POR CÓDIGO, POR DOCUMENTO:
+${valores || '(nenhum)'}
+
+HISTÓRICO CONTRATUAL DA UNIDADE (pasta do Drive; o casamento é por nome, confirme):
+${historico || '(nada encontrado)'}
+
+PONTOS APONTADOS PELA CHECAGEM:
+${achados || '(a checagem ainda não foi feita ou não apontou nada)'}
+
+DOCUMENTOS DO PROCESSO:
+${contexto}`;
+    const resposta = await invocarIAComFallback(prompt, false, notas);
+    const r = _lerRespostaDoRascunho(resposta);
+    const editor = document.getElementById('editor-final');
+    if (editor.value.trim() && !confirm('O card 3 já tem um texto. Substituir pelo rascunho? (Cancelar coloca o rascunho abaixo do texto atual.)')) {
+      editor.value = editor.value.trim() + '\n\n---------- RASCUNHO ----------\n\n' + r.texto;
+    } else {
+      editor.value = r.texto;
+    }
+    const cob = analisarCoberturaLeitura();
+    const aviso = [];
+    if (cob.faltam.length) aviso.push('faltam documentos na sequência (' + cob.faltam.map(n => '[' + String(n).padStart(2, '0') + ']').join(', ') + ')');
+    if (cob.semTexto.length) aviso.push(cob.semTexto.length + ' documento(s) sem texto lido');
+    if (cob.ocr.length) aviso.push(cob.ocr.length + ' documento(s) com páginas lidas por OCR');
+    if (cob.falhas.length) aviso.push(cob.falhas.length + ' aviso(s) de importação em aberto');
+    const lista = (titulo, itens) => itens.length ? `<div style="margin-top:6px;"><strong>${titulo}</strong><ul style="margin:4px 0 0 18px; padding:0;">${itens.map(i => `<li>${escHtml(i)}</li>`).join('')}</ul></div>` : '';
+    notas.innerHTML = `<div style="background:#e7f5ff; border-left:3px solid #339af0; padding:10px 12px; border-radius:4px; margin-bottom:12px; font-size:0.85rem; line-height:1.5;">
+      <strong>Rascunho de ${escHtml(pend.tipo)} montado abaixo.</strong> As fontes ficam entre colchetes, e o que faltou ficou como [preencher]. Confira cada fonte e apague os colchetes antes de assinar.
+      ${lista('O que assumi do seu pedido:', r.assumi)}${lista('O que faltou nos documentos:', r.faltou)}
+      ${aviso.length ? `<div style="margin-top:8px; color:#854d0e;"><i class="ti ti-alert-triangle"></i> A leitura do processo tem pontos de atenção (${escHtml(aviso.join('; '))}). O rascunho pode estar incompleto. Veja a Cobertura da leitura.</div>` : ''}
+    </div>`;
+    document.getElementById('redacao-confirma')?.remove();
+    document.getElementById('chat-history').insertAdjacentHTML('beforeend', `<div style="color:#2b8a3e; font-size:0.85rem;"><i class="ti ti-check"></i> Rascunho de ${escHtml(pend.tipo)} montado no card 3 (${escHtml(temas.join('; '))}).</div>`);
+    window._redacaoPendente = null;
+    editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } catch (e) {
+    notas.innerHTML = renderErroAmigavel(e.message);
+    if (botao) botao.disabled = false;
+  }
+}
+
+async function fazerPerguntaAoProcesso(textoForcado = null) {
   const input = document.getElementById('chat-input');
   const history = document.getElementById('chat-history');
   const btn = document.getElementById('btn-perguntar');
-  const pergunta = input.value.trim();
+  const pergunta = (typeof textoForcado === 'string' ? textoForcado : input.value).trim();
   if (!pergunta) return;
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) {
     history.innerHTML += `<div style="color:#c92a2a; font-size:0.85rem;">Nenhum documento importado neste processo ainda — importe antes de perguntar.</div>`;
@@ -3788,6 +3978,11 @@ async function fazerPerguntaAoProcesso() {
   }
 
   document.getElementById('chat-vazio')?.remove();
+  // Pedido de texto ("preciso de uma nota técnica sobre...") vai para a confirmação e para o card 3.
+  if (typeof textoForcado !== 'string') {
+    const pedido = _detectarPedidoDeRedacao(pergunta);
+    if (pedido) { input.value = ''; _mostrarConfirmacaoRedacao(pergunta, pedido); return; }
+  }
   history.innerHTML += `
       <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
           <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(pergunta)}
