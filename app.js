@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.5 — app.js
-// Versão gerada em 07/10/2026 10:40 (horário de Recife)
+// SEI ANALISTA v24.6 — app.js
+// Versão gerada em 07/10/2026 11:55 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.5';
-const VERSAO_APP_DATA = '07/10/2026 10:40';
+const VERSAO_APP = 'v24.6';
+const VERSAO_APP_DATA = '07/10/2026 11:55';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1425,6 +1425,7 @@ async function abrirProcesso(identificador) {
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
+  if (window._cobProcessoId !== processoAtual.id) { window._cobChecagem = null; window._ultimaChecagemSalva = null; window._cobProcessoId = processoAtual.id; }
   // Registra que o destinatário abriu o processo (aparece como "Visto" para quem encaminhou)
   api('processos/marcar-lido', { processo_id: processoAtual.id }, { fundo: true }).catch(() => {});
   _ultimoTextoRevisadoHash = null;
@@ -1611,6 +1612,8 @@ async function abrirProcesso(identificador) {
         : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Processo limpo.</span>`;
     }
     renderizarCards(achados);
+    window._ultimaChecagemSalva = { data: ultima.data, qtd: achados.length };
+    _atualizarCoberturaLeitura();
     const statusEl = document.getElementById('ia-status');
     if (statusEl) statusEl.innerHTML = `<div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;"><i class="ti ti-history"></i> Última checagem: ${new Date(ultima.data).toLocaleString('pt-BR')} — execute de novo se os documentos mudaram desde então.</div>`;
   }).catch(e => console.warn('Falha ao carregar última checagem:', e.message));
@@ -3060,12 +3063,13 @@ function _guardarFalhasImportacao(avisos) {
   avisos.forEach(a => atuais.push({ texto: String(a).slice(0, 300), quando: agora }));
   try { localStorage.setItem(_chaveFalhas(), JSON.stringify(atuais.slice(-50))); } catch (e) { /* sem armazenamento */ }
 }
-function dispensarFalhasImportacao() { try { localStorage.removeItem(_chaveFalhas()); } catch (e) { /* ignora */ } _atualizarCoberturaLeitura(); }
+function dispensarFalhasImportacao() { try { localStorage.removeItem(_chaveFalhas()); } catch (e) { /* ignora */ } _retirarAchadoDeIntegridade('Arquivos que não entraram'); _atualizarCoberturaLeitura(); }
 function _chaveFaltasOk() { return 'sei_faltas_ok_' + (processoAtual ? processoAtual.id : 'x'); }
 function _lerFaltasDispensadas() { try { return JSON.parse(localStorage.getItem(_chaveFaltasOk()) || '[]'); } catch (e) { return []; } }
 function dispensarFaltasSequencia() {
   const a = analisarCoberturaLeitura();
   try { localStorage.setItem(_chaveFaltasOk(), JSON.stringify([...new Set([..._lerFaltasDispensadas(), ...a.faltam])])); } catch (e) { /* ignora */ }
+  _retirarAchadoDeIntegridade('Faltam documentos');
   _atualizarCoberturaLeitura();
 }
 
@@ -3102,70 +3106,110 @@ function analisarCoberturaLeitura() {
       if (corpoPag.replace(/^\[leitura por OCR\]/, '').trim().length < 60) fracas.push(parseInt(m[1], 10));
     }
     if (ocr.length) res.ocr.push({ nome, total, paginas: ocr });
-    if (fracas.length) res.fracas.push({ nome, total, paginas: fracas });
+    if (fracas.length) res.fracas.push({ nome, total, paginas: fracas, grave: fracas.length === total || (total >= 4 && fracas.length / total >= 0.5) });
   });
   return res;
 }
 
-function _htmlCoberturaLeitura() {
-  const a = analisarCoberturaLeitura(), c = window._cobChecagem;
-  let atencao = 0;
+// O que exige ação do analista sobre a LEITURA do processo vira achado, igual aos demais:
+// documento que falta, documento que não foi lido, páginas lidas de imagem.
+function _achadosDeIntegridade() {
+  const a = analisarCoberturaLeitura();
   const rot = n => '[' + String(n).padStart(2, '0') + ']';
+  const lista = ns => ns.length === 1 ? rot(ns[0]) : ns.slice(0, -1).map(rot).join(', ') + ' e ' + rot(ns[ns.length - 1]);
+  const nomeSei = n => { const f = _nomeAmigavelDoc(n); return f.nome + (f.sei ? ' (SEI nº ' + f.sei + ')' : ''); };
+  const base = { tag: 'Leitura', setor: 'GGPCG', verificar: true, conferido_por_codigo: true, integridade: true };
+  const cards = [];
+  if (a.faltam.length) cards.push(Object.assign({}, base, {
+    titulo: 'Faltam documentos na numeração do processo',
+    explicacao: `Na numeração do processo não aparecem os documentos ${lista(a.faltam)}. Foram lidos ${a.total} documentos, e o último é o ${rot(a.ultimo)}.`,
+    sugestao: 'Confira no SEI se esses documentos foram cancelados. Se não foram, importe-os em "Adicionar mais arquivos", porque a checagem só vale para o que foi lido.',
+    acao: { rotulo: 'Foram cancelados, ignorar', js: 'dispensarFaltasSequencia()' } }));
+  if (a.duplicados.length) cards.push(Object.assign({}, base, {
+    titulo: 'Número repetido na numeração do processo',
+    explicacao: `O número ${lista(a.duplicados)} aparece em mais de um documento.`,
+    sugestao: 'Confira no SEI se algum documento foi importado duas vezes ou com a numeração errada.' }));
+  a.semTexto.forEach(n => cards.push(Object.assign({}, base, {
+    titulo: 'Documento sem texto lido', doc_origem: n,
+    explicacao: `Não foi possível ler nenhum texto de "${nomeSei(n)}". O conteúdo desse documento não foi conferido.`,
+    sugestao: 'Abra o documento no SEI e confira à mão. Se for imagem ou PDF escaneado, importe uma versão com texto, se existir.' })));
+  a.ocr.forEach(o => cards.push(Object.assign({}, base, {
+    titulo: 'Páginas lidas de imagem podem ter número trocado', doc_origem: o.nome,
+    explicacao: `Em "${nomeSei(o.nome)}", as páginas ${o.paginas.join(', ')} foram lidas de imagem (OCR). Nesse tipo de leitura, um número pode sair errado.`,
+    sugestao: 'Antes de aceitar um achado ou citar um valor dessas páginas, confira o número no documento original.' })));
+  a.fracas.filter(f => f.grave).forEach(f => cards.push(Object.assign({}, base, {
+    titulo: 'Documento quase sem texto', doc_origem: f.nome,
+    explicacao: `"${nomeSei(f.nome)}" tem ${f.paginas.length} de ${f.total} ${f.total === 1 ? 'página' : 'páginas'} quase sem texto. Pode ser um documento escaneado ou em imagem.`,
+    sugestao: 'Abra no SEI e veja se há conteúdo que o sistema não leu.' })));
+  if (a.falhas.length) cards.push(Object.assign({}, base, {
+    titulo: 'Arquivos que não entraram no processo',
+    explicacao: 'Estes arquivos deram problema na importação: ' + a.falhas.slice(-5).map(f => f.texto).join('; ') + '.',
+    sugestao: 'Importe-os de novo ou converta para um formato aceito (PDF, DOCX, XLSX, HTML).',
+    acao: { rotulo: 'Já resolvi, dispensar', js: 'dispensarFalhasImportacao()' } }));
+  return cards.slice(0, 15);
+}
+
+function _retirarAchadoDeIntegridade(prefixoTitulo) {
+  if (!Array.isArray(window.achadosAtuais)) return;
+  window.achadosAtuais = window.achadosAtuais.filter(c => !(c.integridade && String(c.titulo).startsWith(prefixoTitulo)));
+  if (document.getElementById('painel-cards')) renderizarCards(window.achadosAtuais);
+  const contadorEl = document.getElementById('contador-checagem');
+  if (contadorEl) contadorEl.innerHTML = window.achadosAtuais.length
+    ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>` : '';
+}
+
+function _htmlCoberturaLeitura() {
+  const a = analisarCoberturaLeitura(), c = window._cobChecagem, salva = window._ultimaChecagemSalva;
+  const problemas = _achadosDeIntegridade();
+  const rot = n => '[' + String(n).padStart(2, '0') + ']';
+  const pl = (n, s, p) => `${n} ${n === 1 ? s : p}`;
   const nomeCurto = n => { const f = _nomeAmigavelDoc(n); return escHtml(f.nome) + (f.sei ? ' (SEI nº ' + escHtml(f.sei) + ')' : ''); };
-  const linha = (t, cor) => `<div style="font-size:0.82rem; line-height:1.55; ${cor ? 'color:' + cor + ';' : ''}">${t}</div>`;
-  const secao = (titulo, corpo) => `<div style="margin-top:12px;"><div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">${titulo}</div>${corpo}</div>`;
-  const AVISO = '#854d0e';
+  const AVISO = '#854d0e', MUDO = 'var(--text-muted)';
+  const linha = (t, cor) => `<div style="font-size:0.84rem; line-height:1.55; margin-top:3px; ${cor ? 'color:' + cor + ';' : ''}">${t}</div>`;
+  const detalhes = (titulo, itens) => `<details style="margin-top:3px;"><summary style="cursor:pointer; font-size:0.82rem; color:${MUDO};">${titulo}</summary><ul style="margin:4px 0 0 18px; padding:0; font-size:0.82rem; color:${MUDO};">${itens.map(i => `<li>${i}</li>`).join('')}</ul></details>`;
+  const secao = (titulo, corpo) => `<div style="margin-top:14px;"><div style="font-size:0.72rem; font-weight:600; color:${MUDO}; text-transform:uppercase; letter-spacing:0.04em;">${titulo}</div>${corpo}</div>`;
 
-  let docs = linha(`${a.total} documento(s) integrado(s)${a.temSequencia ? ', numerados até ' + rot(a.ultimo) : ''}.`);
-  if (a.faltam.length) {
-    atencao++;
-    docs += linha(`<i class="ti ti-alert-triangle"></i> Faltam na sequência: ${a.faltam.map(rot).join(', ')}. Confira no SEI se foram cancelados ou se não chegaram a ser importados. <button class="btn btn-secondary btn-sm" style="margin-left:6px;" onclick="dispensarFaltasSequencia()">Está certo, ignorar</button>`, AVISO);
-  }
-  if (a.faltamDispensadas.length) docs += linha(`Números que você marcou como corretos: ${a.faltamDispensadas.map(rot).join(', ')}.`, 'var(--text-muted)');
-  if (a.duplicados.length) { atencao++; docs += linha(`<i class="ti ti-alert-triangle"></i> Número repetido na sequência: ${a.duplicados.map(rot).join(', ')}.`, AVISO); }
-  if (a.repetidos.length) docs += linha(`${a.repetidos.length} documento(s) têm texto idêntico a outro e entram na análise uma vez só: ${a.repetidos.slice(0, 4).map(nomeCurto).join('; ')}${a.repetidos.length > 4 ? '…' : ''}.`, 'var(--text-muted)');
+  let leitura = linha(`Foram lidos ${pl(a.total, 'documento', 'documentos')}${a.temSequencia ? ', numerados de [01] a ' + rot(a.ultimo) : ''}.`);
+  if (a.faltamDispensadas.length) leitura += linha(`Você marcou como cancelados: ${a.faltamDispensadas.map(rot).join(', ')}.`, MUDO);
+  if (a.repetidos.length) leitura += linha(`${pl(a.repetidos.length, 'documento repete', 'documentos repetem')} o texto de outro e foi lido uma vez só. É comum o mesmo anexo vir em mais de um aditivo.`, MUDO)
+    + detalhes('Ver quais', a.repetidos.map(nomeCurto));
+  const leves = a.fracas.filter(f => !f.grave);
+  if (leves.length) leitura += linha(`${pl(leves.length, 'documento tem', 'documentos têm')} página quase sem texto, provavelmente de assinatura.`, MUDO)
+    + detalhes('Ver quais', leves.map(f => `${nomeCurto(f.nome)}: ${f.paginas.length === 1 ? 'página' : 'páginas'} ${f.paginas.join(', ')}`));
 
-  let qual = '';
-  a.semTexto.forEach(n => { atencao++; qual += linha(`<i class="ti ti-alert-triangle"></i> ${nomeCurto(n)}: nenhum texto foi lido. O conteúdo deste documento NÃO foi conferido.`, AVISO); });
-  a.ocr.forEach(o => { atencao++; qual += linha(`<i class="ti ti-eye"></i> ${nomeCurto(o.nome)}: ${o.paginas.length} de ${o.total} página(s) lidas por OCR (${o.paginas.slice(0, 8).join(', ')}${o.paginas.length > 8 ? '…' : ''}). Confira os números dessas páginas.`, AVISO); });
-  a.fracas.forEach(f => {
-    const grave = f.paginas.length / f.total >= 0.5;
-    if (grave) atencao++;
-    qual += linha(`${grave ? '<i class="ti ti-alert-triangle"></i> ' : ''}${nomeCurto(f.nome)}: ${f.paginas.length} de ${f.total} página(s) com pouco texto (${f.paginas.slice(0, 8).join(', ')}${f.paginas.length > 8 ? '…' : ''}). ${grave ? 'Pode ser documento escaneado ou em imagem.' : 'Pode ser página de assinatura ou de imagem.'}`, grave ? AVISO : 'var(--text-muted)');
+  let conferir = '';
+  problemas.forEach(p => {
+    conferir += linha(`<i class="ti ti-alert-triangle"></i> ${escHtml(p.explicacao)}${p.acao ? ` <button class="btn btn-secondary btn-sm" style="margin-left:6px;" onclick="${escAttr(p.acao.js)}">${escHtml(p.acao.rotulo)}</button>` : ''}`, AVISO);
   });
-  if (!qual) qual = linha('Todos os documentos tiveram texto lido, sem páginas em OCR e sem páginas vazias.', '#2b8a3e');
-
-  let imp = '';
-  if (a.falhas.length) {
-    atencao++;
-    imp = a.falhas.slice(-8).map(f => linha(`<i class="ti ti-alert-triangle"></i> ${escHtml(f.texto)} <span style="color:var(--text-muted);">(${new Date(f.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})</span>`, AVISO)).join('')
-      + `<button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="dispensarFalhasImportacao()">Já resolvi, dispensar avisos</button>`;
-  }
+  let extra = 0;
+  if (c && c.iaPulada) { extra++; conferir += linha(`<i class="ti ti-player-pause"></i> A IA ainda não analisou, porque o processo é grande (${pl(c.lotes, 'parte', 'partes')}). Toque em "Executar Checagem" para ela analisar.`, AVISO); }
+  else if (c && c.iaFalhou) { extra++; conferir += linha('<i class="ti ti-alert-triangle"></i> A IA não respondeu nesta checagem. Só valem as contas feitas por código.', AVISO); }
+  else if (c && (c.lotesFalhos || []).length) { extra++; conferir += linha(`<i class="ti ti-alert-triangle"></i> A IA não conseguiu analisar ${c.lotesFalhos.length === 1 ? 'a parte' : 'as partes'} ${c.lotesFalhos.join(', ')} de ${c.lotes}. Rode a checagem de novo para completar.`, AVISO); }
+  const total = problemas.length + extra;
 
   let chec;
-  if (!c) chec = linha('Ainda não houve checagem deste processo nesta sessão.', 'var(--text-muted)');
-  else {
+  if (c) {
     chec = '';
     if (c.codigo) {
-      const k = c.codigo, tot = k.achados.somas + k.achados.rotulos + k.achados.anualMensal + k.achados.extensos;
-      chec += linha(`<i class="ti ti-calculator"></i> Por código: ${k.somas} soma(s) de tabela, ${k.rotulos} valor(es) com rótulo, ${k.anualMensal} par(es) anual × mensal e ${k.extensos} valor(es) por extenso examinados. Divergências: ${tot}.`);
+      const k = c.codigo, div = k.achados.somas + k.achados.rotulos + k.achados.anualMensal + k.achados.extensos;
+      chec += linha(`<i class="ti ti-calculator"></i> O sistema refez ${pl(k.somas, 'soma', 'somas')} de tabela, conferiu ${pl(k.extensos, 'valor', 'valores')} por extenso e comparou ${pl(k.anualMensal, 'par', 'pares')} de valor anual com mensal. Divergências: ${div}.`);
     }
-    if (c.iaPulada) { atencao++; chec += linha(`<i class="ti ti-player-pause"></i> A IA ainda não analisou: o processo é grande (${c.lotes} lotes). Toque em "Executar Checagem".`, AVISO); }
-    else if (c.iaFalhou) { atencao++; chec += linha('<i class="ti ti-alert-triangle"></i> A IA não respondeu nesta checagem. Só valem as conferências por código.', AVISO); }
-    else if (c.lotes) {
-      const falhos = (c.lotesFalhos || []).length, ok = c.lotes - falhos;
-      if (falhos) atencao++;
-      chec += linha(`${falhos ? '<i class="ti ti-alert-triangle"></i> ' : '<i class="ti ti-check"></i> '}IA: ${ok} de ${c.lotes} lote(s) analisado(s), cobrindo ${c.docsNaIA} de ${c.docsTotal} documento(s)${(c.servicos || []).length ? ' · ' + c.servicos.map(escHtml).join(', ') : ''}${falhos ? '. Lote(s) sem análise: ' + c.lotesFalhos.join(', ') + '.' : '.'}`, falhos ? AVISO : '');
+    if (!c.iaPulada && !c.iaFalhou && c.lotes) {
+      chec += linha(`<i class="ti ti-check"></i> A IA leu ${c.docsNaIA} de ${pl(c.docsTotal, 'documento', 'documentos')}, em ${pl(c.lotes, 'parte', 'partes')}${(c.servicos || []).length ? ' (' + c.servicos.map(escHtml).join(', ') + ')' : ''}.`);
     }
-    chec += linha(`Última checagem: ${new Date(c.quando).toLocaleString('pt-BR')}.`, 'var(--text-muted)');
+    chec += linha(`Checagem feita em ${new Date(c.quando).toLocaleString('pt-BR')}.`, MUDO);
+  } else if (salva) {
+    chec = linha(`Última checagem: ${new Date(salva.data).toLocaleString('pt-BR')}, com ${pl(salva.qtd, 'achado', 'achados')}. Rode de novo se algo mudou desde então.`);
+  } else {
+    chec = linha('A checagem ainda não rodou neste processo. Ela roda sozinha quando você adiciona arquivos; para rodar agora, toque em "Executar Checagem".');
   }
 
-  const chip = atencao
-    ? `<span style="background:#fff3cd; color:#664d03; padding:2px 10px; border-radius:10px; font-size:0.75rem;">${atencao} ponto(s) de atenção</span>`
-    : '<span style="background:#d1e7dd; color:#0f5132; padding:2px 10px; border-radius:10px; font-size:0.75rem;">leitura completa</span>';
-  return `<details ${atencao ? 'open' : ''} style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px;">
-    <summary style="cursor:pointer; font-size:0.95rem; font-weight:600;"><i class="ti ti-eye-check"></i> Cobertura da leitura ${chip}</summary>
-    ${secao('Documentos', docs)}${secao('Qualidade da leitura', qual)}${imp ? secao('Avisos da importação', imp) : ''}${secao('Conferência', chec)}
+  const chip = total
+    ? `<span style="background:#fff3cd; color:#664d03; padding:2px 10px; border-radius:10px; font-size:0.75rem;">${pl(total, 'ponto', 'pontos')} para conferir</span>`
+    : '<span style="background:#d1e7dd; color:#0f5132; padding:2px 10px; border-radius:10px; font-size:0.75rem;">tudo lido</span>';
+  return `<details ${total ? 'open' : ''} style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px;">
+    <summary style="cursor:pointer; font-size:0.95rem; font-weight:600;"><i class="ti ti-eye-check"></i> Leitura do processo ${chip}</summary>
+    ${secao('O que foi lido', leitura)}${conferir ? secao('Para conferir', conferir) : ''}${secao('Conferência', chec)}
   </details>`;
 }
 
@@ -3196,6 +3240,7 @@ async function rodarRaioX(automatica = false) {
   contadorEl.innerHTML = '';
   const p = processoAtual;
   window._provedoresQueResponderam = new Set();
+  window._cobProcessoId = processoAtual.id;
   window._cobChecagem = { quando: new Date().toISOString(), iaFalhou: false };
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 50) {
     return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
@@ -3225,17 +3270,20 @@ async function rodarRaioX(automatica = false) {
   }
 
   let achadosCodigo = [];
+  let achadosIntegridade = [];
   try {
     let dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
     if (dadosExtraidos.length > 150000) dadosExtraidos = _dadosExtraidosCompactos(textoIntegralAtual);
     // Contas conferidas por código ANTES da IA — cobertura garantida, mesmo se a IA falhar.
     achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
     window._cobChecagem.codigo = JSON.parse(JSON.stringify(_cobCodigo));
-    // As contas por código não dependem da IA: aparecem já, enquanto a IA ainda trabalha.
-    if (achadosCodigo.length) {
-      window.achadosAtuais = achadosCodigo;
-      renderizarCards(achadosCodigo);
-      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta até agora — a IA ainda está conferindo</span>`;
+    achadosIntegridade = _achadosDeIntegridade();
+    // O que não depende da IA aparece já, enquanto ela ainda trabalha.
+    const _jaPronto = [...achadosIntegridade, ...achadosCodigo];
+    if (_jaPronto.length) {
+      window.achadosAtuais = _jaPronto;
+      renderizarCards(_jaPronto);
+      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_jaPronto.length} inconsistência(s) até agora — a IA ainda está conferindo</span>`;
     }
 
     // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
@@ -3357,8 +3405,8 @@ ___TEXTO_DO_LOTE___`;
       window._cobChecagem.iaPulada = true;
       // Processo muito grande: não gasta a cota de IA sem você pedir.
       st.innerHTML = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.85rem;"><i class="ti ti-player-pause"></i> Este processo é grande (${lotes.length} lotes de IA). Mostrei só as contas conferidas por código. Toque em "Executar Checagem" para a IA analisar também.</div>`;
-      contadorEl.innerHTML = achadosCodigo.length
-        ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta, IA aguardando você</span>` : '';
+      contadorEl.innerHTML = (achadosCodigo.length + achadosIntegridade.length)
+        ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length + achadosIntegridade.length} inconsistência(s), IA aguardando você</span>` : '';
       return;
     }
     const cardsIA = [], respostasIA = [], falhasLote = [];
@@ -3399,7 +3447,7 @@ ___TEXTO_DO_LOTE___`;
       if (c.baseado_em_fonte_externa) c.verificar = true;
       return c;
     });
-    window.achadosAtuais = [...achadosCodigo, ...achadosIA];
+    window.achadosAtuais = [...achadosIntegridade, ...achadosCodigo, ...achadosIA];
     contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
     st.innerHTML = (falhasLote.length
@@ -3411,10 +3459,11 @@ ___TEXTO_DO_LOTE___`;
     st.innerHTML = renderErroAmigavel(e.message);
     // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
     // que ela achou, pra parte financeira nunca ficar sem cobertura.
-    if (achadosCodigo.length) {
-      window.achadosAtuais = achadosCodigo;
-      renderizarCards(achadosCodigo);
-      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta — a análise da IA não rodou</span>`;
+    const _semIA = [...achadosIntegridade, ...achadosCodigo];
+    if (_semIA.length) {
+      window.achadosAtuais = _semIA;
+      renderizarCards(_semIA);
+      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_semIA.length} inconsistência(s) — a análise da IA não rodou</span>`;
     }
   } finally {
     if (intervaloTimer) clearInterval(intervaloTimer);
@@ -3563,7 +3612,7 @@ function renderizarCards(cards) {
       </div>
       <div class="rx-body">
         <p style="font-size:0.9rem; line-height:1.6; margin:0;">${escHtml(c.explicacao)}</p>
-        ${_htmlOndeEsta(c, locsDoCard)}
+        ${c.integridade && !c.doc_origem ? '' : _htmlOndeEsta(c, locsDoCard)}
         ${c.setor ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">Setor responsável: ${escHtml(c.setor)}</div>` : ''}
         ${Array.isArray(c.calculo) && c.calculo.length ? `
         <div style="margin-top:10px; border:1px solid #dee2e6; border-radius:6px; overflow:hidden;">
@@ -3579,6 +3628,7 @@ function renderizarCards(cards) {
           ${c.evidencia ? `<button class="btn btn-sm btn-secondary" onclick="abrirTrechoDocumento('${cardId}')"><i class="ti ti-quote"></i> Ver trecho no documento</button>` : ''}
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
+          ${c.acao ? `<button class="btn btn-sm btn-secondary" onclick="${escAttr(c.acao.js)}">${escHtml(c.acao.rotulo)}</button>` : ''}
         </div>
         <div class="status-consulta-achado" style="margin-top:10px;"></div>
       </div>
