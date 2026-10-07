@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.7 — app.js
-// Versão gerada em 07/10/2026 14:31 (horário de Recife)
+// SEI ANALISTA v24.8 — app.js
+// Versão gerada em 07/10/2026 15:40 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.7';
-const VERSAO_APP_DATA = '07/10/2026 14:31';
+const VERSAO_APP = 'v24.8';
+const VERSAO_APP_DATA = '07/10/2026 15:40';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1425,7 +1425,7 @@ async function abrirProcesso(identificador) {
   const resProc = await api('processos/obter', isNaN(identificador) ? { numero_sei: identificador } : { id: identificador });
   if (!resProc.ok) { content.innerHTML = `<div class="alert alert-danger">Processo não encontrado: ${escHtml(resProc.erro || '')}</div>`; return; }
   processoAtual = resProc.processo;
-  if (window._cobProcessoId !== processoAtual.id) { window._cobChecagem = null; window._ultimaChecagemSalva = null; window._cobProcessoId = processoAtual.id; }
+  if (window._cobProcessoId !== processoAtual.id) { window._filtroSetores = new Set(); window._cobChecagem = null; window._ultimaChecagemSalva = null; window._cobProcessoId = processoAtual.id; }
   // Registra que o destinatário abriu o processo (aparece como "Visto" para quem encaminhou)
   api('processos/marcar-lido', { processo_id: processoAtual.id }, { fundo: true }).catch(() => {});
   _ultimoTextoRevisadoHash = null;
@@ -2557,53 +2557,134 @@ function _escanearDadosPessoais(texto) {
   return achados;
 }
 
-function exportarRelatorioAchados() {
-  if (!window.achadosAtuais || window.achadosAtuais.length === 0) return alert('Nenhum achado para exportar.');
+// ==================== FILTRO POR SETOR E EXPORTAÇÃO (WORD E PDF) ====================
+// A tela mostra tudo. Os botões de setor filtram o que aparece e o que será exportado: o que
+// você vê é o que sai no Word ou no PDF. Achado marcado como incoerente não entra.
+function _setorDe(c) { return String((c && c.setor) || '').trim() || 'Sem setor'; }
+function _ordenarSetores(lista) {
+  return lista.sort((a, b) => a === 'Sem setor' ? 1 : b === 'Sem setor' ? -1 : a.localeCompare(b, 'pt-BR'));
+}
+function _filtrarPorSetor(lista) {
+  const f = window._filtroSetores;
+  if (!f || !f.size) return lista || [];
+  return (lista || []).filter(c => f.has(_setorDe(c)));
+}
+function _achadosParaExportar() { return _filtrarPorSetor(_visiveis(window.achadosAtuais)); }
+function alternarFiltroSetor(i) {
+  const f = (window._filtroSetores = window._filtroSetores || new Set());
+  const setores = window._setoresDaLista || [];
+  if (i < 0) f.clear();
+  else if (setores[i] !== undefined) { if (f.has(setores[i])) f.delete(setores[i]); else f.add(setores[i]); }
+  renderizarCards(window.achadosAtuais || []);
+}
+function _htmlBarraFiltroEExportar(visiveis, filtrados) {
+  const contagem = new Map();
+  visiveis.forEach(c => contagem.set(_setorDe(c), (contagem.get(_setorDe(c)) || 0) + 1));
+  const setores = _ordenarSetores([...contagem.keys()]);
+  window._setoresDaLista = setores;
+  const f = window._filtroSetores || new Set();
+  const chips = setores.length > 1
+    ? `<div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;"><span style="font-size:0.8rem; color:var(--text-muted);">Setor:</span>
+        <button class="btn btn-sm ${f.size ? 'btn-secondary' : 'btn-primary'}" onclick="alternarFiltroSetor(-1)">Todos (${visiveis.length})</button>
+        ${setores.map((s, i) => `<button class="btn btn-sm ${f.has(s) ? 'btn-primary' : 'btn-secondary'}" onclick="alternarFiltroSetor(${i})">${escHtml(s)} (${contagem.get(s)})</button>`).join('')}</div>`
+    : '<span></span>';
+  const n = filtrados.length;
+  const botoes = `<div style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+      <button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados('doc')"><i class="ti ti-file-type-doc"></i> Exportar Word (.doc) · ${n}</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados('pdf')"><i class="ti ti-file-type-pdf"></i> Exportar PDF · ${n}</button></div>`;
+  const info = f.size && n !== visiveis.length
+    ? `<div style="font-size:0.8rem; color:var(--text-muted); margin:-6px 0 12px;"><i class="ti ti-filter"></i> Mostrando ${n} de ${visiveis.length} achados (${[...f].map(escHtml).join(', ')}). O relatório sai só com estes.</div>` : '';
+  return `<div style="margin-bottom:15px; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; align-items:center;">${chips}${botoes}</div>${info}`;
+}
 
-  // Varre título+explicação+evidência de cada achado — é o que efetivamente vai pro
-  // arquivo .doc que sai da ferramenta (e-mail, pen-drive, etc.), então é aqui que o
-  // aviso importa, não na tela de trabalho.
+function _htmlRelatorioAchados(lista, modoWord) {
+  const p = processoAtual || {};
+  const sei = p.numero_sei || String(p.id || '');
+  const f = window._filtroSetores || new Set();
+  const grupos = new Map();
+  lista.forEach(c => { const s = _setorDe(c); if (!grupos.has(s)) grupos.set(s, []); grupos.get(s).push(c); });
+  let n = 0;
+  const corpo = _ordenarSetores([...grupos.keys()]).map(s => {
+    const itens = grupos.get(s).map(c => {
+      n++;
+      let origem = '';
+      if (c.doc_origem && c.doc_origem !== 'undefined') {
+        const d = _nomeAmigavelDoc(c.doc_origem);
+        origem = `<p class="o">Onde está: ${escHtml(d.nome)}${d.sei ? ' (SEI nº ' + escHtml(d.sei) + ')' : ''}${c.pagina ? ', página ' + escHtml(String(c.pagina)) : ''}</p>`;
+      }
+      const calculo = Array.isArray(c.calculo) && c.calculo.length
+        ? `<p class="o"><strong>Memória de cálculo:</strong><br/>${c.calculo.map(l => `${escHtml(l[0])}: <strong>${escHtml(l[1])}</strong>`).join('<br/>')}</p>` : '';
+      const trecho = c.evidencia ? `<p class="o">Trecho citado: “${escHtml(String(c.evidencia).slice(0, 400))}”</p>` : '';
+      const fazer = c.sugestao ? `<p><strong>O que fazer:</strong> ${escHtml(c.sugestao)}</p>` : '';
+      return `<div class="achado"><p class="t"><strong>${n}. [${escHtml(c.tag)}] ${escHtml(c.titulo)}</strong></p>${origem}<p>${escHtml(c.explicacao)}</p>${calculo}${trecho}${fazer}</div>`;
+    }).join('');
+    return `<h2>${escHtml(s)} <span class="q">(${grupos.get(s).length})</span></h2>${itens}`;
+  }).join('');
+  const quem = (typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.nome) ? usuarioAtual.nome : '';
+  const css = `body{font-family:'Times New Roman',serif; font-size:12pt; color:#000;} h1{font-size:16pt; margin:0 0 6pt;} h2{font-size:13pt; border-bottom:1px solid #888; padding-bottom:2pt; margin:16pt 0 8pt;} .q{font-weight:normal; color:#555;}
+    .meta{font-size:10.5pt; color:#333; margin:0 0 4pt;} .achado{margin:0 0 12pt;} .t{margin:0 0 3pt;} .o{font-size:10.5pt; color:#333; margin:0 0 3pt;} p{margin:0 0 5pt;}
+    .rodape{margin-top:18pt; border-top:1px solid #888; padding-top:6pt; font-size:9.5pt; color:#444;}
+    ${modoWord ? '' : '@page{size:A4; margin:18mm;} .achado{page-break-inside:avoid;} h2{page-break-after:avoid;} .nao-imprimir{background:#fff3cd; padding:8px 12px; margin-bottom:12px; font-family:sans-serif; font-size:12px;} @media print{.nao-imprimir{display:none;}}'}`;
+  const cab = modoWord ? "<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>" : '<html lang="pt-BR">';
+  return `${cab}<head><meta charset="utf-8"><title>Achados ${escHtml(sei)}</title><style>${css}</style></head><body>
+    ${modoWord ? '' : '<div class="nao-imprimir">Na janela de impressão, escolha "Salvar como PDF" como destino.</div>'}
+    <h1>Relatório de achados</h1>
+    <p class="meta">Processo SEI nº ${escHtml(sei)}${p.titulo ? ' — ' + escHtml(p.titulo) : ''}</p>
+    <p class="meta">${p.unidade ? 'Unidade: ' + escHtml(p.unidade) : ''}${p.oss ? ' · OSS: ' + escHtml(p.oss) : ''}</p>
+    <p class="meta">${f.size ? 'Setor(es): ' + [...f].map(escHtml).join(', ') : 'Todos os setores'} · ${lista.length} ${lista.length === 1 ? 'achado' : 'achados'}</p>
+    ${corpo}
+    <p class="rodape">Gerado pelo SEI Analista ${escHtml(typeof VERSAO_APP !== 'undefined' ? VERSAO_APP : '')} em ${new Date().toLocaleString('pt-BR')}${quem ? ' por ' + escHtml(quem) : ''}. Os apontamentos são sugestões técnicas para conferência do analista; a decisão é sempre dele.</p>
+  </body></html>`;
+}
+
+function exportarRelatorioAchados(formato = 'doc') {
+  const lista = _achadosParaExportar();
+  if (!lista.length) return alert('Nenhum achado para exportar com o filtro atual.');
+
+  // Varre só o que vai sair no arquivo (título, explicação, trecho e sugestão): é aqui que o aviso
+  // de dado pessoal importa, porque o arquivo sai da ferramenta (e-mail, pen-drive, etc.).
   const avisos = [];
-  window.achadosAtuais.forEach((c, idx) => {
+  lista.forEach((c, idx) => {
     const textoJunto = [c.titulo, c.explicacao, c.evidencia, c.sugestao].filter(Boolean).join(' — ');
-    const tipos = _escanearDadosPessoais(textoJunto);
-    tipos.forEach(tipo => avisos.push({ tipo, achadoNum: idx + 1, titulo: c.titulo, doc: c.doc_origem || 'não identificado' }));
+    _escanearDadosPessoais(textoJunto).forEach(tipo => avisos.push({ tipo, achadoNum: idx + 1, titulo: c.titulo, doc: c.doc_origem || 'não identificado' }));
   });
 
   const painel = document.getElementById('painel-cards');
   if (avisos.length && painel) {
     const linhas = avisos.map(a => `<li style="margin-bottom:3px;"><strong>${escHtml(a.tipo)}</strong> — achado ${a.achadoNum} ("${escHtml(a.titulo)}"), doc. ${escHtml(a.doc)}</li>`).join('');
     const idAviso = 'aviso-export-' + Date.now();
-    const avisoHtml = `
+    painel.insertAdjacentHTML('afterbegin', `
       <div id="${idAviso}" style="background:#fff3cd; border:1px solid #ffeeba; border-radius:6px; padding:12px 16px; margin-bottom:15px;">
         <div style="font-weight:600; color:#856404; font-size:0.88rem; margin-bottom:6px;"><i class="ti ti-alert-triangle"></i> Este relatório vai sair da ferramenta com dado pessoal identificável:</div>
         <ul style="margin:0 0 10px 18px; font-size:0.82rem; color:#5c4600; padding:0;">${linhas}</ul>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-secondary btn-sm" onclick="document.getElementById('${idAviso}').remove()">Cancelar</button>
-          <button class="btn btn-warning btn-sm" onclick="document.getElementById('${idAviso}').remove(); _gerarArquivoRelatorioAchados();">Exportar mesmo assim</button>
+          <button class="btn btn-warning btn-sm" onclick="document.getElementById('${idAviso}').remove(); _gerarArquivoRelatorioAchados('${formato === 'pdf' ? 'pdf' : 'doc'}');">Exportar mesmo assim</button>
         </div>
-      </div>`;
-    painel.insertAdjacentHTML('afterbegin', avisoHtml);
+      </div>`);
     document.getElementById(idAviso).scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     return;
   }
-
-  _gerarArquivoRelatorioAchados();
+  _gerarArquivoRelatorioAchados(formato);
 }
 
-function _gerarArquivoRelatorioAchados() {
-  const sei = processoAtual.numero_sei || String(processoAtual.id);
-  let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
-  _visiveis(window.achadosAtuais).forEach((c, index) => {
-    htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}`;
-    if (Array.isArray(c.calculo) && c.calculo.length) htmlReport += `<br/><strong>Memória de cálculo:</strong><br/>` + c.calculo.map(l => `${escHtml(l[0])}: <strong>${escHtml(l[1])}</strong>`).join('<br/>');
-    if (c.sugestao) htmlReport += `<br/><strong>O que fazer:</strong> ${c.sugestao}`;
-    htmlReport += `</p>`;
-  });
-  htmlReport += "</body></html>";
-  const blob = new Blob(['\ufeff', htmlReport], { type: 'application/msword' });
+function _gerarArquivoRelatorioAchados(formato = 'doc') {
+  const lista = _achadosParaExportar();
+  if (!lista.length) return alert('Nenhum achado para exportar com o filtro atual.');
+  if (formato === 'pdf') {
+    // O PDF sai pela impressão do navegador: na janela que abre, o destino é "Salvar como PDF".
+    const jan = window.open('', '_blank');
+    if (!jan) return alert('O navegador bloqueou a janela do PDF. Permita pop-ups para este site e tente de novo.');
+    jan.document.open(); jan.document.write(_htmlRelatorioAchados(lista, false)); jan.document.close();
+    setTimeout(() => { try { jan.focus(); jan.print(); } catch (e) { /* o usuário imprime à mão */ } }, 500);
+    return;
+  }
+  const sei = String(processoAtual.numero_sei || processoAtual.id).replace(/[\/\\:*?"<>|]+/g, '-');
+  const f = window._filtroSetores || new Set();
+  const sufixo = f.size ? '_' + [...f].map(s => s.replace(/[^A-Za-z0-9]+/g, '')).join('-') : '';
+  const blob = new Blob(['\ufeff', _htmlRelatorioAchados(lista, true)], { type: 'application/msword' });
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob); link.download = `Achados_${sei}.doc`;
+  link.href = URL.createObjectURL(blob); link.download = `Achados_${sei}${sufixo}.doc`;
   document.body.appendChild(link); link.click(); document.body.removeChild(link);
 }
 
@@ -3736,8 +3817,15 @@ function renderizarCards(cards) {
   const nOcultos = todos.length - cards.length;
   const linhaOcultos = nOcultos ? `<div style="font-size:0.8rem; color:var(--text-muted); margin:0 0 10px;"><i class="ti ti-eye-off"></i> ${nOcultos} achado(s) marcado(s) como incoerente(s), fora desta lista. A gestão acompanha. <a href="#" onclick="abrirListaIncoerentes(); return false;">Ver</a></div>` : '';
   if (cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>' + linhaOcultos;
-  let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
+  // filtro de setor guardado que já não existe nesta lista é descartado
+  if (window._filtroSetores) {
+    const existentes = new Set(cards.map(_setorDe));
+    [...window._filtroSetores].forEach(s => { if (!existentes.has(s)) window._filtroSetores.delete(s); });
+  }
+  const filtrados = _filtrarPorSetor(cards);
+  let html = _htmlBarraFiltroEExportar(cards, filtrados);
   html += linhaOcultos;
+  cards = filtrados;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
