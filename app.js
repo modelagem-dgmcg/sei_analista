@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.2 — app.js
-// Versão gerada em 06/10/2026 08:10 (horário de Recife)
+// SEI ANALISTA v24.4 — app.js
+// Versão gerada em 07/10/2026 09:15 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.2';
-const VERSAO_APP_DATA = '06/10/2026 08:10';
+const VERSAO_APP = 'v24.4';
+const VERSAO_APP_DATA = '07/10/2026 09:15';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -94,8 +94,47 @@ let painelEvidenciasWin = null;
 window.memoriaEvidencias = {};
 window.achadosAtuais = [];
 
+
+// ==================== AVISO DE VERSÃO NOVA ====================
+// Cada aparelho compara a versão que está rodando com a que está publicada. Se mudou, aparece
+// uma faixa com o botão Atualizar. Nada recarrega sozinho, para não perder o que você está escrevendo.
+let _ultimaChecagemVersao = 0;
+function _mostrarFaixaVersaoNova(rotulo) {
+  if (document.getElementById('faixa-versao-nova')) return;
+  const f = document.createElement('div');
+  f.id = 'faixa-versao-nova';
+  f.style.cssText = 'position:fixed; left:50%; transform:translateX(-50%); bottom:18px; z-index:2000; background:#1a1d20; color:#f8f9fa; padding:10px 14px; border-radius:8px; font-size:0.85rem; display:flex; gap:12px; align-items:center; flex-wrap:wrap; justify-content:center; box-shadow:0 6px 20px rgba(0,0,0,0.3); max-width:92vw;';
+  f.innerHTML = `<span>Há uma versão nova (${String(rotulo).replace(/</g, '&lt;')}). Salve o que estiver escrevendo e atualize.</span>
+    <button class="btn btn-sm" style="background:#d97706; color:#fff;" onclick="atualizarParaVersaoNova()">Atualizar</button>
+    <button class="btn btn-sm btn-secondary" onclick="document.getElementById('faixa-versao-nova').remove()">Depois</button>`;
+  document.body.appendChild(f);
+}
+async function atualizarParaVersaoNova() {
+  try { const regs = await navigator.serviceWorker.getRegistrations(); await Promise.all(regs.map(r => r.update())); } catch (e) { /* sem service worker */ }
+  try { const chaves = await caches.keys(); await Promise.all(chaves.map(k => caches.delete(k))); } catch (e) { /* sem cache */ }
+  location.reload();
+}
+function _iniciarVigiaDeVersao() {
+  setTimeout(() => verificarVersaoNova(true), 4000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verificarVersaoNova(); });
+  setInterval(() => verificarVersaoNova(), 15 * 60 * 1000);
+}
+
+async function verificarVersaoNova(forcar = false) {
+  if (!forcar && Date.now() - _ultimaChecagemVersao < 5 * 60 * 1000) return;
+  _ultimaChecagemVersao = Date.now();
+  try {
+    const r = await fetch('app.js?v=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) return;
+    const t = await r.text();
+    const v = t.match(/const VERSAO_APP\s*=\s*'([^']+)'/), d = t.match(/const VERSAO_APP_DATA\s*=\s*'([^']+)'/);
+    if (v && (v[1] !== VERSAO_APP || (d && d[1] !== VERSAO_APP_DATA))) _mostrarFaixaVersaoNova(v[1] + (d ? ' · ' + d[1] : ''));
+  } catch (e) { /* sem rede: tenta de novo mais tarde */ }
+}
+
 window.onload = () => {
   window.name = 'sei_analista';
+  _iniciarVigiaDeVersao();
   _entrarComPasse('analista');
   verificarIA();
   injetarMarcaDagua();
@@ -125,13 +164,13 @@ const TEXTO_SOBRE_FERRAMENTA = `
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
     Antes de assinar qualquer documento, ele confere o processo inteiro. Verifica valores,
     datas, cálculos e indicadores de metas contratuais, além de identificar textos
-    duplicados ou copiados incorretamente. Se a soma de uma tabela não bater com o total
-    citado, ou se um número divergir entre os documentos, ele aponta o trecho exato e a
-    provável correção.
+    duplicados ou copiados incorretamente. Somas de tabelas, valores anuais e mensais e valores
+    por extenso são conferidos por código, como numa calculadora. Se uma conta não bater, ou
+    se um número divergir entre os documentos, ele aponta o trecho exato e a provável correção.
   </p>
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
-    Se você precisar consultar normas ou decisões de tribunais, o sistema busca e apresenta
-    as fontes estaduais e federais aplicáveis.
+    Se você precisar consultar normas ou decisões de tribunais, o sistema pode buscar fontes
+    estaduais e federais. Essa busca é experimental: confirme a fonte antes de citar em um parecer.
   </p>
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:12px;">
     Precisa localizar um dado sem precisar reler o processo inteiro? Basta fazer a pergunta
@@ -154,9 +193,15 @@ const TEXTO_SOBRE_FERRAMENTA = `
 
   <h3 style="font-size:1rem; margin-bottom:8px;">Sobre os dados</h3>
   <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
-    Antes de qualquer texto ser enviado para análise externa, os dados pessoais e as
-    informações sensíveis são ocultados automaticamente, conforme a LGPD. O sistema sempre
-    mostra de forma transparente o que foi protegido e em qual documento estava o registro.
+    Antes de qualquer texto ser enviado para análise externa, o sistema oculta os dados pessoais
+    que reconhece, como CPF, RG, contatos, dados bancários e a qualificação das partes, e mostra
+    o que foi protegido e em qual documento estava. A ocultação reduz o risco, mas não substitui
+    a sua conferência.
+  </p>
+  <p style="font-size:0.87rem; line-height:1.6; margin-bottom:18px;">
+    As ações feitas na ferramenta, como entrar, abrir, encaminhar ou concluir um processo, ficam
+    registradas com data, hora e usuário. Esse registro dá segurança e rastreabilidade ao trabalho
+    e pode ser consultado pela gestão. O conteúdo dos documentos não é copiado para o registro.
   </p>
 
   <h3 style="font-size:1rem; margin-bottom:8px;">Base legal e titularidade</h3>
@@ -1273,6 +1318,7 @@ async function salvarNovoProcesso() {
       }
     }
     _arquivoPrePreenchido = null;
+    window._autoChecagemPendente = true;
   }
   abrirProcesso(res.processo.numero_sei || String(res.processo.id));
 }
@@ -1388,6 +1434,7 @@ async function abrirProcesso(identificador) {
     api('tramitacoes/listar', { processo_id: processoAtual.id })
   ]);
   const docs = resDocs.documentos || [];
+  window._docsDoProcesso = docs;
   const blocos = resConteudo.blocos || [];
   const tramitacoes = resTram.tramitacoes || [];
   _ultimaTramitacaoRecebida = tramitacoes.find(t => String(t.para_usuario).toLowerCase() === usuarioAtual.email.toLowerCase()) || null;
@@ -1453,7 +1500,7 @@ async function abrirProcesso(identificador) {
         ${docsHtml}
       </div>
       <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Importar Arquivos</button>
+        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Adicionar mais arquivos</button>
         <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
         <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
         <div id="btn-status-processo" style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;"></div>
@@ -1542,6 +1589,11 @@ async function abrirProcesso(identificador) {
   `;
   content.innerHTML = html;
   _renderBotoesStatus(processoAtual.status);
+  _montarCoberturaLeitura();
+  if (window._autoChecagemPendente) {
+    window._autoChecagemPendente = false;
+    setTimeout(() => rodarRaioX(true), 400);   // checagem automática depois de importar
+  }
   window._historicoConsultas = [];
   carregarHistoricoConsultas(processoAtual.id);
   api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
@@ -1834,9 +1886,24 @@ function abrirCriarDocumento() {
     <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Enquanto isso, use "Gerar tabela de dados" (no topo do processo) pra levar os números do processo pro seu documento, com a origem de cada um.</p>`);
 }
 
+// Identidade de um documento do SEI: o número que vem no nome do arquivo (ex.: 93592445 em
+// "[28]-93592445_GOVPE___Parecer_Tecnico_272.html"). O "[28]" é só a posição na árvore.
+function _chaveDoDocumento(nome) {
+  const n = String(nome || '');
+  const sei = n.match(/(?:^|[^\d])(\d{6,})(?=[_\-. ]|$)/);
+  if (sei) return 'sei:' + sei[1];
+  return 'nome:' + n.replace(/^\s*\[\d+\]\s*-?\s*/, '').replace(/\.[a-z0-9]{2,5}$/i, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+function _documentosJaIntegrados() {
+  return new Set((window._docsDoProcesso || []).map(d => _chaveDoDocumento(d.nome_arquivo)));
+}
+
 function modalUploadZIP() {
   criarModal(`
-    <h2 style="margin-bottom:15px; font-size:1.2rem;">Importar Arquivos</h2>
+    <h2 style="margin-bottom:6px; font-size:1.2rem;">Adicionar arquivos ao processo</h2>
+    <p style="font-size:0.82rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">
+      Os arquivos novos se juntam aos ${(window._docsDoProcesso || []).length} já integrados, e a checagem considera todos. Pode trazer em quantos lotes quiser:
+      o que já está no processo (mesmo número SEI) é pulado, sem duplicar. Ao terminar, a checagem roda sozinha.</p>
     <div class="dropzone" id="dz-upload"
          ondragover="event.preventDefault(); this.style.borderColor='var(--action-amber)'; this.style.backgroundColor='#fff3cd';"
          ondragleave="event.preventDefault(); this.style.borderColor='#ced4da'; this.style.backgroundColor='#f8f9fa';"
@@ -1981,7 +2048,14 @@ async function processarUploadZIP(files) {
   const listaArquivos = Array.from(files || []);
   if (!listaArquivos.length) return;
   const avisos = [];
-  let importados = 0;
+  let importados = 0, jaExistiam = 0;
+  const integrados = _documentosJaIntegrados();
+  const _eNovo = nome => {
+    const k = _chaveDoDocumento(nome);
+    if (integrados.has(k)) { jaExistiam++; return false; }
+    integrados.add(k);
+    return true;
+  };
   for (const file of listaArquivos) {
     const nomeLower = file.name.toLowerCase();
     if (nomeLower.endsWith('.zip')) {
@@ -1991,6 +2065,7 @@ async function processarUploadZIP(files) {
           status.innerHTML = `<span class="spinner"></span> Processando ${escHtml(nome.substring(0, 70))}...`;
         });
         for (const a of arquivos) {
+          if (!_eNovo(a.nome)) continue;
           try {
             await salvarDocumentoNoBackend(a.nome, a.texto, a.sensiveis);
             importados++;
@@ -2002,6 +2077,7 @@ async function processarUploadZIP(files) {
         avisos.push(`${file.name}: não foi possível abrir o ZIP (${e.message})`);
       }
     } else if (EXTENSOES_SUPORTADAS.some(ext => nomeLower.endsWith(ext))) {
+      if (!_eNovo(file.name)) continue;
       status.innerHTML = `<span class="spinner"></span> Extraindo texto de ${escHtml(file.name)}...`;
       try {
         const buf = await file.arrayBuffer();
@@ -2018,10 +2094,13 @@ async function processarUploadZIP(files) {
       avisos.push(`${file.name}: tipo não suportado — NÃO importado`);
     }
   }
+  _guardarFalhasImportacao(avisos);
+  const repetidosTxt = jaExistiam ? ` ${jaExistiam} já estava(m) no processo e foi(ram) pulado(s).` : '';
   status.innerHTML = avisos.length
-    ? `<div class="alert alert-warning"><strong>${importados} importado(s), ${avisos.length} aviso(s):</strong><br>${avisos.map(escHtml).join('<br>')}</div>`
-    : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) importado(s) com sucesso!</div>`;
-  setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, avisos.length ? 4500 : 1800);
+    ? `<div class="alert alert-warning"><strong>${importados} novo(s) importado(s), ${avisos.length} aviso(s):</strong>${repetidosTxt}<br>${avisos.map(escHtml).join('<br>')}</div>`
+    : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) novo(s) importado(s).${repetidosTxt}${importados ? ' A checagem vai rodar sozinha.' : ''}</div>`;
+  if (importados > 0) window._autoChecagemPendente = true;
+  setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, (avisos.length || jaExistiam) ? 4500 : 1800);
 }
 
 async function extrairTextoPDF(buf, onProgresso) {
@@ -2045,7 +2124,7 @@ async function extrairTextoPDF(buf, onProgresso) {
         const ctx = canvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport }).promise;
         const textoOcr = await ocrImagem(canvas);
-        if (textoOcr.trim().length > textoPagina.trim().length) textoPagina = textoOcr;
+        if (textoOcr.trim().length > textoPagina.trim().length) textoPagina = '[leitura por OCR]\n' + textoOcr;
       } catch (e) {
         console.warn(`OCR falhou na página ${i}:`, e.message);
       }
@@ -2321,6 +2400,7 @@ async function _invocarIAComFallbackInterno(prompt, isChat = false, statusEl = n
       const promptDesteProvedor = id === 'ollama' ? prompt : promptMascarado;
       const r = await info.invocar(promptDesteProvedor, isChat, statusEl);
       estados[id] = 'ok';
+      (window._provedoresQueResponderam = window._provedoresQueResponderam || new Set()).add(info ? info.nome : id);
       renderPainelProvedores(statusEl, estados, 'Concluído.');
       return id === 'ollama' ? r : desmascararTexto(r, mapa);
     } catch (e) {
@@ -2548,11 +2628,11 @@ function extrairNumerosProcesso(texto) {
 function extrairCEPs(texto) { return [...new Set(texto.match(/\b\d{2}\.?\d{3}-\d{3}\b/g) || [])].slice(0, 10).map(v => ({ valor: v, contexto: extrairContexto(texto, v, 45) })); }
 
 function dividirPorDocumento(textoIntegral) {
-  const partes = textoIntegral.split(/--- DOC: (.+?) ---/).filter(p => p.trim().length > 0);
+  // split com grupo devolve [antes, nome1, texto1, nome2, texto2, ...]. Um documento de texto vazio
+  // continua existindo (texto ''), em vez de desalinhar o nome dos documentos seguintes.
+  const partes = String(textoIntegral || '').split(/--- DOC: (.+?) ---/);
   const docs = [];
-  for (let i = 0; i < partes.length; i += 2) {
-    if (partes[i + 1] !== undefined) docs.push({ nome: partes[i].trim(), texto: partes[i + 1] });
-  }
+  for (let i = 1; i < partes.length; i += 2) docs.push({ nome: partes[i].trim(), texto: partes[i + 1] !== undefined ? partes[i + 1] : '' });
   return docs;
 }
 
@@ -2619,6 +2699,7 @@ function conferirSomasPorCodigo(textoIntegral) {
       const mesmaQtd = itens.every(n => n.length === numsTotal.length);
       const colunas = mesmaQtd ? numsTotal.map((_, c) => c) : [null];
       colunas.forEach(c => {
+        _cobCodigo.somas++;
         const valorTotal = c === null ? numsTotal[numsTotal.length - 1] : numsTotal[c];
         const soma = itens.reduce((acc, n) => acc + (c === null ? n[n.length - 1] : n[c]), 0);
         if (Math.abs(soma - valorTotal) <= 0.01) return;
@@ -2655,6 +2736,7 @@ function conferirValoresRotuladosPorCodigo(textoIntegral) {
   });
 
   const achados = [];
+  _cobCodigo.rotulos += Object.keys(porRotulo).length;
   Object.entries(porRotulo).forEach(([rotulo, ocorrencias]) => {
     const distintos = [...new Set(ocorrencias.map(o => o.valor))];
     if (distintos.length < 2) return;
@@ -2706,6 +2788,7 @@ function conferirAnualMensalPorCodigo(textoIntegral) {
     const equivalente = Math.round(a.valor / 12 * 100) / 100;
     const razao = m.valor / equivalente;
     if (razao < 0.5 || razao > 1.5) return;             // ordens de grandeza diferentes: não é o mesmo valor
+    _cobCodigo.anualMensal++;
     const difMensal = Math.round((equivalente - m.valor) * 100) / 100;
     if (Math.abs(difMensal) <= 0.01) return;             // bate: nada a apontar
     const chave = a.valor + '|' + m.valor;
@@ -2793,6 +2876,7 @@ function conferirExtensoPorCodigo(textoIntegral) {
       if (!/\b(reais|real|centavos?)\b/i.test(escrito)) continue;   // parênteses que não são o extenso
       const valor = _numeroBR(m[1]);
       if (valor === null) continue;
+      _cobCodigo.extensos++;
       const correto = valorPorExtenso(valor);
       if (_normalizarExtenso(escrito) === _normalizarExtenso(correto)) continue;
       const chave = m[1] + '|' + _normalizarExtenso(escrito);
@@ -2817,9 +2901,17 @@ function conferirExtensoPorCodigo(textoIntegral) {
   return achados;
 }
 
+// O que cada conferência por código examinou (não só o que achou): é isso que mostra que o
+// silêncio significa "conferi e está certo", e não "não olhei".
+const _cobCodigo = { somas: 0, rotulos: 0, anualMensal: 0, extensos: 0, achados: { somas: 0, rotulos: 0, anualMensal: 0, extensos: 0 } };
+
 function conferirContasPorCodigo(textoIntegral) {
+  _cobCodigo.somas = _cobCodigo.rotulos = _cobCodigo.anualMensal = _cobCodigo.extensos = 0;
   try {
-    return [...conferirSomasPorCodigo(textoIntegral), ...conferirValoresRotuladosPorCodigo(textoIntegral), ...conferirAnualMensalPorCodigo(textoIntegral), ...conferirExtensoPorCodigo(textoIntegral)];
+    const a = conferirSomasPorCodigo(textoIntegral), b = conferirValoresRotuladosPorCodigo(textoIntegral),
+          c = conferirAnualMensalPorCodigo(textoIntegral), d = conferirExtensoPorCodigo(textoIntegral);
+    _cobCodigo.achados = { somas: a.length, rotulos: b.length, anualMensal: c.length, extensos: d.length };
+    return [...a, ...b, ...c, ...d];
   } catch (e) {
     console.warn('Conferência de contas por código falhou:', e.message);
     return [];
@@ -2955,11 +3047,154 @@ function _avisoConferidosCorretos(lista) {
   </details>`;
 }
 
-async function rodarRaioX() {
+// ==================== COBERTURA DA LEITURA ====================
+// Mostra o que entrou, o que faltou e com que qualidade foi lido, antes de qualquer achado
+// ser tratado como confiável. "Li tudo" só vale se isto estiver sem pontos de atenção.
+function _chaveFalhas() { return 'sei_falhas_' + (processoAtual ? processoAtual.id : 'x'); }
+function _lerFalhasImportacao() { try { return JSON.parse(localStorage.getItem(_chaveFalhas()) || '[]'); } catch (e) { return []; } }
+function _guardarFalhasImportacao(avisos) {
+  if (!avisos || !avisos.length) return;
+  const atuais = _lerFalhasImportacao(), agora = new Date().toISOString();
+  avisos.forEach(a => atuais.push({ texto: String(a).slice(0, 300), quando: agora }));
+  try { localStorage.setItem(_chaveFalhas(), JSON.stringify(atuais.slice(-50))); } catch (e) { /* sem armazenamento */ }
+}
+function dispensarFalhasImportacao() { try { localStorage.removeItem(_chaveFalhas()); } catch (e) { /* ignora */ } _atualizarCoberturaLeitura(); }
+function _chaveFaltasOk() { return 'sei_faltas_ok_' + (processoAtual ? processoAtual.id : 'x'); }
+function _lerFaltasDispensadas() { try { return JSON.parse(localStorage.getItem(_chaveFaltasOk()) || '[]'); } catch (e) { return []; } }
+function dispensarFaltasSequencia() {
+  const a = analisarCoberturaLeitura();
+  try { localStorage.setItem(_chaveFaltasOk(), JSON.stringify([...new Set([..._lerFaltasDispensadas(), ...a.faltam])])); } catch (e) { /* ignora */ }
+  _atualizarCoberturaLeitura();
+}
+
+function analisarCoberturaLeitura() {
+  const nomes = (window._docsDoProcesso || []).map(d => d.nome_arquivo);
+  const docsTexto = _docsDoTextoAtual();
+  const textoPorChave = new Map(docsTexto.map(d => [_chaveDoDocumento(d.nome), d]));
+  const res = { total: nomes.length, temSequencia: false, ultimo: null, faltam: [], faltamDispensadas: [], duplicados: [], semTexto: [], ocr: [], fracas: [], repetidos: [], falhas: _lerFalhasImportacao() };
+  const ordens = nomes.map(n => { const m = String(n).match(/^\s*\[(\d+)\]/); return m ? parseInt(m[1], 10) : null; });
+  const comOrdem = ordens.filter(x => x !== null);
+  if (nomes.length && comOrdem.length / nomes.length >= 0.6) {
+    res.temSequencia = true;
+    res.ultimo = Math.max(...comOrdem);
+    const vistos = new Map();
+    comOrdem.forEach(n => vistos.set(n, (vistos.get(n) || 0) + 1));
+    const dispensadas = new Set(_lerFaltasDispensadas());
+    for (let i = 1; i <= res.ultimo; i++) {
+      if (vistos.has(i)) continue;
+      (dispensadas.has(i) ? res.faltamDispensadas : res.faltam).push(i);
+    }
+    res.duplicados = [...vistos.entries()].filter(([, q]) => q > 1).map(([n]) => n);
+  }
+  nomes.forEach(nome => {
+    const d = textoPorChave.get(_chaveDoDocumento(nome));
+    if (!d) { res.repetidos.push(nome); return; }       // texto idêntico a outro documento: contado uma vez
+    const corpo = d.texto.replace(/--- PÁGINA \d+ ---/g, '').replace(/\[leitura por OCR\]/g, '').trim();
+    if (corpo.length < 30) { res.semTexto.push(nome); return; }
+    const re = /--- PÁGINA (\d+) ---\n([\s\S]*?)(?=\n--- PÁGINA \d+ ---|$)/g;
+    let m, total = 0; const fracas = [], ocr = [];
+    while ((m = re.exec(d.texto)) !== null) {
+      total++;
+      const corpoPag = m[2].trim();
+      if (/^\[leitura por OCR\]/.test(corpoPag)) ocr.push(parseInt(m[1], 10));
+      if (corpoPag.replace(/^\[leitura por OCR\]/, '').trim().length < 60) fracas.push(parseInt(m[1], 10));
+    }
+    if (ocr.length) res.ocr.push({ nome, total, paginas: ocr });
+    if (fracas.length) res.fracas.push({ nome, total, paginas: fracas });
+  });
+  return res;
+}
+
+function _htmlCoberturaLeitura() {
+  const a = analisarCoberturaLeitura(), c = window._cobChecagem;
+  let atencao = 0;
+  const rot = n => '[' + String(n).padStart(2, '0') + ']';
+  const nomeCurto = n => { const f = _nomeAmigavelDoc(n); return escHtml(f.nome) + (f.sei ? ' (SEI nº ' + escHtml(f.sei) + ')' : ''); };
+  const linha = (t, cor) => `<div style="font-size:0.82rem; line-height:1.55; ${cor ? 'color:' + cor + ';' : ''}">${t}</div>`;
+  const secao = (titulo, corpo) => `<div style="margin-top:12px;"><div style="font-size:0.72rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:4px;">${titulo}</div>${corpo}</div>`;
+  const AVISO = '#854d0e';
+
+  let docs = linha(`${a.total} documento(s) integrado(s)${a.temSequencia ? ', numerados até ' + rot(a.ultimo) : ''}.`);
+  if (a.faltam.length) {
+    atencao++;
+    docs += linha(`<i class="ti ti-alert-triangle"></i> Faltam na sequência: ${a.faltam.map(rot).join(', ')}. Confira no SEI se foram cancelados ou se não chegaram a ser importados. <button class="btn btn-secondary btn-sm" style="margin-left:6px;" onclick="dispensarFaltasSequencia()">Está certo, ignorar</button>`, AVISO);
+  }
+  if (a.faltamDispensadas.length) docs += linha(`Números que você marcou como corretos: ${a.faltamDispensadas.map(rot).join(', ')}.`, 'var(--text-muted)');
+  if (a.duplicados.length) { atencao++; docs += linha(`<i class="ti ti-alert-triangle"></i> Número repetido na sequência: ${a.duplicados.map(rot).join(', ')}.`, AVISO); }
+  if (a.repetidos.length) docs += linha(`${a.repetidos.length} documento(s) têm texto idêntico a outro e entram na análise uma vez só: ${a.repetidos.slice(0, 4).map(nomeCurto).join('; ')}${a.repetidos.length > 4 ? '…' : ''}.`, 'var(--text-muted)');
+
+  let qual = '';
+  a.semTexto.forEach(n => { atencao++; qual += linha(`<i class="ti ti-alert-triangle"></i> ${nomeCurto(n)}: nenhum texto foi lido. O conteúdo deste documento NÃO foi conferido.`, AVISO); });
+  a.ocr.forEach(o => { atencao++; qual += linha(`<i class="ti ti-eye"></i> ${nomeCurto(o.nome)}: ${o.paginas.length} de ${o.total} página(s) lidas por OCR (${o.paginas.slice(0, 8).join(', ')}${o.paginas.length > 8 ? '…' : ''}). Confira os números dessas páginas.`, AVISO); });
+  a.fracas.forEach(f => {
+    const grave = f.paginas.length / f.total >= 0.5;
+    if (grave) atencao++;
+    qual += linha(`${grave ? '<i class="ti ti-alert-triangle"></i> ' : ''}${nomeCurto(f.nome)}: ${f.paginas.length} de ${f.total} página(s) com pouco texto (${f.paginas.slice(0, 8).join(', ')}${f.paginas.length > 8 ? '…' : ''}). ${grave ? 'Pode ser documento escaneado ou em imagem.' : 'Pode ser página de assinatura ou de imagem.'}`, grave ? AVISO : 'var(--text-muted)');
+  });
+  if (!qual) qual = linha('Todos os documentos tiveram texto lido, sem páginas em OCR e sem páginas vazias.', '#2b8a3e');
+
+  let imp = '';
+  if (a.falhas.length) {
+    atencao++;
+    imp = a.falhas.slice(-8).map(f => linha(`<i class="ti ti-alert-triangle"></i> ${escHtml(f.texto)} <span style="color:var(--text-muted);">(${new Date(f.quando).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})</span>`, AVISO)).join('')
+      + `<button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="dispensarFalhasImportacao()">Já resolvi, dispensar avisos</button>`;
+  }
+
+  let chec;
+  if (!c) chec = linha('Ainda não houve checagem deste processo nesta sessão.', 'var(--text-muted)');
+  else {
+    chec = '';
+    if (c.codigo) {
+      const k = c.codigo, tot = k.achados.somas + k.achados.rotulos + k.achados.anualMensal + k.achados.extensos;
+      chec += linha(`<i class="ti ti-calculator"></i> Por código: ${k.somas} soma(s) de tabela, ${k.rotulos} valor(es) com rótulo, ${k.anualMensal} par(es) anual × mensal e ${k.extensos} valor(es) por extenso examinados. Divergências: ${tot}.`);
+    }
+    if (c.iaPulada) { atencao++; chec += linha(`<i class="ti ti-player-pause"></i> A IA ainda não analisou: o processo é grande (${c.lotes} lotes). Toque em "Executar Checagem".`, AVISO); }
+    else if (c.iaFalhou) { atencao++; chec += linha('<i class="ti ti-alert-triangle"></i> A IA não respondeu nesta checagem. Só valem as conferências por código.', AVISO); }
+    else if (c.lotes) {
+      const falhos = (c.lotesFalhos || []).length, ok = c.lotes - falhos;
+      if (falhos) atencao++;
+      chec += linha(`${falhos ? '<i class="ti ti-alert-triangle"></i> ' : '<i class="ti ti-check"></i> '}IA: ${ok} de ${c.lotes} lote(s) analisado(s), cobrindo ${c.docsNaIA} de ${c.docsTotal} documento(s)${(c.servicos || []).length ? ' · ' + c.servicos.map(escHtml).join(', ') : ''}${falhos ? '. Lote(s) sem análise: ' + c.lotesFalhos.join(', ') + '.' : '.'}`, falhos ? AVISO : '');
+    }
+    chec += linha(`Última checagem: ${new Date(c.quando).toLocaleString('pt-BR')}.`, 'var(--text-muted)');
+  }
+
+  const chip = atencao
+    ? `<span style="background:#fff3cd; color:#664d03; padding:2px 10px; border-radius:10px; font-size:0.75rem;">${atencao} ponto(s) de atenção</span>`
+    : '<span style="background:#d1e7dd; color:#0f5132; padding:2px 10px; border-radius:10px; font-size:0.75rem;">leitura completa</span>';
+  return `<details ${atencao ? 'open' : ''} style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px;">
+    <summary style="cursor:pointer; font-size:0.95rem; font-weight:600;"><i class="ti ti-eye-check"></i> Cobertura da leitura ${chip}</summary>
+    ${secao('Documentos', docs)}${secao('Qualidade da leitura', qual)}${imp ? secao('Avisos da importação', imp) : ''}${secao('Conferência', chec)}
+  </details>`;
+}
+
+function _atualizarCoberturaLeitura() {
+  const cont = document.getElementById('cobertura-leitura');
+  if (!cont || !processoAtual) return;
+  try { cont.innerHTML = _htmlCoberturaLeitura(); }
+  catch (e) { cont.innerHTML = `<div style="font-size:0.8rem; color:#a61e4d;">Não foi possível montar a cobertura da leitura: ${escHtml(e.message)}</div>`; }
+}
+function _montarCoberturaLeitura() {
+  let cont = document.getElementById('cobertura-leitura');
+  if (!cont) {
+    cont = document.createElement('div');
+    cont.id = 'cobertura-leitura';
+    cont.style.marginBottom = '16px';
+    const alvo = document.getElementById('chk-historico-unidade')?.closest('div[style*="padding:20px"]');
+    if (alvo && alvo.parentNode) alvo.parentNode.insertBefore(cont, alvo);
+    else document.getElementById('content')?.appendChild(cont);
+  }
+  _atualizarCoberturaLeitura();
+}
+
+const LIMITE_LOTES_AUTOMATICO = 6;
+
+async function rodarRaioX(automatica = false) {
   const st = document.getElementById('ia-status');
   const contadorEl = document.getElementById('contador-checagem');
   contadorEl.innerHTML = '';
   const p = processoAtual;
+  window._provedoresQueResponderam = new Set();
+  window._cobChecagem = { quando: new Date().toISOString(), iaFalhou: false };
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 50) {
     return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
   }
@@ -2993,6 +3228,13 @@ async function rodarRaioX() {
     if (dadosExtraidos.length > 150000) dadosExtraidos = _dadosExtraidosCompactos(textoIntegralAtual);
     // Contas conferidas por código ANTES da IA — cobertura garantida, mesmo se a IA falhar.
     achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
+    window._cobChecagem.codigo = JSON.parse(JSON.stringify(_cobCodigo));
+    // As contas por código não dependem da IA: aparecem já, enquanto a IA ainda trabalha.
+    if (achadosCodigo.length) {
+      window.achadosAtuais = achadosCodigo;
+      renderizarCards(achadosCodigo);
+      contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta até agora — a IA ainda está conferindo</span>`;
+    }
 
     // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
     // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
@@ -3084,6 +3326,12 @@ MUITO IMPORTANTE: se não houver inconsistência real e verificável, retorne {"
 invente achado pra preencher a resposta. NÃO inclua itens que você conferiu e estão corretos: só entra
 no JSON o que precisa de correção ou de verificação humana. Valores por extenso, somas de tabela e a
 relação entre valor anual e mensal já são conferidos por código; não repita essas conferências.
+FORMATO DE CADA CARD: o título diz o problema numa frase curta, sem jargão; a explicação tem no máximo
+2 frases curtas, cita valores e documentos pelo número SEI (ex.: "documento 83015982") e NÃO repete a
+evidência; a sugestão diz o que fazer em 1 frase. A evidência deve ser copiada EXATAMENTE como está no
+documento, sem resumir, sem corrigir e sem juntar trechos de lugares diferentes.
+Páginas marcadas com [leitura por OCR] foram lidas de imagem e podem ter dígitos trocados: se um achado
+depender de número dessas páginas, marque verificar=true e diga na explicação que o número vem de OCR.
 
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
 {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}
@@ -3100,6 +3348,16 @@ ___TEXTO_DO_LOTE___`;
       st.insertAdjacentHTML('beforebegin', `<div id="aviso-lotes" style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-top:8px;">
         <i class="ti ti-stack-2"></i> Processo grande (${Math.round(textoIntegralAtual.length / 1000)} mil caracteres): a análise será feita em <strong>${lotes.length} lotes</strong>, um depois do outro. Pode levar vários minutos.
         <div style="margin-top:4px;">Maiores documentos: ${maiores}</div></div>`);
+    }
+    const _nomesBase = lotes.flatMap(l => l.docs).map(n => n.replace(/ \(parte \d+\)$/, ''));
+    Object.assign(window._cobChecagem, { lotes: lotes.length, docsTotal: new Set(_nomesBase).size });
+    if (automatica && lotes.length > LIMITE_LOTES_AUTOMATICO) {
+      window._cobChecagem.iaPulada = true;
+      // Processo muito grande: não gasta a cota de IA sem você pedir.
+      st.innerHTML = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.85rem;"><i class="ti ti-player-pause"></i> Este processo é grande (${lotes.length} lotes de IA). Mostrei só as contas conferidas por código. Toque em "Executar Checagem" para a IA analisar também.</div>`;
+      contadorEl.innerHTML = achadosCodigo.length
+        ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length} inconsistência(s) de conta, IA aguardando você</span>` : '';
+      return;
     }
     const cardsIA = [], respostasIA = [], falhasLote = [];
     for (let i = 0; i < lotes.length; i++) {
@@ -3130,6 +3388,8 @@ ___TEXTO_DO_LOTE___`;
       }
     }
     if (falhasLote.length === lotes.length) throw new Error(falhasLote[0].erro);
+    const _okBase = new Set(lotes.filter((_, i) => !falhasLote.some(f => f.lote === i + 1)).flatMap(l => l.docs).map(n => n.replace(/ \(parte \d+\)$/, '')));
+    Object.assign(window._cobChecagem, { lotesFalhos: falhasLote.map(f => f.lote), docsNaIA: _okBase.size, servicos: [...(window._provedoresQueResponderam || [])] });
     const jsonStr = respostasIA.join('\n\n--- LOTE ---\n\n');
     const conferidosCorretos = cardsIA.filter(_eConferenciaSemProblema);
     const achadosIA = cardsIA.filter(c => !_eConferenciaSemProblema(c)).map(c => {
@@ -3145,6 +3405,7 @@ ___TEXTO_DO_LOTE___`;
       : '') + _avisoConferidosCorretos(conferidosCorretos) + renderPainelMascaramento(window._mascaramentoAcumulado);
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
+    window._cobChecagem.iaFalhou = true;
     st.innerHTML = renderErroAmigavel(e.message);
     // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
     // que ela achou, pra parte financeira nunca ficar sem cobertura.
@@ -3156,9 +3417,125 @@ ___TEXTO_DO_LOTE___`;
   } finally {
     if (intervaloTimer) clearInterval(intervaloTimer);
     if (banner) banner.classList.add('hidden');
+    _atualizarCoberturaLeitura();
   }
 }
 
+
+// ==================== CARTÃO DO ACHADO: ONDE ESTÁ E TRECHO NO DOCUMENTO ====================
+// Nome de documento legível: tira a posição na árvore ("[28]"), a extensão e os sublinhados;
+// o número SEI (o que se digita no SEI para achar o documento) fica separado.
+function _nomeAmigavelDoc(bruto) {
+  let n = String(bruto || '').replace(/\.[a-z0-9]{2,5}$/i, '').replace(/^\s*\[\d+\]\s*-?\s*/, '');
+  const m = n.match(/(?:^|[^\d])(\d{6,})(?=[_\-. ]|$)/);
+  const sei = m ? m[1] : '';
+  if (sei) n = n.replace(sei, ' ');
+  n = n.replace(/_+/g, ' ').replace(/^\s*(GOVPE|SES)\s+/i, '').replace(/\s*SEI\s*[\d. ]+$/i, '').replace(/\s{2,}/g, ' ').replace(/^[-\s]+|[-\s]+$/g, '');
+  return { nome: n || 'Documento', sei };
+}
+
+let _cacheDocs = { t: null, docs: [] };
+function _docsDoTextoAtual() {
+  if (_cacheDocs.t !== textoIntegralAtual) _cacheDocs = { t: textoIntegralAtual, docs: dividirPorDocumento(textoIntegralAtual) };
+  return _cacheDocs.docs;
+}
+
+// A evidência pode trazer uma ou duas citações entre aspas (ex.: valor anual e valor mensal).
+function _segmentosDaEvidencia(ev) {
+  const s = String(ev || '').trim();
+  if (!s) return [];
+  const aspas = [...s.matchAll(/["“]([^"”]{6,400})["”]/g)].map(m => m[1].trim());
+  return (aspas.length ? aspas : [s]).slice(0, 2);
+}
+function _regexDoTrecho(seg) {
+  return new RegExp(seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'i');
+}
+function _acharNoDocumento(d, seg) {
+  let m = _regexDoTrecho(seg).exec(d.texto), exato = true;
+  if (!m && seg.length > 80) {                       // citação longa: tenta o começo e o fim
+    m = _regexDoTrecho(seg.slice(0, 60)).exec(d.texto) || _regexDoTrecho(seg.slice(-60)).exec(d.texto);
+    exato = false;
+  }
+  return m ? { pos: m.index, len: m[0].length, exato } : null;
+}
+function _limparTrechoDeTela(t) {
+  return String(t).replace(/--- PÁGINA \d+ ---/g, '').replace(/\[leitura por OCR\]\n?/g, '').replace(/\n{3,}/g, '\n\n');
+}
+function _contextoDoTrecho(d, a) {
+  const t = d.texto;
+  const ini = Math.max(0, a.pos - 260), fim = Math.min(t.length, a.pos + a.len + 260);
+  return { antes: _limparTrechoDeTela(t.slice(ini, a.pos)), trecho: t.slice(a.pos, a.pos + a.len), depois: _limparTrechoDeTela(t.slice(a.pos + a.len, fim)),
+    pagina: _paginaNaPosicao(t, a.pos), exato: a.exato };
+}
+// Procura o trecho no texto REAL dos documentos. Se não achar, o achado vira suspeito
+// ("trecho não localizado"): a IA pode ter lido errado ou inventado a citação.
+function _localizarTrechos(c, emTodos = true) {
+  const docs = _docsDoTextoAtual();
+  const chave = c.doc_origem && c.doc_origem !== 'undefined' ? _chaveDoDocumento(c.doc_origem) : null;
+  const preferidos = chave ? docs.filter(d => _chaveDoDocumento(d.nome) === chave) : [];
+  const ordem = emTodos ? [...preferidos, ...docs.filter(d => !preferidos.includes(d))] : preferidos;
+  return _segmentosDaEvidencia(c.evidencia).map(seg => {
+    for (const d of ordem) {
+      const a = _acharNoDocumento(d, seg);
+      if (a) return Object.assign({ doc: d.nome, seg }, _contextoDoTrecho(d, a));
+    }
+    return { doc: null, seg, naoAchou: true };
+  });
+}
+
+function _htmlOndeEsta(c, locs) {
+  const docs = [];
+  const add = (nome, pagina) => {
+    if (!nome || nome === 'undefined') return;
+    const k = _chaveDoDocumento(nome), ex = docs.find(x => x.k === k);
+    if (ex) { if (!ex.pagina && pagina) ex.pagina = pagina; return; }
+    docs.push({ k, nome, pagina });
+  };
+  (locs || []).forEach(l => { if (l.doc) add(l.doc, l.pagina); });
+  add(c.doc_origem, c.pagina);
+  if (!docs.length) return '<div style="font-size:0.8rem; color:var(--text-muted); margin-top:10px;"><i class="ti ti-file-unknown"></i> Documento de origem não identificado.</div>';
+  return `<div style="margin-top:12px;"><div style="font-size:0.72rem; color:var(--text-muted); margin-bottom:4px;">Onde está</div>` + docs.map(d => {
+    const f = _nomeAmigavelDoc(d.nome);
+    return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-top:1px solid #f1f3f5;">
+      <i class="ti ti-file-text" style="font-size:1.1rem; color:#6c757d;"></i>
+      <div style="flex:1; min-width:0;"><div style="font-size:0.85rem; color:var(--text-dark);">${escHtml(f.nome)}</div>
+        <div style="font-size:0.75rem; color:var(--text-muted);">${f.sei ? 'SEI nº ' + escHtml(f.sei) : 'sem número SEI no nome'}${d.pagina ? ' · página ' + escHtml(d.pagina) : ''}</div></div>
+      ${f.sei ? `<button class="btn btn-secondary btn-sm" title="Copiar o número SEI para buscar no SEI" onclick="navigator.clipboard.writeText('${escAttr(f.sei)}'); mostrarToast('Número SEI copiado.');"><i class="ti ti-copy"></i></button>` : ''}
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function abrirTrechoDocumento(cardId) {
+  const c = window.memoriaCards && window.memoriaCards[cardId];
+  if (!c) return;
+  let locs = (window.memoriaTrechos || {})[cardId] || [];
+  if (locs.some(l => l.naoAchou)) locs = _localizarTrechos(c, true);   // última tentativa, em todos os documentos
+  window.memoriaTrechos[cardId] = locs;
+  const blocos = locs.map(l => {
+    if (l.naoAchou) return `<div style="margin-bottom:14px;"><div style="font-size:0.82rem; color:#854d0e; background:#fef9c3; padding:8px 10px; border-radius:6px; line-height:1.5;">
+        <i class="ti ti-alert-triangle"></i> Não encontrei este trecho no texto dos documentos importados. Pode ser diferença de leitura do PDF ou a IA ter errado a citação. Confira no SEI antes de aceitar o achado.</div>
+        <div style="font-size:0.72rem; color:var(--text-muted); margin:8px 0 4px;">O que a IA citou</div>
+        <div style="font-size:0.85rem; font-style:italic; padding:8px 10px; background:#f8f9fa; border-radius:6px;">${escHtml(l.seg)}</div></div>`;
+    const f = _nomeAmigavelDoc(l.doc);
+    return `<div style="margin-bottom:14px;">
+      <div style="font-size:0.88rem; font-weight:600;">${escHtml(f.nome)}</div>
+      <div style="font-size:0.75rem; color:var(--text-muted);">${f.sei ? 'SEI nº ' + escHtml(f.sei) : ''}${l.pagina ? (f.sei ? ' · ' : '') + 'página ' + escHtml(l.pagina) : ''}</div>
+      <div style="background:#f8f9fa; border:1px solid #dee2e6; border-radius:6px; padding:10px 12px; margin-top:6px; font-size:0.85rem; line-height:1.7; white-space:pre-wrap; max-height:38vh; overflow:auto;"><span style="color:var(--text-muted);">…</span>${escHtml(l.antes)}<mark style="background:#fff3bf; color:#5f3b00; padding:0 2px; border-radius:3px;">${escHtml(l.trecho)}</mark>${escHtml(l.depois)}<span style="color:var(--text-muted);">…</span></div>
+      ${l.exato === false ? '<div style="font-size:0.72rem; color:var(--text-muted); margin-top:4px;">Parte da citação, porque o texto completo não bateu exatamente.</div>' : ''}</div>`;
+  }).join('') || '<div style="font-size:0.85rem; color:var(--text-muted);">Este achado não trouxe um trecho para mostrar.</div>';
+  criarModal(`<h2 style="font-size:1.1rem; margin-bottom:4px;">Trecho no documento</h2>
+    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">${escHtml(c.titulo || '')}</div>
+    ${blocos}
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:6px;">
+      <button class="btn btn-secondary btn-sm" onclick="copiarTrechoAchado('${escAttr(cardId)}')"><i class="ti ti-copy"></i> Copiar trecho</button>
+      <button class="btn btn-secondary btn-sm" onclick="fixarEvidenciaDaMemoria('${escAttr(cardId)}'); fecharModal(); abrirPainelEvidencias();"><i class="ti ti-columns"></i> Abrir em tela dupla</button>
+    </div>`);
+}
+function copiarTrechoAchado(cardId) {
+  const locs = (window.memoriaTrechos || {})[cardId] || [];
+  const texto = locs.map(l => l.naoAchou ? l.seg : l.trecho).join('\n\n');
+  if (texto) { navigator.clipboard.writeText(texto); mostrarToast('Trecho copiado.'); }
+}
 
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
@@ -3168,24 +3545,24 @@ function renderizarCards(cards) {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
     const ref = `${c.tag}: ${c.titulo}`;
+    (window.memoriaCards = window.memoriaCards || {})[cardId] = c;
+    (window.memoriaTrechos = window.memoriaTrechos || {})[cardId] = c.evidencia ? _localizarTrechos(c, textoIntegralAtual.length <= 1500000) : [];
+    const locsDoCard = window.memoriaTrechos[cardId];
+    const trechoNaoAchado = !!c.evidencia && !c.conferido_por_codigo && locsDoCard.some(l => l.naoAchou);
     // Sem extensão na exibição — o que importa pra localizar no SEI é o identificador, não ".pdf" no final
     const nomeDocBruto = c.doc_origem && c.doc_origem !== 'undefined' ? c.doc_origem : 'Não identificado';
     const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
     const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
+      + (trechoNaoAchado ? `<span title="A IA citou um trecho que não aparece no texto dos documentos. Confira antes de aceitar o achado." style="font-size:0.68rem;background:#ffe3e3;color:#a61e4d;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">TRECHO NÃO LOCALIZADO</span>` : '')
       + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
     html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
         <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
       </div>
       <div class="rx-body">
-        <div style="margin-bottom: 12px;">
-            <span style="font-size:0.75rem; background:#fff3cd; color:#856404; padding:4px 8px; border-radius:4px; border: 1px solid #ffeeba; cursor:pointer;" onclick="navigator.clipboard.writeText('${escAttr(nomeDocBruto)}'); alert('ID do Documento copiado! Vá no SEI e cole para buscar.');" title="Clique para copiar o identificador completo">
-               <i class="ti ti-file-type-pdf"></i> ID do Documento: <strong>${escHtml(nomeDoc)}</strong>${c.pagina ? ' — pág. ' + escHtml(c.pagina) : ''}
-            </span>
-        </div>
-        ${c.evidencia ? `<div class="rx-evidence">${escHtml(c.evidencia)}</div>` : ''}
-        <p><strong>Setor:</strong> ${escHtml(c.setor)}</p>
-        <p>${escHtml(c.explicacao)}</p>
+        <p style="font-size:0.9rem; line-height:1.6; margin:0;">${escHtml(c.explicacao)}</p>
+        ${_htmlOndeEsta(c, locsDoCard)}
+        ${c.setor ? `<div style="font-size:0.75rem; color:var(--text-muted); margin-top:8px;">Setor responsável: ${escHtml(c.setor)}</div>` : ''}
         ${Array.isArray(c.calculo) && c.calculo.length ? `
         <div style="margin-top:10px; border:1px solid #dee2e6; border-radius:6px; overflow:hidden;">
           <div style="font-size:0.72rem; font-weight:700; color:#495057; text-transform:uppercase; letter-spacing:0.4px; padding:6px 10px; background:#f8f9fa;"><i class="ti ti-calculator"></i> Memória de cálculo (feita por código)</div>
@@ -3197,6 +3574,7 @@ function renderizarCards(cards) {
           <div style="font-size:0.85rem; color:#0b6157;">${escHtml(c.sugestao)}</div>
         </div>` : ''}
         <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
+          ${c.evidencia ? `<button class="btn btn-sm btn-secondary" onclick="abrirTrechoDocumento('${cardId}')"><i class="ti ti-quote"></i> Ver trecho no documento</button>` : ''}
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
         </div>
