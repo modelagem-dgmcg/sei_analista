@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.6 — app.js
-// Versão gerada em 07/10/2026 11:55 (horário de Recife)
+// SEI ANALISTA v24.7 — app.js
+// Versão gerada em 07/10/2026 14:31 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.6';
-const VERSAO_APP_DATA = '07/10/2026 11:55';
+const VERSAO_APP = 'v24.7';
+const VERSAO_APP_DATA = '07/10/2026 14:31';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1471,14 +1471,6 @@ async function abrirProcesso(identificador) {
   const p = processoAtual;
   const sei = p.numero_sei || String(p.id);
   let html = `
-    <div id="banner-conferindo" class="hidden" style="position:fixed; top:76px; right:24px; z-index:500; background:var(--alert-bordeaux-light, #f8d7da); border:1px solid var(--alert-bordeaux, #8e1628); border-radius:var(--border-radius, 6px); padding:12px 18px; max-width:280px; box-shadow:0 4px 14px rgba(0,0,0,0.12);">
-      <div style="display:flex; align-items:center; gap:8px;">
-        <span style="width:9px; height:9px; border-radius:50%; background:var(--alert-bordeaux, #8e1628); flex-shrink:0;"></span>
-        <strong id="banner-conferindo-titulo" style="color:var(--alert-bordeaux, #8e1626); font-size:0.82rem; letter-spacing:0.2px;">ESTOU CONFERINDO OS DOCUMENTOS...</strong>
-      </div>
-      <div id="banner-conferindo-detalhe" style="font-size:0.75rem; color:#6b1521; margin-top:4px; margin-left:17px;"></div>
-      <div style="font-size:0.72rem; color:#6b1521; margin-top:2px; margin-left:17px;">Tempo decorrido: <span id="banner-conferindo-timer">0s</span></div>
-    </div>
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
         <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -1546,6 +1538,7 @@ async function abrirProcesso(identificador) {
         <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
         <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
       </div>
+      <div id="progresso-checagem" class="hidden"></div>
       <div id="ia-status" style="margin-top:15px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
     </div>
@@ -1586,6 +1579,7 @@ async function abrirProcesso(identificador) {
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
       </div>
+      <div id="progresso-revisao" class="hidden"></div>
       <div id="status-revisao" style="margin-top:15px;"></div>
     </div>
   `;
@@ -1598,7 +1592,7 @@ async function abrirProcesso(identificador) {
   }
   window._historicoConsultas = [];
   carregarHistoricoConsultas(processoAtual.id);
-  api('auditorias/listar', { processo_id: processoAtual.id }).then(resAud => {
+  Promise.all([_carregarIncoerentes(), api('auditorias/listar', { processo_id: processoAtual.id })]).then(([, resAud]) => {
     const auditorias = resAud.auditorias || [];
     const ultima = auditorias.find(a => a.tipo_checkpoint === 'GERAL' || a.tipo_checkpoint === 'ENTRADA');
     if (!ultima) return;
@@ -1607,8 +1601,8 @@ async function abrirProcesso(identificador) {
     window.achadosAtuais = achados;
     const contadorEl = document.getElementById('contador-checagem');
     if (contadorEl) {
-      contadorEl.innerHTML = achados.length > 0
-        ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${achados.length} inconsistência(s)</span>`
+      contadorEl.innerHTML = _visiveis(achados).length > 0
+        ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${_visiveis(achados).length} inconsistência(s)</span>`
         : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Processo limpo.</span>`;
     }
     renderizarCards(achados);
@@ -2600,7 +2594,7 @@ function exportarRelatorioAchados() {
 function _gerarArquivoRelatorioAchados() {
   const sei = processoAtual.numero_sei || String(processoAtual.id);
   let htmlReport = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'><head><meta charset='utf-8'></head><body style="font-family:'Times New Roman',serif;font-size:12pt;"><h2>RELATÓRIO DE ACHADOS</h2><p>Processo: ${sei}</p><hr/>`;
-  window.achadosAtuais.forEach((c, index) => {
+  _visiveis(window.achadosAtuais).forEach((c, index) => {
     htmlReport += `<p><strong>${index + 1}. [${c.tag}] ${c.titulo}</strong><br/>Origem: ${c.doc_origem || ''}<br/>Explicação: ${c.explicacao}`;
     if (Array.isArray(c.calculo) && c.calculo.length) htmlReport += `<br/><strong>Memória de cálculo:</strong><br/>` + c.calculo.map(l => `${escHtml(l[0])}: <strong>${escHtml(l[1])}</strong>`).join('<br/>');
     if (c.sugestao) htmlReport += `<br/><strong>O que fazer:</strong> ${c.sugestao}`;
@@ -3155,7 +3149,7 @@ function _retirarAchadoDeIntegridade(prefixoTitulo) {
   if (document.getElementById('painel-cards')) renderizarCards(window.achadosAtuais);
   const contadorEl = document.getElementById('contador-checagem');
   if (contadorEl) contadorEl.innerHTML = window.achadosAtuais.length
-    ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>` : '';
+    ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_visiveis(window.achadosAtuais).length} inconsistência(s)</span>` : '';
 }
 
 function _htmlCoberturaLeitura() {
@@ -3246,32 +3240,17 @@ async function rodarRaioX(automatica = false) {
     return st.innerHTML = '<div class="alert alert-danger">Importe os documentos primeiro.</div>';
   }
 
-  // Aviso fixo e visível durante toda a checagem, com números REAIS (não é barra de
-  // "página X de Y" fingida — o sistema manda o texto numa única chamada, não tem como
-  // saber "em que página" está). O cronômetro sim é real, conta segundo a segundo.
+  // Progresso dentro do card (não mais o aviso vermelho solto na tela nem o cronômetro).
   _garantirEstiloPulso();
-  const banner = document.getElementById('banner-conferindo');
-  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
-  const bannerTimer = document.getElementById('banner-conferindo-timer');
-  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
-  let segundosDecorridos = 0;
-  let intervaloTimer = null;
-  if (banner) {
-    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU CONFERINDO OS DOCUMENTOS...';
-    banner.classList.remove('hidden');
-    if (bannerDetalhe) {
-      const qtdDocs = (textoIntegralAtual.match(/--- DOC: /g) || []).length;
-      bannerDetalhe.textContent = `${qtdDocs} documento(s) — ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`;
-    }
-    if (bannerTimer) {
-      bannerTimer.textContent = '0s';
-      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
-    }
-  }
+  const _qtdDocs = (textoIntegralAtual.match(/--- DOC: /g) || []).length;
+  const prog = _progressoIniciar('progresso-checagem', automatica ? 'Conferindo o processo (checagem automática)' : 'Conferindo o processo', ['Leitura', 'Contas e histórico', 'IA', 'Achados']);
+  prog.etapa(0, `${_qtdDocs} documento(s), ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`, 0.08);
+  let houveErro = false;
 
   let achadosCodigo = [];
   let achadosIntegridade = [];
   try {
+    prog.etapa(1, 'Refazendo as contas por código e comparando com a unidade', 0.2);
     let dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
     if (dadosExtraidos.length > 150000) dadosExtraidos = _dadosExtraidosCompactos(textoIntegralAtual);
     // Contas conferidas por código ANTES da IA — cobertura garantida, mesmo se a IA falhar.
@@ -3409,11 +3388,11 @@ ___TEXTO_DO_LOTE___`;
         ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length + achadosIntegridade.length} inconsistência(s), IA aguardando você</span>` : '';
       return;
     }
+    prog.etapa(2, lotes.length > 1 ? `Parte 1 de ${lotes.length}` : 'A IA está lendo os documentos', 0.3);
     const cardsIA = [], respostasIA = [], falhasLote = [];
     for (let i = 0; i < lotes.length; i++) {
       if (lotes.length > 1) {
-        if (bannerTitulo) bannerTitulo.textContent = `CONFERINDO LOTE ${i + 1} DE ${lotes.length}...`;
-        if (bannerDetalhe) bannerDetalhe.textContent = `${lotes[i].docs.length} documento(s) neste lote`;
+        prog.etapa(2, `Parte ${i + 1} de ${lotes.length} (${lotes[i].docs.length} documento(s))`, 0.3 + 0.6 * (i / lotes.length));
       }
       const aviso = lotes.length > 1
         ? `(Este é o lote ${i + 1} de ${lotes.length} do processo. A lista de valores extraídos acima cobre TODOS os documentos; o texto abaixo cobre só os documentos deste lote.)\n`
@@ -3428,7 +3407,7 @@ ___TEXTO_DO_LOTE___`;
         if (/TPM|tokens per minute|rate_limit|HTTP 429/i.test(e.message) && !lotes[i]._jaEsperou) {
           lotes[i]._jaEsperou = true;
           for (let s = 60; s > 0; s--) {
-            if (bannerDetalhe) bannerDetalhe.textContent = `Limite por minuto da conta atingido — retomando em ${s}s`;
+            prog.detalhe(`Limite por minuto da conta atingido, retomando em ${s}s`);
             await new Promise(r => setTimeout(r, 1000));
           }
           i--; continue;
@@ -3441,6 +3420,7 @@ ___TEXTO_DO_LOTE___`;
     const _okBase = new Set(lotes.filter((_, i) => !falhasLote.some(f => f.lote === i + 1)).flatMap(l => l.docs).map(n => n.replace(/ \(parte \d+\)$/, '')));
     Object.assign(window._cobChecagem, { lotesFalhos: falhasLote.map(f => f.lote), docsNaIA: _okBase.size, servicos: [...(window._provedoresQueResponderam || [])] });
     const jsonStr = respostasIA.join('\n\n--- LOTE ---\n\n');
+    prog.etapa(3, 'Montando os achados', 0.95);
     const conferidosCorretos = cardsIA.filter(_eConferenciaSemProblema);
     const achadosIA = cardsIA.filter(c => !_eConferenciaSemProblema(c)).map(c => {
       // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
@@ -3448,7 +3428,7 @@ ___TEXTO_DO_LOTE___`;
       return c;
     });
     window.achadosAtuais = [...achadosIntegridade, ...achadosCodigo, ...achadosIA];
-    contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${window.achadosAtuais.length} inconsistência(s)</span>`;
+    contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_visiveis(window.achadosAtuais).length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
     st.innerHTML = (falhasLote.length
       ? `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;"><i class="ti ti-alert-triangle"></i> ${falhasLote.length} de ${lotes.length} lote(s) não foram analisados pela IA (lote ${falhasLote.map(f => f.lote).join(', ')}). Os achados acima cobrem só os demais. Rode a checagem de novo em alguns minutos para completar.</div>`
@@ -3456,6 +3436,7 @@ ___TEXTO_DO_LOTE___`;
     await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'GERAL', achados_json: JSON.stringify(window.achadosAtuais), raw_ia: jsonStr, executado_por: usuarioAtual.email });
   } catch (e) {
     window._cobChecagem.iaFalhou = true;
+    houveErro = true;
     st.innerHTML = renderErroAmigavel(e.message);
     // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
     // que ela achou, pra parte financeira nunca ficar sem cobertura.
@@ -3466,8 +3447,7 @@ ___TEXTO_DO_LOTE___`;
       contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_semIA.length} inconsistência(s) — a análise da IA não rodou</span>`;
     }
   } finally {
-    if (intervaloTimer) clearInterval(intervaloTimer);
-    if (banner) banner.classList.add('hidden');
+    prog.fechar(!houveErro);
     _atualizarCoberturaLeitura();
   }
 }
@@ -3588,10 +3568,176 @@ function copiarTrechoAchado(cardId) {
   if (texto) { navigator.clipboard.writeText(texto); mostrarToast('Trecho copiado.'); }
 }
 
+// ==================== ACHADO "INCOERENTE" ====================
+// Quando o analista analisa e conclui que o achado não cabe neste processo, ele o marca como
+// incoerente, com justificativa e a própria senha. O achado sai da tela dele, mas fica gravado
+// para a gestão acompanhar, e o registro de atividades anota. Nada é apagado: dá para reabrir.
+function _hashCurto(s) {
+  let h1 = 0x811c9dc5, h2 = (0x01000193 ^ s.length) >>> 0;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 16777619) >>> 0;
+    h2 = Math.imul(h2 ^ c, 2246822519) >>> 0; h2 ^= h2 >>> 13;
+  }
+  return h1.toString(16).padStart(8, '0') + (h2 >>> 0).toString(16).padStart(8, '0');
+}
+// Identidade do achado entre uma checagem e outra: o trecho citado (ou, sem trecho, o título) e o documento.
+function _chaveDoAchado(c) {
+  const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+  const doc = c.doc_origem && c.doc_origem !== 'undefined' ? _chaveDoDocumento(c.doc_origem) : '';
+  let base;
+  if (c.integridade) base = ['int', norm(c.titulo), norm(c.explicacao), doc].join('|');
+  else if (c.evidencia) base = ['ev', norm(c.tag), doc, norm(c.evidencia).slice(0, 200)].join('|');
+  else base = ['ti', norm(c.tag), doc, norm(c.titulo)].join('|');
+  return _hashCurto(base);
+}
+function _visiveis(lista) {
+  const inc = window._incoerentes || new Map();
+  return (lista || []).filter(c => !inc.has(_chaveDoAchado(c)));
+}
+async function _carregarIncoerentes() {
+  window._incoerentes = new Map();
+  if (!processoAtual) return;
+  try {
+    const r = await api('achados/incoerentes-listar', { processo_id: processoAtual.id }, { fundo: true });
+    (r.incoerentes || []).forEach(x => window._incoerentes.set(x.chave, x));
+  } catch (e) { /* segue sem filtro */ }
+}
+function _atualizarContadorChecagem() {
+  const el = document.getElementById('contador-checagem');
+  if (!el) return;
+  const n = _visiveis(window.achadosAtuais).length;
+  el.innerHTML = n ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${n} inconsistência(s)</span>` : '';
+}
+
+function abrirModalIncoerente(cardId) {
+  const c = window.memoriaCards && window.memoriaCards[cardId];
+  if (!c) return;
+  window._incoerenteEmAndamento = cardId;
+  criarModal(`<h2 style="font-size:1.1rem; margin-bottom:6px;">Marcar como incoerente</h2>
+    <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:10px;">${escHtml(c.titulo || '')}</div>
+    <p style="font-size:0.85rem; line-height:1.6; margin-bottom:12px;">Use quando você analisou e este achado não cabe neste processo. Ele sai da sua tela, mas a gestão continua vendo, com a sua justificativa. Nada é apagado, e o registro de atividades anota.</p>
+    <label style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:4px;">Justificativa (obrigatória)</label>
+    <textarea id="inc-justificativa" placeholder="Explique em poucas palavras por que este achado não procede." style="width:100%; height:90px; padding:10px; border:1px solid #ced4da; border-radius:6px; font-family:inherit; font-size:0.9rem; margin-bottom:10px;"></textarea>
+    <label style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:4px;">Sua senha, para confirmar</label>
+    <input type="password" id="inc-senha" autocomplete="current-password" style="width:100%; padding:10px; border:1px solid #ced4da; border-radius:6px; margin-bottom:10px;" onkeydown="if(event.key==='Enter') gravarIncoerente()">
+    <div id="inc-erro" class="alert alert-danger hidden" style="margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-secondary btn-sm" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-sm" id="inc-gravar" style="background:#8e1628; color:#fff;" onclick="gravarIncoerente()"><i class="ti ti-ban"></i> Gravar como incoerente</button>
+    </div>`, false);
+}
+
+async function gravarIncoerente() {
+  const c = window.memoriaCards && window.memoriaCards[window._incoerenteEmAndamento];
+  if (!c || !processoAtual) return;
+  const justificativa = (document.getElementById('inc-justificativa')?.value || '').trim();
+  const senha = document.getElementById('inc-senha')?.value || '';
+  const erro = document.getElementById('inc-erro');
+  const falha = msg => { erro.textContent = msg; erro.classList.remove('hidden'); };
+  erro.classList.add('hidden');
+  if (justificativa.length < 15) return falha('Escreva a justificativa, com pelo menos 15 caracteres.');
+  if (!senha) return falha('Digite a sua senha para confirmar.');
+  const botao = document.getElementById('inc-gravar');
+  if (botao) botao.disabled = true;
+  const res = await api('achados/marcar-incoerente', {
+    processo_id: processoAtual.id, chave: _chaveDoAchado(c), tag: c.tag || '', titulo: c.titulo || '', doc_origem: c.doc_origem || '',
+    evidencia: c.evidencia || '', explicacao: c.explicacao || '', justificativa, senha_hash: await sha256(senha)
+  });
+  if (botao) botao.disabled = false;
+  if (!res.ok) return falha(res.erro || 'Não foi possível gravar.');
+  (window._incoerentes = window._incoerentes || new Map()).set(res.registro.chave, res.registro);
+  fecharModal();
+  renderizarCards(window.achadosAtuais || []);
+  _atualizarContadorChecagem();
+  mostrarToast('Achado marcado como incoerente. A gestão continua vendo.');
+}
+
+function abrirListaIncoerentes() {
+  const lista = [...(window._incoerentes || new Map()).values()];
+  const itens = lista.map(x => `<div style="border:1px solid #dee2e6; border-radius:8px; padding:10px 12px; margin-bottom:8px;">
+      <div style="font-size:0.88rem; font-weight:600;">${escHtml(x.titulo)}</div>
+      <div style="font-size:0.75rem; color:var(--text-muted);">Marcado por ${escHtml(x.marcado_por_nome)} em ${new Date(x.marcado_em).toLocaleString('pt-BR')}</div>
+      <div style="font-size:0.85rem; margin-top:6px; line-height:1.5;">${escHtml(x.justificativa)}</div>
+      <button class="btn btn-secondary btn-sm" style="margin-top:8px;" onclick="reabrirIncoerente('${escAttr(x.id)}')"><i class="ti ti-arrow-back-up"></i> Reabrir este achado</button></div>`).join('');
+  criarModal(`<h2 style="font-size:1.1rem; margin-bottom:4px;">Achados marcados como incoerentes</h2>
+    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">A gestão acompanha esta lista. Reabrir faz o achado voltar para a tela de todos.</div>
+    ${itens || '<div style="font-size:0.85rem; color:var(--text-muted);">Nenhum.</div>'}`);
+}
+async function reabrirIncoerente(id) {
+  const res = await api('achados/reabrir', { id });
+  if (!res.ok) { alert(res.erro || 'Não foi possível reabrir.'); return; }
+  [...(window._incoerentes || new Map()).entries()].forEach(([k, v]) => { if (v.id === id) window._incoerentes.delete(k); });
+  fecharModal();
+  renderizarCards(window.achadosAtuais || []);
+  _atualizarContadorChecagem();
+  mostrarToast('Achado reaberto.');
+}
+
+// ==================== PROGRESSO DENTRO DO CARD ====================
+// Substitui o aviso vermelho solto no canto da tela e o cronômetro em segundos. O anel só avança
+// com o que é medido de verdade (etapas e partes da IA); o mascote pulsando mostra que está trabalhando.
+function _garantirEstiloProgresso() {
+  if (document.getElementById('estilo-progresso')) return;
+  const st = document.createElement('style');
+  st.id = 'estilo-progresso';
+  st.textContent = `
+    @keyframes progPulso { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); } }
+    @keyframes progGira { to { transform:rotate(360deg); } }
+    .prog-mascote { animation:progPulso 1.4s ease-in-out infinite; }
+    .prog-etapa { font-size:0.72rem; padding:2px 9px; border-radius:10px; background:#e9ecef; color:#6c757d; display:inline-flex; gap:4px; align-items:center; }
+    .prog-etapa.feita { background:#d1e7dd; color:#0f5132; }
+    .prog-etapa.atual { background:#fff3cd; color:#664d03; font-weight:600; }
+    .prog-etapa.atual i { animation:progGira 1.2s linear infinite; }`;
+  document.head.appendChild(st);
+}
+const _PROG_C = 2 * Math.PI * 20;
+function _progressoIniciar(idContainer, titulo, etapas) {
+  _garantirEstiloProgresso();
+  const el = document.getElementById(idContainer);
+  if (!el) return { etapa() {}, detalhe() {}, titulo() {}, fechar() {} };
+  el.classList.remove('hidden');
+  el.style.cssText = 'display:flex; gap:14px; align-items:center; background:#f8f9fa; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px; margin:12px 0;';
+  el.innerHTML = `<div style="position:relative; width:52px; height:52px; flex-shrink:0;">
+      <svg viewBox="0 0 52 52" width="52" height="52" aria-hidden="true">
+        <circle cx="26" cy="26" r="20" fill="none" stroke="#e9ecef" stroke-width="4"/>
+        <circle data-anel cx="26" cy="26" r="20" fill="none" stroke="#d97706" stroke-width="4" stroke-linecap="round" stroke-dasharray="${_PROG_C.toFixed(1)}" stroke-dashoffset="${_PROG_C.toFixed(1)}" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .6s ease, stroke .3s;"/>
+      </svg>
+      <img class="prog-mascote" src="icons/mascote-analista.png" alt="" style="position:absolute; left:10px; top:10px; width:32px; height:32px; border-radius:50%; object-fit:cover;" onerror="this.remove()">
+    </div>
+    <div style="flex:1; min-width:0;">
+      <div data-titulo style="font-size:0.92rem; font-weight:600;">${escHtml(titulo)}</div>
+      <div data-detalhe style="font-size:0.78rem; color:var(--text-muted); min-height:1.1em;"></div>
+      <div data-etapas style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"></div>
+    </div>`;
+  const anel = el.querySelector('[data-anel]'), tit = el.querySelector('[data-titulo]'), det = el.querySelector('[data-detalhe]'), box = el.querySelector('[data-etapas]');
+  let atual = 0;
+  const desenhar = () => { box.innerHTML = etapas.map((e, i) => `<span class="prog-etapa ${i < atual ? 'feita' : i === atual ? 'atual' : ''}"><i class="ti ${i < atual ? 'ti-check' : i === atual ? 'ti-loader-2' : 'ti-circle'}"></i>${escHtml(e)}</span>`).join(''); };
+  const fracao = f => { anel.style.strokeDashoffset = (_PROG_C * (1 - Math.max(0, Math.min(1, f)))).toFixed(1); };
+  desenhar();
+  return {
+    etapa(i, detalhe, f) { atual = i; desenhar(); if (detalhe !== undefined) det.textContent = detalhe; if (f !== undefined) fracao(f); },
+    detalhe(t) { det.textContent = t; },
+    titulo(t) { tit.textContent = t; },
+    fechar(ok = true) {
+      atual = etapas.length; desenhar(); fracao(ok ? 1 : 0);
+      anel.style.stroke = ok ? '#198754' : '#c92a2a';
+      tit.textContent = ok ? 'Pronto' : 'Não foi possível concluir';
+      el.querySelector('.prog-mascote')?.classList.remove('prog-mascote');
+      setTimeout(() => { el.classList.add('hidden'); el.style.display = ''; }, ok ? 1800 : 3500);
+    }
+  };
+}
+
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
-  if (!cards || cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>';
+  const todos = cards || [];
+  cards = _visiveis(todos);
+  const nOcultos = todos.length - cards.length;
+  const linhaOcultos = nOcultos ? `<div style="font-size:0.8rem; color:var(--text-muted); margin:0 0 10px;"><i class="ti ti-eye-off"></i> ${nOcultos} achado(s) marcado(s) como incoerente(s), fora desta lista. A gestão acompanha. <a href="#" onclick="abrirListaIncoerentes(); return false;">Ver</a></div>` : '';
+  if (cards.length === 0) return painel.innerHTML = '<div class="alert alert-success">✓ Nenhum apontamento crítico detectado nesta checagem.</div>' + linhaOcultos;
   let html = `<div style="margin-bottom:15px; text-align:right;"><button class="btn btn-secondary btn-sm" onclick="exportarRelatorioAchados()"><i class="ti ti-file-type-doc"></i> Exportar Relatório (.DOC)</button></div>`;
+  html += linhaOcultos;
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
@@ -3627,6 +3773,7 @@ function renderizarCards(cards) {
         <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
           ${c.evidencia ? `<button class="btn btn-sm btn-secondary" onclick="abrirTrechoDocumento('${cardId}')"><i class="ti ti-quote"></i> Ver trecho no documento</button>` : ''}
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
+          ${c.integridade ? '' : `<button class="btn btn-sm" style="background:#fff; color:#8e1628; border:1px solid #8e1628;" title="Analisei e este achado não cabe neste processo" onclick="abrirModalIncoerente('${cardId}')"><i class="ti ti-ban"></i> Incoerente</button>`}
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
           ${c.acao ? `<button class="btn btn-sm btn-secondary" onclick="${escAttr(c.acao.js)}">${escHtml(c.acao.rotulo)}</button>` : ''}
         </div>
@@ -4121,21 +4268,9 @@ async function rodarRevisaoFinal() {
   st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
 
   _garantirEstiloPulso();
-  const banner = document.getElementById('banner-conferindo');
-  const bannerDetalhe = document.getElementById('banner-conferindo-detalhe');
-  const bannerTimer = document.getElementById('banner-conferindo-timer');
-  const bannerTitulo = document.getElementById('banner-conferindo-titulo');
-  let segundosDecorridos = 0;
-  let intervaloTimer = null;
-  if (banner) {
-    if (bannerTitulo) bannerTitulo.textContent = 'ESTOU REVISANDO O PARECER...';
-    if (bannerDetalhe) bannerDetalhe.textContent = `${Math.round(txtAnalista.length / 1000)} mil caracteres no parecer`;
-    banner.classList.remove('hidden');
-    if (bannerTimer) {
-      bannerTimer.textContent = '0s';
-      intervaloTimer = setInterval(() => { segundosDecorridos++; bannerTimer.textContent = segundosDecorridos + 's'; }, 1000);
-    }
-  }
+  const prog = _progressoIniciar('progresso-revisao', 'Revisando o texto', ['Leitura', 'IA revisando', 'Resultado']);
+  prog.etapa(1, `${Math.round(txtAnalista.length / 1000)} mil caracteres no texto, cruzados com o processo`, 0.35);
+  let houveErro = false;
 
   const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
 apenas aponta pontos de atenção para o analista decidir. Avalie o texto (parecer, nota técnica ou ofício)
@@ -4196,10 +4331,10 @@ ${txtAnalista}`;
 
     _ultimoTextoRevisadoHash = await sha256(txtAnalista);
   } catch (e) {
+    houveErro = true;
     st.innerHTML = renderErroAmigavel(e.message);
   } finally {
-    if (intervaloTimer) clearInterval(intervaloTimer);
-    if (banner) banner.classList.add('hidden');
+    prog.fechar(!houveErro);
   }
 }
 
