@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v25.0';
-const VERSAO_APP_DATA = '09/10/2026 17:30';
+const VERSAO_APP = 'v25.1';
+const VERSAO_APP_DATA = '12/10/2026 11:30';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1548,45 +1548,65 @@ async function abrirProcesso(identificador) {
       <div id="painel-cards" style="margin-top:20px;"></div>
     </div>
 
-    <!-- 2. PERGUNTAS AO PROCESSO -->
-    <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-message-circle"></i> 2. Pergunte ao Processo</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Tire dúvidas específicas sobre os anexos, ou peça um texto (nota técnica, despacho, parecer, ofício): o sistema confirma com você o tipo e os temas e monta o rascunho no card 3. <a href="#" onclick="usarExemploPedido(); return false;">Usar um exemplo de pedido</a></p>
-      <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:stretch;">
-        <div style="flex:1 1 420px; min-width:0; display:flex; flex-direction:column;">
-          <div style="font-size:0.78rem; font-weight:600; color:#495057; margin-bottom:6px;"><i class="ti ti-messages"></i> Conversa de agora</div>
-          <div id="chat-history" style="flex:1; min-height:160px; margin-bottom: 15px; max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; background: #f8f9fa; padding: 15px; border-radius: 6px; border: 1px inset #e9ecef;">
-              <div id="chat-vazio" style="color: #adb5bd; font-size: 0.85rem; text-align: center; font-style: italic;">Faça uma pergunta abaixo. Tudo o que for perguntado neste processo fica guardado no histórico ao lado.</div>
-          </div>
-          <div style="display:flex; gap:10px;">
-             <input type="text" id="chat-input" placeholder="Pergunte (ex.: qual o índice de reajuste da cláusula 4?) ou peça um texto (ex.: preciso de um despacho sobre...)" style="flex:1; min-width:0; padding:12px; border:1px solid #ced4da; border-radius:6px; outline:none; font-size: 0.95rem;" onkeypress="if(event.key === 'Enter') fazerPerguntaAoProcesso()">
-             <button class="btn btn-primary" onclick="fazerPerguntaAoProcesso()" id="btn-perguntar"><i class="ti ti-send"></i> Perguntar</button>
-          </div>
-        </div>
-        <aside style="flex:0 1 340px; min-width:260px; background:#f1f3f5; border:1px solid #dee2e6; border-radius:6px; padding:12px; display:flex; flex-direction:column; max-height:480px;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px;">
-            <strong style="font-size:0.85rem; color:#343a40;"><i class="ti ti-history"></i> Histórico deste processo</strong>
-            <span id="contador-historico-consultas" style="font-size:0.72rem; color:#6c757d; white-space:nowrap;"></span>
-          </div>
-          <div id="lista-historico-consultas" style="overflow-y:auto; flex:1; padding-right:2px;"></div>
-        </aside>
+    <!-- 2. ASSISTENTE DO PROCESSO (abas Perguntar e Redigir) -->
+    <div class="assistente" id="assistente">
+      <div class="assistente-topo">
+        <h3 style="font-size:1.1rem; color:var(--text-dark); margin:0;"><i class="ti ti-sparkles"></i> 2. Assistente do processo</h3>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistoricoConsultas()"><i class="ti ti-history"></i> Histórico <span id="contador-historico-consultas" class="assist-contador"></span></button>
       </div>
-    </div>
+      <div class="assist-abas" role="tablist">
+        <button type="button" class="assist-aba ativa" id="aba-btn-perguntar" role="tab" onclick="assistenteAba('perguntar')"><i class="ti ti-message-circle"></i> Perguntar</button>
+        <button type="button" class="assist-aba" id="aba-btn-redigir" role="tab" onclick="assistenteAba('redigir')"><i class="ti ti-pencil"></i> Redigir</button>
+      </div>
 
-    <!-- 3. PAINEL DE REVISÃO E LINGUAGEM SIMPLES -->
-    <div style="background:#f8f9fa; border:1px dashed #adb5bd; padding:20px; border-radius:8px; margin-bottom:30px;">
-      <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:10px;"><i class="ti ti-robot"></i> 3. Redação e Revisão</h3>
-      <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:15px;">Peça um rascunho no card 2, escrevendo o que precisa (por exemplo: "Preciso de uma nota técnica sobre a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade. Monte um modelo."). O rascunho aparece aqui, já preenchido com o que foi lido dos documentos e do histórico da unidade. Você também pode escrever ou colar um texto seu. A revisão cruza o texto com o processo e aponta melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</p>
-      <div id="redacao-notas"></div>
-      <textarea id="editor-final" placeholder="O rascunho pedido no card 2 aparece aqui. Ou escreva/cole um texto seu, para ser revisado..." style="width:100%; height:150px; padding:15px; border:1px solid #ced4da; border-radius:6px; font-family: inherit; font-size: 0.95rem; margin-bottom: 15px; outline:none; resize:vertical;"></textarea>
-      <div style="display: flex; align-items: center; gap: 15px;">
+      <div id="aba-perguntar" role="tabpanel">
+        <p class="assist-ajuda">Tire dúvidas sobre os documentos deste processo. A resposta cita o arquivo em que se baseou.</p>
+        <div class="assist-pergunta">
+          <input type="text" id="chat-input" placeholder="Escreva a sua pergunta aqui" onkeypress="if(event.key === 'Enter') fazerPerguntaAoProcesso()">
+          <button class="btn btn-primary" onclick="fazerPerguntaAoProcesso()" id="btn-perguntar"><i class="ti ti-send"></i> Perguntar</button>
+        </div>
+        <div class="assist-exemplos">
+          <span>Exemplos:</span>
+          <button type="button" class="assist-chip" onclick="usarExemploPergunta(this)">Qual o valor do repasse mensal vigente?</button>
+          <button type="button" class="assist-chip" onclick="usarExemploPergunta(this)">O que mudou no último aditivo?</button>
+          <button type="button" class="assist-chip" onclick="usarExemploPergunta(this)">Há cláusula de reajuste? Qual o índice?</button>
+        </div>
+        <div id="chat-history" class="assist-leitura">
+          <div id="chat-vazio" class="assist-vazio">As respostas aparecem aqui, com espaço para ler. Para pedir um texto (nota técnica, despacho, parecer, ofício), use a aba Redigir. As perguntas ficam guardadas no Histórico.</div>
+        </div>
+      </div>
+
+      <div id="aba-redigir" role="tabpanel" class="hidden">
+        <p class="assist-ajuda">Escolha o tipo de texto e diga sobre o que ele trata. O sistema monta um rascunho com o que leu nos documentos, e você revisa e edita aqui mesmo. <a href="#" onclick="usarExemploPedido(); return false;">Ver um exemplo</a></p>
+        <div class="assist-tipos" id="assist-tipos">
+          ${['nota técnica', 'parecer técnico', 'despacho', 'ofício', 'resposta', 'relatório', 'e-mail', 'documento'].map(t => `<button type="button" class="assist-chip" data-tipo="${t}" onclick="selecionarTipoRedacao('${t}')">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`).join('')}
+        </div>
+        <textarea id="redigir-pedido" class="assist-pedido" rows="2" placeholder="Sobre o que? Ex.: a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade"></textarea>
+        <div class="assist-acoes">
+          <button type="button" class="btn btn-primary" id="btn-iniciar-redacao" onclick="iniciarRedacaoPelaAba()"><i class="ti ti-wand"></i> Montar rascunho</button>
+          <span id="redigir-aviso" class="assist-aviso"></span>
+        </div>
+        <div id="redacao-confirma-area"></div>
+        <div id="redacao-notas"></div>
+        <label for="editor-final" class="assist-rotulo">Seu texto <span>Use o rascunho montado, escreva ou cole um texto seu. A revisão cruza o texto com o processo e aponta melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</span></label>
+        <textarea id="editor-final" class="assist-editor" placeholder="O rascunho aparece aqui. Ou escreva/cole um texto seu, para ser revisado..."></textarea>
+        <div class="assist-acoes">
           <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
           <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
+        </div>
+        <div id="progresso-revisao" class="hidden"></div>
+        <div id="status-revisao" style="margin-top:15px;"></div>
       </div>
-      <div id="progresso-revisao" class="hidden"></div>
-      <div id="status-revisao" style="margin-top:15px;"></div>
     </div>
+
+    <aside id="painel-historico" class="assist-gaveta hidden" aria-label="Histórico de perguntas deste processo">
+      <div class="assist-gaveta-topo">
+        <strong><i class="ti ti-history"></i> Histórico deste processo</strong>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="abrirHistoricoConsultas()" title="Fechar"><i class="ti ti-x"></i></button>
+      </div>
+      <div id="lista-historico-consultas"></div>
+    </aside>
   `;
   content.innerHTML = html;
   _renderBotoesStatus(processoAtual.status);
@@ -1885,9 +1905,9 @@ async function processarVersaoAssinada(file) {
 function abrirCriarDocumento() {
   criarModal(`
     <h2 style="margin-bottom:8px; font-size:1.15rem;">Criar documento</h2>
-    <p style="font-size:0.88rem; line-height:1.6;">Descreva o que precisa no card 2 (Pergunte ao Processo). O sistema confirma o tipo e os temas e monta o rascunho no card 3, já preenchido com o que foi lido dos documentos.</p>
+    <p style="font-size:0.88rem; line-height:1.6;">Use a aba Redigir do Assistente: escolha o tipo de texto e diga sobre o que ele trata. O sistema monta o rascunho, já preenchido com o que foi lido dos documentos.</p>
     <p style="font-size:0.85rem; line-height:1.6; color:var(--text-muted);">Exemplo: “${escHtml(EXEMPLO_PEDIDO_REDACAO)}”</p>
-    <button class="btn btn-primary btn-sm" onclick="usarExemploPedido()"><i class="ti ti-pencil"></i> Usar este exemplo no card 2</button>`);
+    <button class="btn btn-primary btn-sm" onclick="usarExemploPedido()"><i class="ti ti-pencil"></i> Usar este exemplo na aba Redigir</button>`);
 }
 
 // Identidade de um documento do SEI: o número que vem no nome do arquivo (ex.: 93592445 em
@@ -4069,8 +4089,8 @@ function fixarConsultaDoHistorico(chave) {
 }
 
 // ==================== PEDIDO DE TEXTO NO "PERGUNTE AO PROCESSO" ====================
-// O card 2 vira o lugar de pedir ("preciso de uma nota técnica sobre..."); o sistema confirma o
-// tipo e os temas e monta o rascunho no card 3, já preenchido com o que foi lido dos documentos
+// O Assistente tem duas abas: Perguntar e Redigir. Na aba Redigir a pessoa escolhe o tipo e o tema, e o
+// sistema monta o rascunho no editor da própria aba, já preenchido com o que foi lido dos documentos
 // e do histórico da unidade, com a fonte de cada fato entre colchetes e o que faltar como [preencher].
 const EXEMPLO_PEDIDO_REDACAO = 'Preciso de uma nota técnica sobre a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade. Monte um modelo.';
 
@@ -4161,36 +4181,90 @@ function _registrarErroExibido(msg) {
   _registrarNoLog('ERRO_EXIBIDO', limpo);
 }
 
-function usarExemploPedido() {
-  fecharModal();
+// ==================== ASSISTENTE DO PROCESSO (abas Perguntar e Redigir) ====================
+function assistenteAba(nome) {
+  const redigir = nome === 'redigir';
+  document.getElementById('aba-perguntar')?.classList.toggle('hidden', redigir);
+  document.getElementById('aba-redigir')?.classList.toggle('hidden', !redigir);
+  document.getElementById('aba-btn-perguntar')?.classList.toggle('ativa', !redigir);
+  document.getElementById('aba-btn-redigir')?.classList.toggle('ativa', redigir);
+  window._assistenteAba = nome;
+}
+
+function abrirHistoricoConsultas() {
+  document.getElementById('painel-historico')?.classList.toggle('hidden');
+}
+
+function usarExemploPergunta(botao) {
   const i = document.getElementById('chat-input');
-  if (!i) return;
-  i.value = EXEMPLO_PEDIDO_REDACAO;
-  i.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (!i || !botao) return;
+  i.value = botao.textContent.trim();
   i.focus();
 }
 
+function selecionarTipoRedacao(nome) {
+  window._tipoRedacaoEscolhido = nome || null;
+  document.querySelectorAll('#assist-tipos .assist-chip').forEach(b => b.classList.toggle('ativa', b.dataset.tipo === nome));
+}
+
+// Pedido feito direto na aba Redigir: tipo escolhido + assunto. Sem segunda confirmação,
+// porque a pessoa já disse o tipo e o tema; os temas podem ser ajustados editando o pedido.
+function iniciarRedacaoPelaAba() {
+  const aviso = document.getElementById('redigir-aviso');
+  const pedidoTxt = (document.getElementById('redigir-pedido')?.value || '').trim();
+  const tipo = window._tipoRedacaoEscolhido;
+  const dizer = t => { if (aviso) aviso.textContent = t; };
+  if (!tipo) return dizer('Escolha o tipo de texto.');
+  if (pedidoTxt.length < 4) return dizer('Diga sobre o que o texto trata.');
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) return dizer('Nenhum documento importado neste processo ainda. Importe antes de pedir um texto.');
+  dizer('');
+  let temas = tipo === 'resposta' ? ['responder a: ' + pedidoTxt] : _extrairTemasDoPedido('sobre ' + pedidoTxt, tipo);
+  if (!temas.length) temas = [pedidoTxt];
+  const pergunta = tipo === 'resposta' ? 'Preciso responder a ' + pedidoTxt : 'Preciso de ' + tipo + ' sobre ' + pedidoTxt;
+  window._redacaoPendente = { pergunta, tipo, temas };
+  _registrarNoLog('PEDIU_TEXTO', tipo);
+  montarRascunhoRedacao(temas);
+}
+
+function usarExemploPedido() {
+  fecharModal();
+  assistenteAba('redigir');
+  selecionarTipoRedacao('nota técnica');
+  const p = document.getElementById('redigir-pedido');
+  if (!p) return;
+  p.value = 'a necessidade de ampliação de leitos ou o não atingimento de metas desta unidade';
+  p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  p.focus();
+}
+
 function _mostrarConfirmacaoRedacao(pergunta, pedido) {
-  const history = document.getElementById('chat-history');
+  // Pedido de texto escrito na aba Perguntar: leva a pessoa para a aba Redigir e confirma lá.
+  assistenteAba('redigir');
+  selecionarTipoRedacao(TIPOS_REDACAO.some(t => t.nome === pedido.tipo) ? pedido.tipo : 'documento');
+  const campo = document.getElementById('redigir-pedido');
+  if (campo) campo.value = pergunta;
+  const area = document.getElementById('redacao-confirma-area');
+  if (!area) return;
   document.getElementById('redacao-confirma')?.remove();
   window._redacaoPendente = { pergunta, tipo: pedido.tipo, temas: pedido.temas };
   _registrarNoLog('PEDIU_TEXTO', pedido.tipo);
-  const temas = pedido.temas.map(t => `<label style="display:flex; gap:6px; align-items:flex-start; font-size:0.85rem; margin:3px 0;"><input type="checkbox" class="redacao-tema" value="${escAttr(t)}" checked style="margin-top:3px;"> <span>${escHtml(t)}</span></label>`).join('');
-  history.insertAdjacentHTML('beforeend', `<div id="redacao-confirma" style="background:#fff; border:1px solid #adb5bd; border-radius:10px; padding:12px 14px; max-width:94%; font-size:0.88rem;">
+  const temas = pedido.temas.map(t => `<label style="display:flex; gap:6px; align-items:flex-start; font-size:0.9rem; margin:3px 0;"><input type="checkbox" class="redacao-tema" value="${escAttr(t)}" checked style="margin-top:3px;"> <span>${escHtml(t)}</span></label>`).join('');
+  area.innerHTML = `<div id="redacao-confirma" style="background:#fff; border:1px solid #adb5bd; border-radius:10px; padding:14px 16px; margin:12px 0; font-size:0.92rem;">
     <div style="margin-bottom:6px;"><i class="ti ti-file-text"></i> Entendi como pedido de texto: <strong>${escHtml(pedido.tipo)}</strong></div>
-    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:6px;">Seu pedido: “${escHtml(pergunta)}”</div>
-    ${temas ? `<div style="font-size:0.78rem; color:var(--text-muted);">Temas (desmarque o que não quer no texto):</div>${temas}` : '<div style="font-size:0.82rem; color:#854d0e;">Não identifiquei o tema. Escreva abaixo.</div>'}
-    <input id="redacao-outro-tema" placeholder="Outro tema ou observação (opcional)" style="width:100%; margin:8px 0; padding:8px; border:1px solid #ced4da; border-radius:6px; font-size:0.85rem;">
+    <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:6px;">Seu pedido: “${escHtml(pergunta)}”</div>
+    ${temas ? `<div style="font-size:0.8rem; color:var(--text-muted);">Temas (desmarque o que não quer no texto):</div>${temas}` : '<div style="font-size:0.85rem; color:#854d0e;">Não identifiquei o tema. Escreva abaixo.</div>'}
+    <input id="redacao-outro-tema" placeholder="Outro tema ou observação (opcional)" style="width:100%; margin:8px 0; padding:8px; border:1px solid #ced4da; border-radius:6px; font-size:0.88rem;">
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn btn-primary btn-sm" id="btn-montar-rascunho" onclick="montarRascunhoRedacao()"><i class="ti ti-pencil"></i> Montar rascunho no card 3</button>
+      <button class="btn btn-primary btn-sm" id="btn-montar-rascunho" onclick="montarRascunhoRedacao()"><i class="ti ti-pencil"></i> Montar rascunho</button>
       <button class="btn btn-secondary btn-sm" onclick="tratarComoPergunta()">Não, é uma pergunta</button>
-    </div></div>`);
-  history.scrollTop = history.scrollHeight;
+    </div></div>`;
+  area.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 function tratarComoPergunta() {
   const pend = window._redacaoPendente;
   document.getElementById('redacao-confirma')?.remove();
+  assistenteAba('perguntar');
   if (pend) fazerPerguntaAoProcesso(pend.pergunta);
 }
 
@@ -4210,19 +4284,26 @@ function _lerRespostaDoRascunho(resposta) {
   return { texto: s.replace(/```json|```/g, '').trim(), assumi: [], faltou: [] };
 }
 
-async function montarRascunhoRedacao() {
+async function montarRascunhoRedacao(temasDiretos) {
   const pend = window._redacaoPendente;
   if (!pend || !processoAtual) return;
-  const marcados = [...document.querySelectorAll('.redacao-tema:checked')].map(c => c.value);
-  const outro = (document.getElementById('redacao-outro-tema')?.value || '').trim();
-  const temas = outro ? [...marcados, outro] : marcados;
+  let temas;
+  if (Array.isArray(temasDiretos)) temas = temasDiretos;
+  else {
+    const marcados = [...document.querySelectorAll('.redacao-tema:checked')].map(c => c.value);
+    const outro = (document.getElementById('redacao-outro-tema')?.value || '').trim();
+    temas = outro ? [...marcados, outro] : marcados;
+  }
   if (!temas.length) { alert('Escolha ou escreva pelo menos um tema.'); return; }
   const botao = document.getElementById('btn-montar-rascunho');
   if (botao) botao.disabled = true;
+  const botaoAba = document.getElementById('btn-iniciar-redacao');
+  if (botaoAba) botaoAba.disabled = true;
   const notas = document.getElementById('redacao-notas');
   const p = processoAtual;
   notas.innerHTML = '<div style="font-size:0.85rem;"><span class="spinner"></span> Montando o rascunho a partir dos documentos e do histórico da unidade...</div>';
   notas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('redacao-confirma')?.remove();
   try {
     const consulta = `${pend.tipo} ${temas.join(' ')} ${pend.pergunta}`;
     const contexto = textoIntegralAtual.length > LIMITE_CHARS_LOTE
@@ -4282,7 +4363,7 @@ ${contexto}`;
     }
     const r = _lerRespostaDoRascunho(resposta);
     const editor = document.getElementById('editor-final');
-    if (editor.value.trim() && !confirm('O card 3 já tem um texto. Substituir pelo rascunho? (Cancelar coloca o rascunho abaixo do texto atual.)')) {
+    if (editor.value.trim() && !confirm('O editor já tem um texto. Substituir pelo rascunho? (Cancelar coloca o rascunho abaixo do texto atual.)')) {
       editor.value = editor.value.trim() + '\n\n---------- RASCUNHO ----------\n\n' + r.texto;
     } else {
       editor.value = r.texto;
@@ -4295,18 +4376,19 @@ ${contexto}`;
     if (cob.falhas.length) aviso.push(cob.falhas.length + ' aviso(s) de importação em aberto');
     const lista = (titulo, itens) => itens.length ? `<div style="margin-top:6px;"><strong>${titulo}</strong><ul style="margin:4px 0 0 18px; padding:0;">${itens.map(i => `<li>${escHtml(i)}</li>`).join('')}</ul></div>` : '';
     notas.innerHTML = `<div style="background:#e7f5ff; border-left:3px solid #339af0; padding:10px 12px; border-radius:4px; margin-bottom:12px; font-size:0.85rem; line-height:1.5;">
-      <strong>Rascunho de ${escHtml(pend.tipo)} montado abaixo.</strong> As fontes ficam entre colchetes, e o que faltou ficou como [preencher]. Confira cada fonte e apague os colchetes antes de assinar.
+      <strong>Rascunho de ${escHtml(pend.tipo)} montado no campo abaixo.</strong> As fontes ficam entre colchetes, e o que faltou ficou como [preencher]. Confira cada fonte e apague os colchetes antes de assinar.
       ${lista('O que assumi do seu pedido:', r.assumi)}${lista('O que faltou nos documentos:', r.faltou)}
       ${aviso.length ? `<div style="margin-top:8px; color:#854d0e;"><i class="ti ti-alert-triangle"></i> A leitura do processo tem pontos de atenção (${escHtml(aviso.join('; '))}). O rascunho pode estar incompleto. Veja a Cobertura da leitura.</div>` : ''}
     </div>`;
     _registrarNoLog('RASCUNHO_PRONTO', pend.tipo + ' · ' + r.texto.length + ' caracteres');
     document.getElementById('redacao-confirma')?.remove();
-    document.getElementById('chat-history').insertAdjacentHTML('beforeend', `<div style="color:#2b8a3e; font-size:0.85rem;"><i class="ti ti-check"></i> Rascunho de ${escHtml(pend.tipo)} montado no card 3 (${escHtml(temas.join('; '))}).</div>`);
     window._redacaoPendente = null;
+    if (botaoAba) botaoAba.disabled = false;
     editor.scrollIntoView({ behavior: 'smooth', block: 'center' });
   } catch (e) {
     notas.innerHTML = renderErroAmigavel(e.message);
     if (botao) botao.disabled = false;
+    if (botaoAba) botaoAba.disabled = false;
   }
 }
 
@@ -4317,20 +4399,20 @@ async function fazerPerguntaAoProcesso(textoForcado = null) {
   const pergunta = (typeof textoForcado === 'string' ? textoForcado : input.value).trim();
   if (!pergunta) return;
   if (!textoIntegralAtual || textoIntegralAtual.trim().length < 20) {
-    history.innerHTML += `<div style="color:#c92a2a; font-size:0.85rem;">Nenhum documento importado neste processo ainda — importe antes de perguntar.</div>`;
+    history.insertAdjacentHTML('beforeend', `<div style="color:#c92a2a; font-size:0.9rem;">Nenhum documento importado neste processo ainda — importe antes de perguntar.</div>`);
     return;
   }
 
-  document.getElementById('chat-vazio')?.remove();
-  // Pedido de texto ("preciso de uma nota técnica sobre...") vai para a confirmação e para o card 3.
+  // Pedido de texto ("preciso de uma nota técnica sobre...") leva para a aba Redigir.
   if (typeof textoForcado !== 'string') {
     const pedido = _detectarPedidoDeRedacao(pergunta);
     if (pedido) { input.value = ''; _mostrarConfirmacaoRedacao(pergunta, pedido); return; }
   }
-  history.innerHTML += `
-      <div style="background:#e9ecef; padding:10px 15px; border-radius:15px 15px 15px 0; align-self:flex-start; max-width:85%; font-size: 0.9rem; color: #212529;">
-          <strong><i class="ti ti-user"></i> Você:</strong><br>${escHtml(pergunta)}
-      </div>`;
+  document.getElementById('chat-vazio')?.remove();
+  history.insertAdjacentHTML('beforeend', `
+      <div class="assist-feita">
+          <strong><i class="ti ti-user"></i> Você perguntou</strong><br>${escHtml(pergunta)}
+      </div>`);
   input.value = '';
   if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Localizando nos documentos...'; }
   history.scrollTop = history.scrollHeight;
@@ -4366,14 +4448,14 @@ ${contextoDocs}`;
     const resposta = await invocarIAComFallback(prompt, true);
     const respId = `chat-${Date.now()}`;
     window.memoriaEvidencias[respId] = { tag: 'Investigação', titulo: `P: ${pergunta}`, texto: resposta, doc: 'Resposta do Chat' };
-    history.innerHTML += `
-        <div style="background:#e7f5ff; border: 1px solid #74c0fc; padding:10px 15px; border-radius:15px 15px 0 15px; align-self:flex-end; max-width:85%; font-size: 0.9rem; color: #0b509e;">
-            <strong><i class="ti ti-robot"></i> IA Investigadora:</strong><br>
-            <div style="white-space: pre-wrap; margin-top:5px;">${escHtml(resposta)}</div>
+    history.insertAdjacentHTML('beforeend', `
+        <div class="assist-resposta">
+            <div class="assist-resposta-rotulo"><i class="ti ti-robot"></i> Resposta</div>
+            <div class="assist-resposta-texto">${escHtml(resposta)}</div>
             <div style="text-align:right; margin-top:10px;">
                 <button class="btn btn-sm" style="background-color:#0dcaf0; color:#000; border:none; font-size:0.75rem; font-weight:bold; padding:4px 8px; border-radius:4px;" onclick="fixarEvidenciaDaMemoria('${respId}')"><i class="ti ti-pin"></i> Fixar na Tela 2</button>
             </div>
-        </div>`;
+        </div>`);
     // Entra no histórico ao lado na hora, marcado "salvando...", e só vira "salvo" quando
     // o servidor confirmar — nada de sumir em silêncio.
     const item = {
@@ -4387,12 +4469,14 @@ ${contextoDocs}`;
     salvarConsultaNoHistorico(item.tempId);
   } catch (e) {
     const { titulo, sugestao } = _mensagemErroAmigavel(e.message);
-    history.innerHTML += `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:8px 12px; margin-top:5px; max-width:85%; align-self:flex-end; font-size:0.82rem; color:#7c2d12;">
+    history.insertAdjacentHTML('beforeend', `<div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; padding:10px 14px; font-size:0.9rem; color:#7c2d12;">
       <i class="ti ti-cloud-exclamation" style="color:#c2410c;"></i> ${escHtml(titulo)} <span style="color:#9a3412;">${escHtml(sugestao)}</span>
-    </div>`;
+    </div>`);
   }
   if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-send"></i> Perguntar'; }
-  history.scrollTop = history.scrollHeight;
+  // A resposta nova aparece do começo (não do fim): resposta longa não pode esconder a primeira linha.
+  const ultimo = history.lastElementChild;
+  if (ultimo) history.scrollTop = Math.max(0, ultimo.offsetTop - 8);
 }
 
 async function rodarRevisaoFinal() {
