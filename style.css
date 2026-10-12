@@ -174,3 +174,21 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 .assist-gaveta { position:fixed; top:0; right:0; bottom:0; width:min(400px, 100vw); background:#fff; border-left:1px solid #dee2e6; box-shadow:-8px 0 24px rgba(0,0,0,.12); z-index:1500; padding:16px; overflow-y:auto; }
 .assist-gaveta-topo { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; font-size:0.9rem; }
 @media (max-width: 640px) { .assistente { padding:14px; } .assist-pergunta { flex-direction:column; } .assist-aba { padding:10px 12px; } }
+
+/* ===== Documentos do processo (card de cima): fechado por padrão, com selo ===== */
+.docs-processo { margin-top:14px; border:1px solid #e9ecef; border-radius:8px; background:#fafbfc; }
+.docs-processo > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; font-size:0.88rem; }
+.docs-processo > summary::-webkit-details-marker { display:none; }
+.docs-titulo { font-weight:600; color:var(--text-dark, #212529); }
+.docs-qtd { color:#6c757d; font-size:0.82rem; }
+.docs-seta { margin-left:auto; color:#868e96; transition:transform .2s; }
+.docs-processo[open] > summary .docs-seta { transform:rotate(180deg); }
+.docs-processo[open] > summary { border-bottom:1px solid #e9ecef; }
+.docs-corpo { padding:10px 14px 14px; }
+.docs-lista { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:4px 18px; font-size:0.82rem; color:#495057; max-height:260px; overflow-y:auto; }
+.docs-lista li { display:flex; align-items:center; gap:6px; min-width:0; padding:3px 0; }
+.docs-lista .ti { color:#c92a2a; flex-shrink:0; }
+.docs-nome { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
+.docs-assinada { background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600; white-space:nowrap; }
+.docs-sens { color:#b45309; font-size:0.7rem; white-space:nowrap; }
+.docs-leitura { margin-top:6px; border-top:1px dashed #dee2e6; padding-top:4px; }
