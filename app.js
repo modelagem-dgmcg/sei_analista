@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v25.2';
-const VERSAO_APP_DATA = '12/10/2026 14:00';
+const VERSAO_APP = 'v25.4';
+const VERSAO_APP_DATA = '12/10/2026 15:40';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -940,10 +940,10 @@ function _renderBotoesStatus(statusAtual) {
   const el = document.getElementById('btn-status-processo');
   if (!el) return;
   const acao = _FLUXO_STATUS.find(f => f.de === statusAtual);
-  const badge = `<span style="font-size:0.72rem; background:#f8f9fa; border:1px solid #dee2e6; padding:3px 10px; border-radius:10px; color:#6c757d;">${escHtml(statusAtual || '')}</span>`;
-  el.innerHTML = badge + (acao ? `
-    <button class="btn btn-sm" style="background:${acao.cor}; color:#fff; border:none; padding:4px 12px; border-radius:6px; font-size:0.78rem;"
-      onclick="avancarStatusProcesso('${escAttr(acao.para)}')"><i class="ti ${acao.icone}"></i> ${escHtml(acao.label)}</button>` : '');
+  // O status atual já aparece na linha de cima do card; aqui só entra o botão do próximo passo.
+  el.innerHTML = acao ? `
+    <button class="btn-fluxo btn-fluxo-principal" style="background:${acao.cor};"
+      onclick="avancarStatusProcesso('${escAttr(acao.para)}')"><i class="ti ${acao.icone}"></i> ${escHtml(acao.label)}</button>` : '';
 }
 
 async function avancarStatusProcesso(novoStatus) {
@@ -1476,12 +1476,6 @@ async function abrirProcesso(identificador) {
   let html = `
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom:15px;">
         <button class="btn btn-secondary btn-sm" onclick="showView('dashboard', caixaAtualAtiva)"><i class="ti ti-arrow-left"></i> Voltar</button>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          ${_ultimaTramitacaoRecebida ? `<button class="btn btn-sm" onclick="devolverProcesso()" style="background-color:#d97706; color:#fff; border:none; font-weight:bold;"><i class="ti ti-corner-up-left"></i> Devolver</button>` : ''}
-          <button class="btn btn-sm" onclick="modalEncaminhar()" style="background-color:#495057; color:#fff; border:none; font-weight:bold;"><i class="ti ti-share"></i> Encaminhar</button>
-          <button class="btn btn-sm" onclick="finalizarProcesso()" style="background-color:#16a34a; color:#fff; border:none; font-weight:bold;"><i class="ti ti-check"></i> Finalizar</button>
-          <button class="btn btn-sm" onclick="abrirPainelEvidencias()" style="background-color: #0dcaf0; color: #000; border: none; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.1);"><i class="ti ti-columns"></i> Abrir Modo Tela Dupla</button>
-        </div>
     </div>
     <div style="background:#fff;border-radius:8px;padding:20px;margin-bottom:20px;box-shadow:0 1px 3px rgba(0,0,0,0.1); border-left: 4px solid var(--action-primary);">
       <h2 style="font-size:1.2rem;color:var(--text-dark); margin-bottom:5px;">${escHtml(sei)}</h2>
@@ -1499,15 +1493,21 @@ async function abrirProcesso(identificador) {
           <i class="ti ti-chevron-down docs-seta"></i>
         </summary>
         <div class="docs-corpo">
-          ${docsHtml}
-          <div id="cobertura-leitura" class="docs-leitura"></div>
+          <div id="cobertura-leitura"></div>
+          ${docs.length ? `<details class="docs-arquivos"><summary>Ver a lista de arquivos</summary>${docsHtml}</details>` : docsHtml}
         </div>
       </details>
-      <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-        <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Adicionar mais arquivos</button>
-        <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
-        <button class="btn btn-secondary btn-sm" onclick="modalImportarVersaoAssinada('processo')"><i class="ti ti-file-check"></i> Importar versão assinada (SEI)</button>
-        <div id="btn-status-processo" style="display:inline-flex; gap:6px; align-items:center; flex-wrap:wrap;"></div>
+      <div class="proc-acoes">
+        <div class="proc-acoes-aux">
+          <button class="btn-aux" onclick="modalUploadZIP()" title="Adicionar mais arquivos ao processo"><i class="ti ti-cloud-upload"></i> Adicionar arquivos</button>
+          <button class="btn-aux btn-aux-icone" onclick="abrirTabelaDadosProcesso()" title="Gerar tabela de dados" aria-label="Gerar tabela de dados"><i class="ti ti-table"></i></button>
+          <button class="btn-aux btn-aux-icone" onclick="modalImportarVersaoAssinada('processo')" title="Importar versão assinada (SEI)" aria-label="Importar versão assinada (SEI)"><i class="ti ti-file-check"></i></button>
+        </div>
+        <div class="proc-acoes-fluxo">
+          <button class="btn-fluxo btn-fluxo-neutro" onclick="modalEncaminhar()"><i class="ti ti-share"></i> Encaminhar</button>
+          <button class="btn-fluxo btn-fluxo-finalizar" onclick="finalizarProcesso()"><i class="ti ti-check"></i> Finalizar</button>
+          <span id="btn-status-processo"></span>
+        </div>
       </div>
     </div>
 
@@ -1518,7 +1518,7 @@ async function abrirProcesso(identificador) {
         <div style="border:1px solid #dee2e6; border-radius:8px; padding:10px 14px; background:#f8f9fa; display:flex; align-items:flex-start; gap:10px;">
           <div style="width:32px;height:32px;border-radius:6px;background:#e7f5ff;color:#1c7ed6;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-file-text"></i></div>
           <div style="flex:1;">
-            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Documentos do processo
+            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Texto e contas dos documentos
               <span style="font-size:0.68rem;background:#d1e7dd;color:#0f5132;padding:2px 7px;border-radius:10px;">Sempre ativo</span></div>
             <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Contrato, aditivos, ofícios e despachos importados do SEI. A conferência de contas por código roda antes da IA.</div>
           </div>
@@ -1548,6 +1548,7 @@ async function abrirProcesso(identificador) {
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
         <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
+        <button class="btn-aux" style="margin-left:auto;" onclick="abrirPainelEvidencias()" title="Abre os achados e as evidências numa segunda janela, para ler lado a lado com o processo"><i class="ti ti-columns"></i> Abrir em tela dupla</button>
       </div>
       <div id="progresso-checagem" class="hidden"></div>
       <div id="ia-status" style="margin-top:15px;"></div>
@@ -3285,7 +3286,7 @@ function _htmlCoberturaLeitura() {
 
   let conferir = '';
   problemas.forEach(p => {
-    conferir += linha(`<i class="ti ti-alert-triangle"></i> ${escHtml(p.explicacao)}${p.acao ? ` <button class="btn btn-secondary btn-sm" style="margin-left:6px;" onclick="${escAttr(p.acao.js)}">${escHtml(p.acao.rotulo)}</button>` : ''}`, AVISO);
+    conferir += linha(`<i class="ti ti-alert-triangle"></i> ${escHtml(p.explicacao)}${p.acao ? `<div><button class="docs-link" onclick="${escAttr(p.acao.js)}">${escHtml(p.acao.rotulo)}</button></div>` : ''}`, AVISO);
   });
   let extra = 0;
   if (c && c.iaPulada) { extra++; conferir += linha(`<i class="ti ti-player-pause"></i> A IA ainda não analisou, porque o processo é grande (${pl(c.lotes, 'parte', 'partes')}). Toque em "Executar Checagem" para ela analisar.`, AVISO); }
@@ -3315,7 +3316,8 @@ function _htmlCoberturaLeitura() {
     : '<span style="background:#d1e7dd; color:#0f5132; padding:2px 10px; border-radius:10px; font-size:0.75rem;">tudo lido</span>';
   window._cobTotalPontos = total;
   window._cobChipHtml = chip;
-  return `${secao('O que foi lido', leitura)}${conferir ? secao('Para conferir', conferir) : ''}${secao('Conferência', chec)}`;
+  // O que exige atenção vem primeiro; o resto é referência.
+  return `${conferir ? secao('Para conferir', conferir).replace('margin-top:14px', 'margin-top:0') : ''}${secao('O que foi lido', leitura).replace('margin-top:14px', conferir ? 'margin-top:14px' : 'margin-top:0')}${secao('Conferência', chec)}`;
 }
 
 function _atualizarCoberturaLeitura() {
