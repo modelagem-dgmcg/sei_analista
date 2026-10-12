@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v25.9';
-const VERSAO_APP_DATA = '12/10/2026 18:00';
+const VERSAO_APP = 'v26.4';
+const VERSAO_APP_DATA = '12/10/2026 22:30';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -430,7 +430,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_andamento: 'Processos em Andamento',
     dashboard_encaminhados: 'Processos Encaminhados (Acompanhamento)',
     dashboard_concluidos: 'Registro de Concluídos',
-    dashboard_panorama: 'Panorama',
+    dashboard_panorama: 'Painel Geral',
     dashboard_perguntas: 'Perguntas sobre achados',
     novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho'
   };
@@ -647,7 +647,7 @@ async function renderDashboard(caixa = 'entrada') {
   await atualizarContagensSidebar();
   const abasHtml = `
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; border-bottom:1px solid #dee2e6; padding-bottom:12px;">
-      <button class="btn btn-sm ${caixa === 'panorama' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','panorama')"><i class="ti ti-layout-dashboard"></i> Panorama</button>
+      <button class="btn btn-sm ${caixa === 'panorama' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','panorama')"><i class="ti ti-layout-dashboard"></i> Painel Geral</button>
       <button class="btn btn-sm ${caixa === 'entrada' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','entrada')"><i class="ti ti-inbox"></i> Caixa de Entrada</button>
       <button class="btn btn-sm ${caixa === 'andamento' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','andamento')"><i class="ti ti-loader"></i> Em Andamento</button>
       <button class="btn btn-sm ${caixa === 'encaminhados' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','encaminhados')"><i class="ti ti-share"></i> Encaminhados</button>
@@ -830,7 +830,7 @@ async function carregarAlertasSidebar() {
   area.innerHTML = `<a href="#" onclick="showView('dashboard','panorama'); return false;"
     style="display:flex;align-items:center;gap:6px;padding:5px 10px 5px 12px;text-decoration:none;border-left:3px solid ${cor};background:rgba(0,0,0,0.15);border-radius:0 4px 4px 0;margin:0 0 4px;">
     <i class="ti ti-bell" style="color:${cor};font-size:13px;"></i>
-    <span style="font-size:0.72rem;color:${cor};font-weight:600;">${_alertasCache.length} alerta(s) — ver Panorama</span></a>`;
+    <span style="font-size:0.72rem;color:${cor};font-weight:600;">${_alertasCache.length} alerta(s) — ver Painel Geral</span></a>`;
 }
 
 // ==================== PANORAMA ====================
@@ -863,7 +863,7 @@ async function renderPanorama(content, abasHtml) {
   };
   content.innerHTML = abasHtml + `
     <div style="font-size:0.72rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:.05em; margin-bottom:10px;">
-      Panorama — ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}</div>
+      Painel Geral — ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' })}</div>
     <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; margin-bottom:18px;">
       ${bloco('ti-inbox', 'Na caixa de entrada', c.entrada, 'entrada', '#0b509e', c.entrada > 0)}
       ${bloco('ti-loader', 'Em andamento', c.andamento, 'andamento', '#6f42c1', false)}
@@ -3486,7 +3486,8 @@ REGRAS DE CHECAGEM:
    comparação numérica, é comparação de redação. Ex.: um título de meta dizendo um número enquanto a
    tabela detalhada logo depois soma outro; a descrição de um cargo/item copiada do item errado.
 3. Se algum achado se basear no histórico da unidade ou na busca de normas/jurisprudência, marque
-   "baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false).
+   "baseado_em_fonte_externa": true nesse achado E "verificar": true SEMPRE (nunca false). Nesse caso preencha
+   também "fonte_externa": "unidade" (veio do histórico da unidade) ou "web" (veio da busca de normas/jurisprudência).
 4. Para cada achado, marque "verificar": true se depender de conferência manual, ou false apenas se
    for uma certeza absoluta e objetiva. Na dúvida, use true.
 5. Escreva um campo "sugestao": o que fazer para resolver isso, em linguagem simples e direta (nada
@@ -3508,7 +3509,7 @@ Páginas marcadas com [leitura por OCR] foram lidas de imagem e podem ter dígit
 depender de número dessas páginas, marque verificar=true e diga na explicação que o número vem de OCR.
 
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
-{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false}]}
+{"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false, "fonte_externa": ""}]}
 
 ${achadosCodigo.length ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n' : ''}TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
 ___TEXTO_DO_LOTE___`;
@@ -3879,6 +3880,44 @@ function _progressoIniciar(idContainer, titulo, etapas) {
   };
 }
 
+// De onde veio cada achado: 1 = documentos do processo (contas por código, leitura e IA sobre o texto),
+// 2 = histórico da unidade, 3 = busca em fontes abertas.
+function _fonteDoAchado(c) {
+  if (!c.baseado_em_fonte_externa) return 'docs';
+  const f = String(c.fonte_externa || '').toLowerCase();
+  if (f === 'web') return 'web';
+  if (f === 'unidade' || f === 'drive') return 'drive';
+  const d = document.getElementById('chk-historico-unidade')?.checked, w = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
+  return w && !d ? 'web' : 'drive';
+}
+const _GRUPOS_ACHADOS = [
+  { id: 'docs',  num: 1, nome: 'Documentos anexados agora' },
+  { id: 'drive', num: 2, nome: 'Todos os documentos da unidade' },
+  { id: 'web',   num: 3, nome: 'Busca em fontes abertas' }
+];
+// Só o clique da pessoa vale como escolha; o que o sistema abre sozinho não fica gravado.
+function _grupoAchadosClique(id, det) { (window._gruposAbertos = window._gruposAbertos || {})[id] = !det.open; }
+function _htmlGruposDeAchados(grupos, cards) {
+  const comAchados = _GRUPOS_ACHADOS.filter(g => grupos[g.id].length).length;
+  return _GRUPOS_ACHADOS.map(g => {
+    const lista = grupos[g.id], n = lista.length;
+    if (!n) {
+      // Fonte que rodou e não achou nada: uma linha, sem expandir.
+      const rodou = document.getElementById('card-' + g.id)?.dataset.estado === 'pronto';
+      return rodou ? `<div class="grupo-achados grupo-vazio"><span class="fonte-num">✓</span><span class="grupo-nome">${escHtml(g.nome)}</span><span class="grupo-qtd">nenhuma inconsistência</span></div>` : '';
+    }
+    const verificar = cards.filter(c => _fonteDoAchado(c) === g.id && c.verificar !== false).length;
+    const guardado = (window._gruposAbertos || {})[g.id];
+    const aberto = guardado !== undefined ? guardado : (comAchados === 1 && n <= 8);
+    return `<details class="grupo-achados" ${aberto ? 'open' : ''}>
+      <summary onclick="_grupoAchadosClique('${g.id}', this.parentElement)"><span class="fonte-num">${g.num}</span><span class="grupo-nome">${escHtml(g.nome)}</span>
+        <span class="grupo-qtd">${n === 1 ? '1 inconsistência' : n + ' inconsistências'}${verificar ? ` · ${verificar} para verificar` : ''}</span>
+        <i class="ti ti-chevron-down docs-seta"></i></summary>
+      <div class="grupo-corpo">${lista.join('')}</div>
+    </details>`;
+  }).join('');
+}
+
 function renderizarCards(cards) {
   const painel = document.getElementById('painel-cards');
   const todos = cards || [];
@@ -3895,6 +3934,7 @@ function renderizarCards(cards) {
   let html = _htmlBarraFiltroEExportar(cards, filtrados);
   html += linhaOcultos;
   cards = filtrados;
+  const _grupos = { docs: [], drive: [], web: [] };
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
@@ -3909,7 +3949,7 @@ function renderizarCards(cards) {
     const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
       + (trechoNaoAchado ? `<span title="A IA citou um trecho que não aparece no texto dos documentos. Confira antes de aceitar o achado." style="font-size:0.68rem;background:#ffe3e3;color:#a61e4d;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">TRECHO NÃO LOCALIZADO</span>` : '')
       + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
-    html += `<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
+    _grupos[_fonteDoAchado(c)].push(`<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
         <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
       </div>
@@ -3936,8 +3976,9 @@ function renderizarCards(cards) {
         </div>
         <div class="status-consulta-achado" style="margin-top:10px;"></div>
       </div>
-    </div>`;
+    </div>`);
   });
+  html += _htmlGruposDeAchados(_grupos, cards);
   painel.innerHTML = html;
   carregarStatusConsultasAchados();
 }
@@ -4770,7 +4811,8 @@ function verificarIA() {
 // ==================== COMO O MEU TRABALHO ACONTECE (aviso + relatos) ====================
 // Cada pessoa conta, com as próprias palavras, o que faz, com quem, o que trava. Os relatos
 // são reunidos para montar o fluxo real e compará-lo com o mapa e com o que o SEI registra.
-// A pessoa vê e altera só os próprios relatos. A gestão vê apenas contagens por gerência.
+// Os relatos ficam ligados ao nome e ao setor confirmados pela pessoa, e a gestão (perfil admin) os vê:
+// o uso declarado é montar o fluxo atual e a gestão de riscos, e o aviso diz isso. Cada pessoa vê e altera os próprios.
 const RELATO_FIXAS = [
   { id: 'f1', rotulo: 'O que você faz', pergunta: 'O que você faz no seu dia a dia? Conte em ordem, do jeito que for mais fácil.', dica: 'Pode ser uma lista ou um texto corrido.' },
   { id: 'f2', rotulo: 'De quem recebe e para quem segue', pergunta: 'De quem você recebe o trabalho e para quem ele segue depois?', dica: 'Cite setores ou funções. Não é preciso citar nomes de pessoas.' },
@@ -4786,9 +4828,25 @@ const RELATO_ROTATIVAS = [
   { id: 'r5', pergunta: 'O que só você sabe fazer? Se você se ausentasse por um mês, o que ficaria parado?', dica: 'Isto ajuda a proteger a continuidade do trabalho.' },
   { id: 'r6', pergunta: 'Você se lembra de algum quase-erro ou retrabalho que poderia ter sido evitado?', dica: 'Conte o que aconteceu, sem citar nomes.' }
 ];
+// Prazo para responder às perguntas de sempre. É uma data só, para todos: mude aqui (ano, mês de 0 a 11, dia).
+let RELATO_PRAZO = new Date(2026, 9, 27);   // o servidor (Code.gs) manda a data oficial e ela vale no lugar desta
 let _relatosMeus = [];
 let _anexosRelato = {};
 let _relatoEstado = null;
+let _relatoPerfil = { confirmado: false, perfil: null, cadastro: { nome: '', setor: '' }, setores: [] };
+
+// Quantas das perguntas de sempre a pessoa já respondeu e quanto falta para o prazo.
+function _relatoProgresso() {
+  const ids = new Set(_relatosMeus.filter(r => r.tipo === 'fixo').map(r => r.pergunta_id));
+  const perguntas = RELATO_FIXAS.filter(q => ids.has(q.id)).length;
+  const feitas = perguntas + (_relatoPerfil.confirmado ? 1 : 0);   // 1 passo de confirmar nome e setor + as perguntas
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const dias = Math.round((RELATO_PRAZO - hoje) / 86400000);
+  const nivel = dias < 0 || dias <= 2 ? 'critico' : dias <= 7 ? 'atencao' : 'normal';
+  const curto = dias < 0 ? 'prazo vencido' : dias === 0 ? 'último dia' : dias === 1 ? '1 dia' : dias + ' dias';
+  const longo = dias < 0 ? 'O prazo venceu em ' + RELATO_PRAZO.toLocaleDateString('pt-BR') : dias === 0 ? 'Hoje é o último dia' : dias === 1 ? 'Falta 1 dia' : 'Faltam ' + dias + ' dias';
+  return { feitas, total: RELATO_FIXAS.length + 1, concluido: feitas >= RELATO_FIXAS.length + 1, dias, nivel, curto, longo };
+}
 
 function _primeiroNome() { return String((usuarioAtual && usuarioAtual.nome) || '').trim().split(/\s+/)[0] || ''; }
 
@@ -4798,24 +4856,52 @@ async function _verificarAvisoRelato() {
     const r = await api('avisos/estado', null, { fundo: true });
     if (!r || !r.ok) return; // se falhar, o app segue normal: o aviso não pode travar o trabalho
     _relatoEstado = r;
+    _relatoPerfil = { confirmado: !!r.confirmado, perfil: r.perfil || null, cadastro: r.cadastro || { nome: '', setor: '' }, setores: r.setores || [] };
+    if (/^\d{4}-\d{2}-\d{2}$/.test(r.prazo || '')) { const [y, m, d] = r.prazo.split('-').map(Number); RELATO_PRAZO = new Date(y, m - 1, d); }
+    const rl = await api('relatos/listar', null, { fundo: true });
+    if (rl && rl.ok) _relatosMeus = rl.relatos || [];
     _atualizarSeloRelato();
     if (r.mostrar) abrirAvisoRelato();
   } catch (e) { /* sem aviso desta vez */ }
 }
 
 function _atualizarSeloRelato() {
-  const b = document.getElementById('badge-relato');
-  if (!b) return;
-  const novo = _relatoEstado && !_relatoEstado.qtd_relatos;
-  b.textContent = novo ? 'novo' : '';
-  b.style.display = novo ? 'inline-block' : 'none';
+  const b = document.getElementById('badge-relato'), pill = document.getElementById('pill-relato'), card = document.getElementById('rel-prazo');
+  const g = _relatoProgresso();
+  const dica = g.concluido ? 'Você confirmou os seus dados e respondeu às perguntas de sempre. Obrigado.'
+    : g.longo + ' (prazo ' + RELATO_PRAZO.toLocaleDateString('pt-BR') + ') para confirmar os seus dados e responder às perguntas de sempre. ' + g.feitas + ' de ' + g.total + ' passos feitos.';
+  if (b) {
+    b.textContent = g.concluido ? '✓ feito' : g.curto;
+    b.className = 'prazo-selo prazo-' + (g.concluido ? 'ok' : g.nivel);
+    b.removeAttribute('style'); b.style.display = usuarioAtual ? 'inline-block' : 'none'; b.title = dica;
+  }
+  if (pill) {
+    pill.style.display = usuarioAtual && !g.concluido ? 'inline-flex' : 'none';
+    pill.className = 'prazo-pill prazo-' + g.nivel;
+    pill.innerHTML = '<i class="ti ti-hourglass-high"></i> Meu trabalho: ' + escHtml(g.curto) + ' · ' + g.feitas + ' de ' + g.total;
+    pill.title = dica;
+  }
+  if (card) card.innerHTML = _htmlPrazoRelato(g);
+}
+
+function _htmlPrazoRelato(g) {
+  if (g.concluido) return `<div class="prazo-card prazo-ok"><div class="prazo-num">✓</div><div><div class="prazo-tit">Dados confirmados e perguntas de sempre concluídas</div><div class="prazo-sub">Obrigado. Se lembrar de mais alguma coisa, use a pergunta da semana ou o registro de algo que travou.</div></div></div>`;
+  const seg = Array.from({ length: g.total }, (_, i) => `<span class="${i < g.feitas ? 'feito' : ''}"></span>`).join('');
+  return `<div class="prazo-card prazo-${g.nivel}">
+    <div class="prazo-num">${g.dias < 0 ? '!' : g.dias}</div>
+    <div style="flex:1; min-width:0;">
+      <div class="prazo-tit">${escHtml(g.longo)} para confirmar seus dados e responder às perguntas de sempre</div>
+      <div class="prazo-sub">Prazo: ${RELATO_PRAZO.toLocaleDateString('pt-BR')}. ${g.feitas} de ${g.total} passos feitos.</div>
+      <div class="prazo-seg" aria-hidden="true">${seg}</div>
+    </div>
+  </div>`;
 }
 
 function abrirAvisoRelato() {
   criarModal(`
     <div style="max-width:520px;">
       <h2 style="font-size:1.15rem; margin-bottom:10px;"><i class="ti ti-route"></i> Conte como o seu trabalho acontece</h2>
-      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Estamos montando o mapa real dos processos da diretoria. Não o que está no papel, e sim o que acontece no dia a dia.</p>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Estamos montando o fluxo atual dos processos da diretoria e a gestão de riscos. Não o que está no papel, e sim o que acontece no dia a dia.</p>
       <p style="font-size:0.9rem; line-height:1.6; margin-bottom:4px;">Para isso, precisamos de você. Escreva do seu jeito:</p>
       <ul style="font-size:0.9rem; line-height:1.6; margin:0 0 10px 20px;">
         <li>o que você faz e em que ordem;</li>
@@ -4823,7 +4909,8 @@ function abrirAvisoRelato() {
         <li>o que costuma travar ou dar retrabalho.</li>
       </ul>
       <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Pode anexar um exemplo (documento, imagem ou planilha). Não existe resposta certa ou errada, e o objetivo é melhorar o processo, não avaliar pessoas.</p>
-      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Ao final, você vê como o seu relato foi organizado e pode corrigir. No sistema, a gestão vê quantas pessoas participaram, e não os relatos de cada um.</p>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;"><strong>Suas respostas ficam ligadas ao seu nome e ao seu setor.</strong> A gestão da diretoria vê quem respondeu e o que foi respondido, e usa isso para desenhar o fluxo e identificar riscos nos processos. Você vê e corrige as suas respostas quando quiser.</p>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Primeiro você confirma o seu nome e o seu setor, depois responde às perguntas. Prazo: ${RELATO_PRAZO.toLocaleDateString('pt-BR')}.</p>
       <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;">Não escreva nomes de pacientes nem dados pessoais. O sistema troca CPF, RG, telefone e e-mail por marcadores.</p>
       <div id="aviso-relato-erro" class="alert alert-danger hidden" style="margin-bottom:10px;"></div>
       <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
@@ -4873,10 +4960,14 @@ async function renderRelato(content) {
   };
   content.innerHTML = `
     <div style="max-width:780px;">
+      <div id="rel-prazo">${_htmlPrazoRelato(_relatoProgresso())}</div>
       <div style="background:#fff; padding:18px 22px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:14px;">
         <h3 style="font-size:1.05rem; margin-bottom:6px;"><i class="ti ti-route"></i> Conte como o seu trabalho acontece</h3>
-        <p style="font-size:0.88rem; line-height:1.6; color:var(--text-muted); margin:0;">Escreva do seu jeito, sem se preocupar com a forma. Não existe resposta certa ou errada. Você pode responder aos poucos e voltar para corrigir. Os relatos são reunidos para montar o mapa; a gestão vê apenas quantas pessoas participaram.</p>
+        <p style="font-size:0.88rem; line-height:1.6; color:var(--text-muted); margin:0;">Escreva do seu jeito, sem se preocupar com a forma. Não existe resposta certa ou errada. Você pode responder aos poucos e voltar para corrigir. Os relatos ficam ligados ao seu nome e setor, e a gestão da diretoria os vê: servem para montar o fluxo atual e a gestão de riscos.</p>
       </div>
+      <div id="rel-confirma">${_htmlConfirmacaoRelato()}</div>
+      ${_relatoPerfil.confirmado ? '' : '<div id="rel-aviso-confirma" style="font-size:0.88rem; color:var(--text-muted); margin:14px 2px;">As perguntas aparecem depois que você confirmar os seus dados.</div>'}
+      <div id="rel-perguntas" style="${_relatoPerfil.confirmado ? '' : 'display:none;'}">
       <h4 style="font-size:0.95rem; margin:16px 0 8px;">Perguntas de sempre</h4>
       ${RELATO_FIXAS.map(cartaoFixa).join('')}
       <h4 style="font-size:0.95rem; margin:20px 0 8px;">Pergunta da semana</h4>
@@ -4885,8 +4976,62 @@ async function renderRelato(content) {
       ${_htmlCartaoRelato('prob', 'Conte o que travou ou deu retrabalho.', 'Se souber, diga em qual atividade aconteceu. Não cite nomes de pacientes.', '', '', '', true)}
       <h4 style="font-size:0.95rem; margin:20px 0 8px;">Seus registros</h4>
       <div id="rel-lista"></div>
+      </div>
     </div>`;
   _desenharListaRelatos();
+}
+
+// ---- Confirmar nome e setor (primeiro passo) ----
+function _htmlConfirmacaoRelato(editando) {
+  const P = _relatoPerfil, cad = P.cadastro || {};
+  if (P.confirmado && !editando) {
+    const p = P.perfil || {};
+    return `<div style="background:#e8f5ec; border:1px solid #b7dfc3; border-radius:8px; padding:12px 18px; margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:200px; font-size:0.88rem;"><strong>Dados confirmados:</strong> ${escHtml(p.nome)} · ${escHtml(p.setor)}${p.funcao ? ' · ' + escHtml(p.funcao) : ''}</div>
+      <button class="btn btn-secondary btn-sm" onclick="document.getElementById('rel-confirma').innerHTML=_htmlConfirmacaoRelato(true)"><i class="ti ti-pencil"></i> Alterar</button></div>`;
+  }
+  const nome0 = (P.perfil && P.perfil.nome) || cad.nome || '', setor0 = (P.perfil && P.perfil.setor) || cad.setor || '', funcao0 = (P.perfil && P.perfil.funcao) || '';
+  const lista = (P.setores || []).slice();
+  if (setor0 && !lista.includes(setor0)) lista.push(setor0);
+  const opcoes = lista.map(x => `<option value="${escAttr(x)}" ${x === setor0 ? 'selected' : ''}>${escHtml(x)}</option>`).join('');
+  return `<div style="background:#fff; padding:18px 22px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:14px; border-left:4px solid #0b509e;">
+    <h3 style="font-size:1.0rem; margin-bottom:4px;"><i class="ti ti-id"></i> Passo 1: confirme o seu nome e o seu setor</h3>
+    <p style="font-size:0.84rem; color:var(--text-muted); margin:0 0 12px; line-height:1.5;">Suas respostas ficam ligadas a estes dados, e a gestão da diretoria os vê. Corrija o que estiver diferente do que é verdade hoje.</p>
+    <label for="rel-conf-nome" style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:3px;">Nome completo</label>
+    <input id="rel-conf-nome" type="text" maxlength="120" value="${escAttr(nome0)}" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:10px; font-family:inherit;">
+    <label for="rel-conf-setor" style="display:block; font-size:0.82rem; font-weight:600; margin-bottom:3px;">Setor (gerência ou núcleo onde você trabalha hoje)</label>
+    <select id="rel-conf-setor" onchange="document.getElementById('rel-conf-outro').style.display = this.value === '__outro' ? 'block' : 'none'" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:6px; font-family:inherit;">
+      <option value="">Escolha...</option>${opcoes}<option value="__outro">Outro (digitar)</option></select>
+    <input id="rel-conf-outro" type="text" maxlength="120" placeholder="Escreva o nome do setor" style="display:none; width:100%; padding:8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:10px; font-family:inherit;">
+    <label for="rel-conf-funcao" style="display:block; font-size:0.82rem; font-weight:600; margin:6px 0 3px;">Cargo ou função (opcional)</label>
+    <input id="rel-conf-funcao" type="text" maxlength="120" value="${escAttr(funcao0)}" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:12px; font-family:inherit;">
+    <div id="rel-conf-erro" class="alert alert-danger hidden" style="margin-bottom:10px;"></div>
+    <div style="display:flex; gap:8px;"><button class="btn btn-primary btn-sm" id="rel-conf-btn" onclick="confirmarDadosRelato()"><i class="ti ti-check"></i> Confirmar meus dados</button>
+      ${P.confirmado ? '<button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'rel-confirma\').innerHTML=_htmlConfirmacaoRelato(false)">Cancelar</button>' : ''}</div></div>`;
+}
+
+async function confirmarDadosRelato() {
+  const nome = document.getElementById('rel-conf-nome').value.trim(), funcao = document.getElementById('rel-conf-funcao').value.trim();
+  const sel = document.getElementById('rel-conf-setor').value;
+  const setor = sel === '__outro' ? document.getElementById('rel-conf-outro').value.trim() : sel;
+  const erro = document.getElementById('rel-conf-erro'), btn = document.getElementById('rel-conf-btn');
+  const falha = t => { erro.textContent = t; erro.classList.remove('hidden'); };
+  erro.classList.add('hidden');
+  if (nome.split(/\s+/).filter(Boolean).length < 2) return falha('Escreva o seu nome completo (nome e sobrenome).');
+  if (!setor) return falha('Escolha o seu setor. Se não estiver na lista, escolha "Outro" e escreva.');
+  btn.disabled = true;
+  const r = await api('relatos/confirmar', { nome, setor, funcao });
+  btn.disabled = false;
+  if (!r || !r.ok) return falha((r && r.erro) || 'Não foi possível salvar agora. Tente de novo.');
+  const primeira = !_relatoPerfil.confirmado;
+  _relatoPerfil.confirmado = true; _relatoPerfil.perfil = { nome, setor, funcao };
+  if (_relatoPerfil.setores && setor && !_relatoPerfil.setores.includes(setor)) _relatoPerfil.setores.push(setor);
+  _atualizarSeloRelato();
+  const area = document.getElementById('rel-confirma'); if (area) area.innerHTML = _htmlConfirmacaoRelato(false);
+  const perg = document.getElementById('rel-perguntas'); if (perg) perg.style.display = '';
+  document.getElementById('rel-aviso-confirma')?.remove();
+  mostrarToast(primeira ? 'Dados confirmados. Agora responda às perguntas.' : 'Dados atualizados.', 4000);
+  if (primeira) _desenharListaRelatos();
 }
 
 function _perguntaDaSemana() {
@@ -5025,7 +5170,7 @@ function _mensagemAgradecimento(r, comAnexo) {
 
 async function _recarregarListaRelatos() {
   const res = await api('relatos/listar');
-  if (res && res.ok) { _relatosMeus = res.relatos || []; _desenharListaRelatos(); }
+  if (res && res.ok) { _relatosMeus = res.relatos || []; _desenharListaRelatos(); _atualizarSeloRelato(); }
 }
 
 function _desenharListaRelatos() {
@@ -5078,6 +5223,7 @@ async function excluirRelato(id) {
   const res = await api('relatos/excluir', { id });
   if (!res || !res.ok) { mostrarToast((res && res.erro) || 'Não foi possível excluir.', 5000); return; }
   if (_relatoEstado) _relatoEstado.qtd_relatos = Math.max(0, (_relatoEstado.qtd_relatos || 1) - 1);
+  _relatosMeus = _relatosMeus.filter(x => String(x.id) !== String(id));
   _atualizarSeloRelato();
   // Se era uma pergunta de sempre, a caixa correspondente precisa voltar vazia.
   if (document.getElementById('content') && /Meu trabalho/.test((document.getElementById('page-title') || {}).textContent || '')) await renderRelato(document.getElementById('content'));
