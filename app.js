@@ -1,6 +1,6 @@
 // ============================================================
-// SEI ANALISTA v24.8 — app.js
-// Versão gerada em 07/10/2026 15:40 (horário de Recife)
+// SEI ANALISTA v24.9 — app.js
+// Versão gerada em 08/10/2026 10:57 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
 // ============================================================
@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v24.8';
-const VERSAO_APP_DATA = '07/10/2026 15:40';
+const VERSAO_APP = 'v25.0';
+const VERSAO_APP_DATA = '09/10/2026 17:30';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -81,7 +81,9 @@ const NOMES_ACOES = {
   'processos/parar-acompanhamento': 'o fim do acompanhamento',
   'documentos/adicionar-completo': 'a importação de documento',
   'achados/encaminhar': 'o encaminhamento do achado',
-  'achados/responder': 'a resposta ao colega'
+  'achados/responder': 'a resposta ao colega',
+  'relatos/salvar': 'o salvamento do relato (o texto continua na caixa; é só salvar de novo)',
+  'avisos/marcar': 'o registro de leitura do aviso'
 };
 let _reenviarAposLogin = [];
 let _refazerAposLogin = new Set();
@@ -363,6 +365,7 @@ async function _entrarComResposta(res) {
       iniciarMonitoramentoNovosItens();
       carregarAlertasSidebar();
       _mostrarBotaoGestao();
+      _verificarAvisoRelato();
       if (!window._intervaloAlertas) window._intervaloAlertas = setInterval(carregarAlertasSidebar, 300000);
     }
   }
@@ -429,7 +432,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_concluidos: 'Registro de Concluídos',
     dashboard_panorama: 'Panorama',
     dashboard_perguntas: 'Perguntas sobre achados',
-    novo: 'Importar Processo', config: 'Configurações'
+    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
@@ -460,6 +463,8 @@ async function showView(v, subCaixa = 'entrada') {
         <div class="form-group"><label>Gerência</label><input id="np-gerencia" placeholder="Ex: GGPCG" value="${usuarioAtual?.gerencia || ''}"></div>
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
+  } else if (v === 'relato') {
+    await renderRelato(content);
   } else if (v === 'config') {
     const ativoDe = { gemini: GEMINI_ATIVO, groq: GROQ_ATIVO, kimi: KIMI_ATIVO, openrouter: OPENROUTER_ATIVO, deepseek: DEEPSEEK_ATIVO };
     const nomes = { gemini: 'Gemini', groq: 'Groq', kimi: 'Kimi', openrouter: 'OpenRouter', deepseek: 'DeepSeek' };
@@ -4076,7 +4081,13 @@ const TIPOS_REDACAO = [
   { nome: 'ofício', re: 'of[ií]cio' },
   { nome: 'relatório', re: 'relat[óo]rio' },
   { nome: 'minuta', re: 'minuta' },
-  { nome: 'memorando', re: 'memorando' }
+  { nome: 'memorando', re: 'memorando' },
+  { nome: 'resposta', re: 'respost[ao]s?' },
+  { nome: 'e-mail', re: 'e-?mails?' },
+  { nome: 'justificativa', re: 'justificativas?' },
+  { nome: 'manifestação', re: 'manifesta[çc][ãa]o' },
+  { nome: 'comunicado', re: 'comunicado' },
+  { nome: 'documento', re: 'documento|texto' }
 ];
 
 const ESTRUTURAS_RASCUNHO = {
@@ -4086,24 +4097,42 @@ const ESTRUTURAS_RASCUNHO = {
   'ofício': 'OFÍCIO Nº [preencher]; local e data; destinatário [preencher]; assunto; saudação; corpo em dois a quatro parágrafos; fecho; assinatura [preencher]',
   'relatório': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]',
   'minuta': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]',
-  'memorando': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]'
+  'memorando': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]',
+  'resposta': 'cabeçalho com referência ao documento respondido (número SEI em [preencher] se não constar); 1. O QUE FOI SOLICITADO (resuma o pedido); 2. RESPOSTA (um item para cada ponto pedido, com a fonte); 3. CONCLUSÃO E PROVIDÊNCIAS; fecho e assinatura em [preencher]. Se o pedido a responder não estiver claro nos documentos, diga isso em "assumi" e deixe [preencher: qual pedido]',
+  'e-mail': 'assunto; saudação; corpo em dois a três parágrafos curtos; fecho; assinatura [preencher]',
+  'justificativa': 'cabeçalho; 1. OBJETO; 2. FUNDAMENTOS (com a fonte de cada fato); 3. CONCLUSÃO; assinatura em [preencher]',
+  'manifestação': 'cabeçalho; 1. REFERÊNCIA; 2. MANIFESTAÇÃO (um item por tema); 3. CONCLUSÃO; assinatura em [preencher]',
+  'comunicado': 'cabeçalho; destinatários [preencher]; corpo em dois a quatro parágrafos; providências e prazo [preencher]; assinatura [preencher]',
+  'documento': 'cabeçalho; 1. OBJETO; 2. CONTEXTO; 3. ANÁLISE (uma subseção por tema); 4. CONCLUSÃO; assinatura em [preencher]'
 };
 
 // Só considera pedido de texto quando há verbo de redigir ligado ao tipo de documento
 // ("fazer uma nota técnica", "preciso de um despacho"). "O que fazer com o despacho?" é pergunta.
 function _detectarPedidoDeRedacao(texto) {
-  const t = String(texto || '');
-  const det = '(?:(?:um|uma|o|a|os|as|nova|novo|outra|outro|essa|esse|nossa|nosso|minha|meu)\\s+){0,2}';
-  const verbos = '(?:fazer|redigir|montar|monte|escrever|escreva|elaborar|elabore|preparar|prepare|produzir|criar|crie|gerar|gere|minutar|minute|rascunhar|rascunhe)';
+  const t = String(texto || '').trim();
+  if (!t) return null;
+  // Pergunta de verdade (termina com "?" ou começa com palavra interrogativa) não é pedido de texto.
+  if (/\?\s*$/.test(t) || /^\s*(?:o\s+que|qual|quais|quem|como|onde|quando|por\s+que|porque|quanto|quantos|existe|há)\b/i.test(t)) return null;
+  const det = '(?:(?:um|uma|o|a|os|as|nova|novo|outra|outro|essa|esse|nossa|nosso|minha|meu|uns|umas)\\s+){0,2}';
+  const verbos = '(?:fazer|faça|faca|redigir|montar|monte|monta|escrever|escreva|elaborar|elabore|preparar|prepare|produzir|criar|crie|gerar|gere|minutar|minute|rascunhar|rascunhe|formular|formule|compor|componha)';
   for (const tp of TIPOS_REDACAO) {
     const p1 = new RegExp('\\b' + verbos + '\\s+' + det + tp.re + '\\b', 'i');
     const p2 = new RegExp('\\b(?:preciso|precisamos|quero|queremos|necessito|necessitamos)\\s+d[eoa]\\s+' + det + tp.re + '\\b', 'i');
-    if (p1.test(t) || p2.test(t)) return { tipo: tp.nome, temas: _extrairTemasDoPedido(t) };
+    if (p1.test(t) || p2.test(t)) return { tipo: tp.nome, temas: _extrairTemasDoPedido(t, tp.nome) };
+  }
+  // "preciso responder ao ofício...", "responda ao despacho..."
+  if (/\b(?:preciso|precisamos|quero|queremos|vou|tenho\s+que|tenho\s+de|devo)\s+responder\b/i.test(t) || /^\s*(?:me\s+)?(?:responda|responde)\b/i.test(t)) {
+    return { tipo: 'resposta', temas: _extrairTemasDoPedido(t, 'resposta') };
   }
   return null;
 }
 
-function _extrairTemasDoPedido(t) {
+function _extrairTemasDoPedido(t, tipo) {
+  // Pedido de resposta: o "tema" é o documento ou pedido que está sendo respondido.
+  if (tipo === 'resposta') {
+    const r = String(t).match(/\b(?:respost[ao]|responder)\s+(?:a|ao|à|aos|às|para)\s+(.+?)(?:[.!?\n]|$)/i);
+    if (r && r[1].trim().length > 3) return ['responder a: ' + r[1].trim().replace(/\s+(?:desta|dessa|da|nesta|nessa)\s+unidade\b.*$/i, '')];
+  }
   const m = String(t).match(/\b(?:sobre|acerca\s+d[eoa]s?|a\s+respeito\s+d[eoa]s?|referente\s+(?:a|ao|à)s?|com\s+foco\s+em|com\s+base\s+em)\s+(.+)/i);
   if (!m) return [];
   let resto = m[1].split(/[.!?\n]/)[0];
@@ -4111,6 +4140,25 @@ function _extrairTemasDoPedido(t) {
   return resto.split(/\s+(?:ou|e)\s+|,|;/i)
     .map(s => s.trim().replace(/^(?:a|o|as|os|um|uma)\s+/i, ''))
     .filter(s => s.length > 3).slice(0, 5);
+}
+
+// Registra no log do servidor o que aconteceu no navegador (nunca conteúdo de documento, pergunta
+// ou resposta; só o tipo do evento e, nos erros, a mensagem técnica sem chaves).
+function _registrarNoLog(acao, detalhes) {
+  try {
+    if (!SESSAO_TOKEN) return;
+    const r = api('log/registrar', { acao, processo_id: processoAtual ? processoAtual.id : '', detalhes: String(detalhes || '').slice(0, 300) }, { fundo: true });
+    if (r && r.catch) r.catch(() => {});
+  } catch (e) { /* o registro nunca atrapalha o trabalho */ }
+}
+let _ultimoErroRegistrado = { msg: '', t: 0 };
+function _registrarErroExibido(msg) {
+  const limpo = String(msg || '').replace(/(?:sk|gsk|AIza|ak)[-_A-Za-z0-9]{8,}/g, '[chave]').replace(/\s+/g, ' ').trim().slice(0, 280);
+  if (!limpo) return;
+  const agora = Date.now();
+  if (_ultimoErroRegistrado.msg === limpo && agora - _ultimoErroRegistrado.t < 60000) return;   // não repete a mesma mensagem em 1 minuto
+  _ultimoErroRegistrado = { msg: limpo, t: agora };
+  _registrarNoLog('ERRO_EXIBIDO', limpo);
 }
 
 function usarExemploPedido() {
@@ -4126,6 +4174,7 @@ function _mostrarConfirmacaoRedacao(pergunta, pedido) {
   const history = document.getElementById('chat-history');
   document.getElementById('redacao-confirma')?.remove();
   window._redacaoPendente = { pergunta, tipo: pedido.tipo, temas: pedido.temas };
+  _registrarNoLog('PEDIU_TEXTO', pedido.tipo);
   const temas = pedido.temas.map(t => `<label style="display:flex; gap:6px; align-items:flex-start; font-size:0.85rem; margin:3px 0;"><input type="checkbox" class="redacao-tema" value="${escAttr(t)}" checked style="margin-top:3px;"> <span>${escHtml(t)}</span></label>`).join('');
   history.insertAdjacentHTML('beforeend', `<div id="redacao-confirma" style="background:#fff; border:1px solid #adb5bd; border-radius:10px; padding:12px 14px; max-width:94%; font-size:0.88rem;">
     <div style="margin-bottom:6px;"><i class="ti ti-file-text"></i> Entendi como pedido de texto: <strong>${escHtml(pedido.tipo)}</strong></div>
@@ -4221,7 +4270,16 @@ ${achados || '(a checagem ainda não foi feita ou não apontou nada)'}
 
 DOCUMENTOS DO PROCESSO:
 ${contexto}`;
-    const resposta = await invocarIAComFallback(prompt, false, notas);
+    let resposta;
+    try { resposta = await invocarIAComFallback(prompt, false, notas); }
+    catch (e) {
+      if (!/TPM|tokens per minute|rate_limit|HTTP 429/i.test(e.message)) throw e;
+      for (let s = 60; s > 0; s--) {   // limite por minuto do serviço de IA: espera a janela virar e tenta de novo uma vez
+        notas.innerHTML = `<div style="font-size:0.85rem;"><span class="spinner"></span> O serviço de IA atingiu o limite por minuto. Tentando de novo em ${s}s...</div>`;
+        await new Promise(r => setTimeout(r, 1000));
+      }
+      resposta = await invocarIAComFallback(prompt, false, notas);
+    }
     const r = _lerRespostaDoRascunho(resposta);
     const editor = document.getElementById('editor-final');
     if (editor.value.trim() && !confirm('O card 3 já tem um texto. Substituir pelo rascunho? (Cancelar coloca o rascunho abaixo do texto atual.)')) {
@@ -4241,6 +4299,7 @@ ${contexto}`;
       ${lista('O que assumi do seu pedido:', r.assumi)}${lista('O que faltou nos documentos:', r.faltou)}
       ${aviso.length ? `<div style="margin-top:8px; color:#854d0e;"><i class="ti ti-alert-triangle"></i> A leitura do processo tem pontos de atenção (${escHtml(aviso.join('; '))}). O rascunho pode estar incompleto. Veja a Cobertura da leitura.</div>` : ''}
     </div>`;
+    _registrarNoLog('RASCUNHO_PRONTO', pend.tipo + ' · ' + r.texto.length + ' caracteres');
     document.getElementById('redacao-confirma')?.remove();
     document.getElementById('chat-history').insertAdjacentHTML('beforeend', `<div style="color:#2b8a3e; font-size:0.85rem;"><i class="ti ti-check"></i> Rascunho de ${escHtml(pend.tipo)} montado no card 3 (${escHtml(temas.join('; '))}).</div>`);
     window._redacaoPendente = null;
@@ -4428,7 +4487,7 @@ ${txtAnalista}`;
 
 // Traduz o erro de UM serviço numa expressão curta, para a lista "por serviço".
 function _motivoCurtoProvedor(m) {
-  if (/PULADO_SEM_CHAVE/.test(m)) return 'não tentado: sem chave neste navegador';
+  if (/PULADO_SEM_CHAVE/.test(m)) return 'não tentado: o gestor ainda não liberou chave para o seu usuário';
   if (/PULADO_DESLIGADO/.test(m)) return 'não tentado: desligado em Motor de IA';
   if (/maximum context length|context_length|token limit|too long/i.test(m)) return 'processo grande demais para uma chamada';
   if (/TPM|tokens per minute/i.test(m)) return 'limite de tokens por minuto da conta';
@@ -4477,6 +4536,7 @@ function _mensagemErroAmigavel(msg) {
 }
 
 function renderErroAmigavel(mensagemTecnica) {
+  _registrarErroExibido(mensagemTecnica);
   const { titulo, sugestao } = _mensagemErroAmigavel(mensagemTecnica);
   const detalheId = 'detalhe-erro-' + Date.now() + '-' + Math.floor(Math.random() * 1000);
   return `
@@ -4576,4 +4636,321 @@ function verificarIA() {
   const dica = on ? 'Conectado: ' + ligados.join(', ') + '. Clique para ver as Configurações.' : frase + '. Clique para ver as Configurações.';
   if (img) img.title = dica;
   txt.title = dica;
+}
+
+
+// ==================== COMO O MEU TRABALHO ACONTECE (aviso + relatos) ====================
+// Cada pessoa conta, com as próprias palavras, o que faz, com quem, o que trava. Os relatos
+// são reunidos para montar o fluxo real e compará-lo com o mapa e com o que o SEI registra.
+// A pessoa vê e altera só os próprios relatos. A gestão vê apenas contagens por gerência.
+const RELATO_FIXAS = [
+  { id: 'f1', rotulo: 'O que você faz', pergunta: 'O que você faz no seu dia a dia? Conte em ordem, do jeito que for mais fácil.', dica: 'Pode ser uma lista ou um texto corrido.' },
+  { id: 'f2', rotulo: 'De quem recebe e para quem segue', pergunta: 'De quem você recebe o trabalho e para quem ele segue depois?', dica: 'Cite setores ou funções. Não é preciso citar nomes de pessoas.' },
+  { id: 'f3', rotulo: 'O que costuma travar', pergunta: 'O que costuma travar o seu trabalho ou dar retrabalho?', dica: 'Pense no que mais se repete.' },
+  { id: 'f4', rotulo: 'Em que você se baseia', pergunta: 'Em que você se baseia para fazer isso?', dica: 'Lei, decreto, cláusula do contrato, orientação de alguém ou "sempre foi assim". Qualquer resposta serve.' },
+  { id: 'f5', rotulo: 'Onde guarda as provas', pergunta: 'Onde você guarda o que comprova o que fez?', dica: 'Pasta, e-mail, WhatsApp, planilha, SEI. Onde estiver de verdade.' }
+];
+const RELATO_ROTATIVAS = [
+  { id: 'r1', pergunta: 'Que ferramentas você usa fora do SEI para fazer o seu trabalho?', dica: 'Planilhas, e-mail, WhatsApp, programas.' },
+  { id: 'r2', pergunta: 'De quem você depende e nem sempre recebe no prazo?', dica: 'Cite setores ou funções.' },
+  { id: 'r3', pergunta: 'Quem decide as coisas no seu trabalho e o que acontece quando há uma exceção ou uma discordância?', dica: 'Conte um caso, se lembrar de algum.' },
+  { id: 'r4', pergunta: 'Quanto tempo leva e com que frequência acontece a sua atividade principal?', dica: 'Uma estimativa já ajuda.' },
+  { id: 'r5', pergunta: 'O que só você sabe fazer? Se você se ausentasse por um mês, o que ficaria parado?', dica: 'Isto ajuda a proteger a continuidade do trabalho.' },
+  { id: 'r6', pergunta: 'Você se lembra de algum quase-erro ou retrabalho que poderia ter sido evitado?', dica: 'Conte o que aconteceu, sem citar nomes.' }
+];
+let _relatosMeus = [];
+let _anexosRelato = {};
+let _relatoEstado = null;
+
+function _primeiroNome() { return String((usuarioAtual && usuarioAtual.nome) || '').trim().split(/\s+/)[0] || ''; }
+
+// ---- Aviso na entrada ----
+async function _verificarAvisoRelato() {
+  try {
+    const r = await api('avisos/estado', null, { fundo: true });
+    if (!r || !r.ok) return; // se falhar, o app segue normal: o aviso não pode travar o trabalho
+    _relatoEstado = r;
+    _atualizarSeloRelato();
+    if (r.mostrar) abrirAvisoRelato();
+  } catch (e) { /* sem aviso desta vez */ }
+}
+
+function _atualizarSeloRelato() {
+  const b = document.getElementById('badge-relato');
+  if (!b) return;
+  const novo = _relatoEstado && !_relatoEstado.qtd_relatos;
+  b.textContent = novo ? 'novo' : '';
+  b.style.display = novo ? 'inline-block' : 'none';
+}
+
+function abrirAvisoRelato() {
+  criarModal(`
+    <div style="max-width:520px;">
+      <h2 style="font-size:1.15rem; margin-bottom:10px;"><i class="ti ti-route"></i> Conte como o seu trabalho acontece</h2>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Estamos montando o mapa real dos processos da diretoria. Não o que está no papel, e sim o que acontece no dia a dia.</p>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:4px;">Para isso, precisamos de você. Escreva do seu jeito:</p>
+      <ul style="font-size:0.9rem; line-height:1.6; margin:0 0 10px 20px;">
+        <li>o que você faz e em que ordem;</li>
+        <li>de quem você recebe o trabalho e para quem ele segue;</li>
+        <li>o que costuma travar ou dar retrabalho.</li>
+      </ul>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Pode anexar um exemplo (documento, imagem ou planilha). Não existe resposta certa ou errada, e o objetivo é melhorar o processo, não avaliar pessoas.</p>
+      <p style="font-size:0.9rem; line-height:1.6; margin-bottom:10px;">Ao final, você vê como o seu relato foi organizado e pode corrigir. No sistema, a gestão vê quantas pessoas participaram, e não os relatos de cada um.</p>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;">Não escreva nomes de pacientes nem dados pessoais. O sistema troca CPF, RG, telefone e e-mail por marcadores.</p>
+      <div id="aviso-relato-erro" class="alert alert-danger hidden" style="margin-bottom:10px;"></div>
+      <div style="display:flex; gap:8px; justify-content:flex-end; flex-wrap:wrap;">
+        <button class="btn btn-secondary btn-sm" id="aviso-relato-depois" onclick="marcarAvisoRelato('depois')"><i class="ti ti-clock"></i> Ler depois</button>
+        <button class="btn btn-primary btn-sm" id="aviso-relato-lido" onclick="marcarAvisoRelato('lido')"><i class="ti ti-check"></i> Li e entendi</button>
+      </div>
+    </div>`, false);
+}
+
+async function marcarAvisoRelato(situacao) {
+  const b1 = document.getElementById('aviso-relato-lido'), b2 = document.getElementById('aviso-relato-depois');
+  [b1, b2].forEach(b => { if (b) b.disabled = true; });
+  const r = await api('avisos/marcar', { situacao });
+  if (!r || !r.ok) {
+    // Não fecha: se não gravou, o aviso voltaria sem a pessoa saber por quê.
+    const e = document.getElementById('aviso-relato-erro');
+    if (e) { e.textContent = (r && r.erro) || 'Não foi possível registrar agora. Tente de novo.'; e.classList.remove('hidden'); }
+    [b1, b2].forEach(b => { if (b) b.disabled = false; });
+    return;
+  }
+  fecharModal();
+  if (_relatoEstado) {
+    if (situacao === 'lido') { _relatoEstado.lido = true; _relatoEstado.mostrar = false; }
+    else _relatoEstado.adiamentos = (_relatoEstado.adiamentos || 0) + 1;
+  }
+  if (situacao === 'depois') {
+    const ad = _relatoEstado ? _relatoEstado.adiamentos : 1;
+    mostrarToast(ad >= 3 ? 'Tudo bem. O aviso volta no máximo uma vez por dia. Você também pode abrir "Meu trabalho" no menu quando quiser.'
+                         : 'Tudo bem. O aviso volta na próxima vez que você entrar.', 6000);
+  }
+}
+
+// ---- Tela "Meu trabalho" ----
+async function renderRelato(content) {
+  content.innerHTML = '<div style="padding:20px;"><span class="spinner"></span> Carregando...</div>';
+  const res = await api('relatos/listar');
+  if (!res || !res.ok) {
+    content.innerHTML = `<div class="alert alert-danger">${escHtml((res && res.erro) || 'Não foi possível carregar.')} <button class="btn btn-secondary btn-sm" onclick="showView('relato')">Tentar de novo</button></div>`;
+    return;
+  }
+  _relatosMeus = res.relatos || [];
+  _anexosRelato = {};
+  const respFixa = id => _relatosMeus.find(r => r.tipo === 'fixo' && r.pergunta_id === id);
+  const cartaoFixa = q => {
+    const r = respFixa(q.id);
+    return _htmlCartaoRelato(q.id, q.pergunta, q.dica, r ? r.texto : '', r ? r.anexo_nome : '', r ? 'Respondida. Você pode corrigir quando quiser.' : '');
+  };
+  content.innerHTML = `
+    <div style="max-width:780px;">
+      <div style="background:#fff; padding:18px 22px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:14px;">
+        <h3 style="font-size:1.05rem; margin-bottom:6px;"><i class="ti ti-route"></i> Conte como o seu trabalho acontece</h3>
+        <p style="font-size:0.88rem; line-height:1.6; color:var(--text-muted); margin:0;">Escreva do seu jeito, sem se preocupar com a forma. Não existe resposta certa ou errada. Você pode responder aos poucos e voltar para corrigir. Os relatos são reunidos para montar o mapa; a gestão vê apenas quantas pessoas participaram.</p>
+      </div>
+      <h4 style="font-size:0.95rem; margin:16px 0 8px;">Perguntas de sempre</h4>
+      ${RELATO_FIXAS.map(cartaoFixa).join('')}
+      <h4 style="font-size:0.95rem; margin:20px 0 8px;">Pergunta da semana</h4>
+      <div id="rel-bloco-rot">${_htmlBlocoRotativo()}</div>
+      <h4 style="font-size:0.95rem; margin:20px 0 8px;">Algo travou? Registre quando acontecer</h4>
+      ${_htmlCartaoRelato('prob', 'Conte o que travou ou deu retrabalho.', 'Se souber, diga em qual atividade aconteceu. Não cite nomes de pacientes.', '', '', '', true)}
+      <h4 style="font-size:0.95rem; margin:20px 0 8px;">Seus registros</h4>
+      <div id="rel-lista"></div>
+    </div>`;
+  _desenharListaRelatos();
+}
+
+function _perguntaDaSemana() {
+  const respondidas = new Set(_relatosMeus.filter(r => r.tipo === 'rotativo').map(r => r.pergunta_id));
+  const base = Math.floor(Date.now() / (7 * 86400000)) % RELATO_ROTATIVAS.length;
+  for (let i = 0; i < RELATO_ROTATIVAS.length; i++) {
+    const q = RELATO_ROTATIVAS[(base + i) % RELATO_ROTATIVAS.length];
+    if (!respondidas.has(q.id)) return q;
+  }
+  return null;
+}
+function _htmlBlocoRotativo() {
+  const q = _perguntaDaSemana();
+  if (!q) return `<div style="background:#fff; padding:16px 20px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); font-size:0.9rem;">Você respondeu a todas as perguntas da semana. Obrigado. Se lembrar de mais alguma coisa, use o registro abaixo.</div>`;
+  return _htmlCartaoRelato('rot', q.pergunta, q.dica, '', '', '');
+}
+
+function _htmlCartaoRelato(chave, pergunta, dica, texto, anexoNome, situacao, comAtividade) {
+  return `<div id="rel-card-${chave}" style="background:#fff; padding:16px 20px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.1); margin-bottom:10px;">
+    <label for="rel-txt-${chave}" style="display:block; font-weight:600; font-size:0.9rem; margin-bottom:3px;">${escHtml(pergunta)}</label>
+    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">${escHtml(dica)}</div>
+    ${comAtividade ? `<input id="rel-atv-${chave}" type="text" maxlength="200" placeholder="Em qual atividade? (opcional)" style="width:100%; padding:8px; border:1px solid #ced4da; border-radius:6px; margin-bottom:8px; font-family:inherit;">` : ''}
+    <textarea id="rel-txt-${chave}" maxlength="6000" style="width:100%; min-height:90px; padding:10px; border:1px solid #ced4da; border-radius:6px; font-family:inherit; font-size:0.9rem;">${escHtml(texto)}</textarea>
+    <div style="display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;">
+      <button class="btn btn-primary btn-sm" id="rel-btn-${chave}" onclick="salvarRelato('${chave}')"><i class="ti ti-device-floppy"></i> Salvar</button>
+      <button class="btn btn-secondary btn-sm" type="button" onclick="document.getElementById('rel-arq-${chave}').click()"><i class="ti ti-paperclip"></i> Anexar exemplo</button>
+      <input type="file" id="rel-arq-${chave}" style="display:none" accept=".pdf,.docx,.xlsx,.xls,.txt,.csv,.md,.pptx,.png,.jpg,.jpeg" onchange="anexarArquivoRelato('${chave}', this)">
+      <span id="rel-anexo-${chave}" style="font-size:0.78rem; color:var(--text-muted);">${anexoNome ? '<i class="ti ti-paperclip"></i> ' + escHtml(anexoNome) : ''}</span>
+    </div>
+    <div id="rel-st-${chave}" style="font-size:0.8rem; margin-top:8px; color:var(--text-muted);">${escHtml(situacao || '')}</div>
+    <div id="rel-ok-${chave}"></div>
+  </div>`;
+}
+
+async function anexarArquivoRelato(chave, input) {
+  const file = input.files && input.files[0];
+  const alvo = document.getElementById('rel-anexo-' + chave);
+  if (!file || !alvo) return;
+  const ext = '.' + String(file.name).split('.').pop().toLowerCase();
+  if (!['.pdf', '.docx', '.xlsx', '.xls', '.txt', '.csv', '.md', '.pptx', '.png', '.jpg', '.jpeg'].includes(ext)) {
+    alvo.textContent = 'Tipo de arquivo não aceito aqui.'; input.value = ''; return;
+  }
+  if (file.size > 15 * 1024 * 1024) { alvo.textContent = 'Arquivo grande demais (máximo de 15 MB).'; input.value = ''; return; }
+  alvo.innerHTML = '<span class="spinner"></span> Lendo o arquivo...';
+  try {
+    const buf = await file.arrayBuffer();
+    const bruto = (await extrairTextoArquivo(file.name, buf, () => {})) || '';
+    const m = mascararDadosSensiveis(bruto);
+    _anexosRelato[chave] = { nome: file.name, texto: m.textoMascarado.slice(0, 20000) };
+    const lido = bruto.replace(/\s+/g, '').length >= 20;
+    alvo.innerHTML = `<i class="ti ti-paperclip"></i> ${escHtml(file.name)}` +
+      (lido ? '' : ' (não consegui ler texto neste arquivo; só o nome será guardado)') +
+      (m.totalMascarado ? ` (${m.totalMascarado} dado(s) pessoal(is) ocultado(s))` : '');
+    if (!lido) _anexosRelato[chave].texto = '';
+  } catch (e) {
+    delete _anexosRelato[chave];
+    alvo.textContent = 'Não foi possível ler o arquivo: ' + e.message;
+  }
+  input.value = '';
+}
+
+async function salvarRelato(chave) {
+  const txtEl = document.getElementById('rel-txt-' + chave);
+  const st = document.getElementById('rel-st-' + chave);
+  const btn = document.getElementById('rel-btn-' + chave);
+  if (!txtEl) return;
+  const texto = txtEl.value.trim();
+  if (texto.length < 5) { st.style.color = '#8e1628'; st.textContent = 'Escreva um pouco mais para que o relato possa ser aproveitado.'; return; }
+  const fixa = RELATO_FIXAS.find(q => q.id === chave);
+  const rot = chave === 'rot' ? _perguntaDaSemana() : null;
+  if (chave === 'rot' && !rot) return;
+  const corpo = {
+    tipo: fixa ? 'fixo' : (chave === 'rot' ? 'rotativo' : 'problema'),
+    pergunta_id: fixa ? fixa.id : (rot ? rot.id : 'problema'),
+    pergunta: fixa ? fixa.pergunta : (rot ? rot.pergunta : 'Algo travou ou deu retrabalho'),
+    atividade: (document.getElementById('rel-atv-' + chave) || {}).value || '',
+    texto
+  };
+  const anexo = _anexosRelato[chave];
+  if (anexo) { corpo.anexo_nome = anexo.nome; corpo.anexo_texto = anexo.texto; }
+  btn.disabled = true; st.style.color = 'var(--text-muted)'; st.textContent = 'Salvando...';
+  const r = await api('relatos/salvar', corpo);
+  btn.disabled = false;
+  if (!r || !r.ok) {
+    // O texto continua na caixa: nada se perde se o envio falhar.
+    st.style.color = '#8e1628';
+    st.textContent = ((r && r.erro) || 'Não foi possível salvar agora.') + ' O que você escreveu continua aqui; tente salvar de novo.';
+    return;
+  }
+  st.style.color = 'var(--text-muted)';
+  st.textContent = '';
+  const msg = _mensagemAgradecimento(r, !!anexo);
+  const ok = document.getElementById('rel-ok-' + chave);
+  if (ok) ok.innerHTML = _htmlAgradecimento(msg, r.dados_trocados);
+  delete _anexosRelato[chave];
+  if (_relatoEstado) _relatoEstado.qtd_relatos = r.total;
+  _atualizarSeloRelato();
+  await _recarregarListaRelatos();
+  if (chave === 'rot') {
+    // Troca a pergunta por outra ainda não respondida, mantendo o agradecimento visível.
+    const bloco = document.getElementById('rel-bloco-rot');
+    if (bloco) bloco.innerHTML = _htmlAgradecimento(msg, r.dados_trocados).replace('margin-top:10px', 'margin-bottom:10px') + _htmlBlocoRotativo();
+  } else if (chave === 'prob') {
+    txtEl.value = ''; const a = document.getElementById('rel-atv-prob'); if (a) a.value = '';
+    const an = document.getElementById('rel-anexo-prob'); if (an) an.textContent = '';
+  }
+}
+
+function _htmlAgradecimento(msg, trocados) {
+  return `<div style="background:#e8f5ec; border:1px solid #b7dfc3; border-radius:6px; padding:12px 14px; margin-top:10px; font-size:0.88rem; line-height:1.6;">
+    <strong>${escHtml(msg.titulo)}</strong>${msg.corpo.map(p => `<div style="margin-top:4px;">${escHtml(p)}</div>`).join('')}
+    ${trocados ? `<div style="margin-top:6px; font-size:0.8rem; color:#495057;">Trocamos ${trocados} dado(s) pessoal(is), como CPF ou telefone, por marcadores, para proteger as pessoas.</div>` : ''}
+  </div>`;
+}
+
+// Agradecimento: curto, diz o que a contribuição faz e não promete nada que o sistema ainda não faça.
+function _mensagemAgradecimento(r, comAnexo) {
+  const n = _primeiroNome();
+  if (r.atualizado) return { titulo: 'Correção salva.', corpo: ['Obrigado por manter o relato certo.'] };
+  if (r.primeiro) return {
+    titulo: 'Obrigado' + (n ? ', ' + n : '') + '.',
+    corpo: [
+      'O que você escreveu agora faz parte do mapa real do nosso trabalho. Ninguém conhece a sua rotina melhor do que você, e isso não está em nenhum manual.',
+      'Seu relato foi guardado e será organizado junto com os dos colegas. Você pode ver e corrigir quando quiser, na lista abaixo.',
+      'Se algo estiver diferente do que acontece de verdade, corrija. É assim que o mapa fica certo.'
+    ] };
+  if (comAnexo) return { titulo: 'Obrigado pelo exemplo' + (n ? ', ' + n : '') + '.', corpo: ['Um caso real vale mais do que qualquer descrição.'] };
+  const variantes = [
+    ['Recebido' + (n ? ', ' + n : '') + '.', 'Esse detalhe ajuda a entender onde o processo realmente trava. Obrigado por tirar esse tempo.'],
+    ['Obrigado.', 'Cada resposta sua deixa o mapa mais perto da realidade, e isso torna mais fácil melhorar o que atrapalha o seu dia.'],
+    ['Anotado.', 'Se você lembrar de mais alguma coisa sobre isso, é só acrescentar. Obrigado pela atenção.']
+  ];
+  const v = variantes[(Number(r.total) || 0) % 3];
+  return { titulo: v[0], corpo: [v[1]] };
+}
+
+async function _recarregarListaRelatos() {
+  const res = await api('relatos/listar');
+  if (res && res.ok) { _relatosMeus = res.relatos || []; _desenharListaRelatos(); }
+}
+
+function _desenharListaRelatos() {
+  const el = document.getElementById('rel-lista');
+  if (!el) return;
+  if (!_relatosMeus.length) { el.innerHTML = '<div style="font-size:0.88rem; color:var(--text-muted);">Você ainda não registrou nada. Comece por qualquer pergunta acima.</div>'; return; }
+  const rot = { fixo: 'Pergunta de sempre', rotativo: 'Pergunta da semana', problema: 'Algo que travou' };
+  el.innerHTML = _relatosMeus.map(r => {
+    const dt = r.atualizado_em ? new Date(r.atualizado_em).toLocaleDateString('pt-BR') : '';
+    const resumo = String(r.texto || '');
+    return `<div style="background:#fff; padding:12px 16px; border-radius:8px; box-shadow:0 1px 3px rgba(0,0,0,0.08); margin-bottom:8px;">
+      <div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:3px;">${escHtml(rot[r.tipo] || r.tipo)} · ${escHtml(dt)}${r.atividade ? ' · ' + escHtml(r.atividade) : ''}${r.anexo_nome ? ' · <i class="ti ti-paperclip"></i> ' + escHtml(r.anexo_nome) : ''}</div>
+      <div style="font-size:0.85rem; font-weight:600; margin-bottom:3px;">${escHtml(r.pergunta || '')}</div>
+      <div style="font-size:0.85rem; line-height:1.5; white-space:pre-wrap;">${escHtml(resumo.length > 320 ? resumo.slice(0, 320) + '…' : resumo)}</div>
+      <div style="display:flex; gap:6px; margin-top:8px;">
+        ${r.tipo === 'fixo' ? '' : `<button class="btn btn-secondary btn-sm" onclick="editarRelato('${escAttr(r.id)}')"><i class="ti ti-pencil"></i> Editar</button>`}
+        <button class="btn btn-secondary btn-sm" onclick="excluirRelato('${escAttr(r.id)}')"><i class="ti ti-trash"></i> Excluir</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function editarRelato(id) {
+  const r = _relatosMeus.find(x => String(x.id) === String(id));
+  if (!r) return;
+  criarModal(`<div style="min-width:min(520px,90vw);">
+    <h2 style="font-size:1.05rem; margin-bottom:6px;">Editar registro</h2>
+    <div style="font-size:0.82rem; color:var(--text-muted); margin-bottom:8px;">${escHtml(r.pergunta || '')}</div>
+    <textarea id="rel-edit-txt" maxlength="6000" style="width:100%; min-height:140px; padding:10px; border:1px solid #ced4da; border-radius:6px; font-family:inherit; font-size:0.9rem;">${escHtml(r.texto)}</textarea>
+    <div id="rel-edit-erro" class="alert alert-danger hidden" style="margin-top:8px;"></div>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+      <button class="btn btn-secondary btn-sm" onclick="fecharModal()">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="rel-edit-btn" onclick="gravarEdicaoRelato('${escAttr(r.id)}')">Salvar</button>
+    </div></div>`, false);
+}
+async function gravarEdicaoRelato(id) {
+  const r = _relatosMeus.find(x => String(x.id) === String(id));
+  const txt = document.getElementById('rel-edit-txt'), erro = document.getElementById('rel-edit-erro'), btn = document.getElementById('rel-edit-btn');
+  if (!r || !txt) return;
+  btn.disabled = true;
+  const res = await api('relatos/salvar', { id: r.id, tipo: r.tipo, pergunta_id: r.pergunta_id, pergunta: r.pergunta, atividade: r.atividade, texto: txt.value });
+  btn.disabled = false;
+  if (!res || !res.ok) { erro.textContent = (res && res.erro) || 'Não foi possível salvar.'; erro.classList.remove('hidden'); return; }
+  fecharModal();
+  mostrarToast('Correção salva.', 3000);
+  await _recarregarListaRelatos();
+}
+async function excluirRelato(id) {
+  if (!confirm('Excluir este registro? Isto não pode ser desfeito.')) return;
+  const res = await api('relatos/excluir', { id });
+  if (!res || !res.ok) { mostrarToast((res && res.erro) || 'Não foi possível excluir.', 5000); return; }
+  if (_relatoEstado) _relatoEstado.qtd_relatos = Math.max(0, (_relatoEstado.qtd_relatos || 1) - 1);
+  _atualizarSeloRelato();
+  // Se era uma pergunta de sempre, a caixa correspondente precisa voltar vazia.
+  if (document.getElementById('content') && /Meu trabalho/.test((document.getElementById('page-title') || {}).textContent || '')) await renderRelato(document.getElementById('content'));
 }
