@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v25.4';
-const VERSAO_APP_DATA = '12/10/2026 15:40';
+const VERSAO_APP = 'v25.9';
+const VERSAO_APP_DATA = '12/10/2026 18:00';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1514,35 +1514,37 @@ async function abrirProcesso(identificador) {
     <!-- 1. PAINEL DE CHECAGEM -->
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:15px;"><i class="ti ti-microscope"></i> 1. Verificar Processo</h3>
-      <div style="display:flex; flex-direction:column; gap:6px; margin-bottom:14px;">
-        <div style="border:1px solid #dee2e6; border-radius:8px; padding:10px 14px; background:#f8f9fa; display:flex; align-items:flex-start; gap:10px;">
-          <div style="width:32px;height:32px;border-radius:6px;background:#e7f5ff;color:#1c7ed6;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-file-text"></i></div>
-          <div style="flex:1;">
-            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Texto e contas dos documentos
-              <span style="font-size:0.68rem;background:#d1e7dd;color:#0f5132;padding:2px 7px;border-radius:10px;">Sempre ativo</span></div>
-            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Contrato, aditivos, ofícios e despachos importados do SEI. A conferência de contas por código roda antes da IA.</div>
+      <div class="fontes">
+        <div class="fonte ligada" id="card-docs">
+          <span class="fonte-num" id="fn-docs">1</span>
+          <div class="fonte-corpo">
+            <div class="fonte-tit">Documentos anexados agora <span class="fonte-chip">Sempre ativo</span></div>
+            <div class="fonte-desc">Lê tudo o que está neste processo, refaz as contas e aponta inconsistências.</div>
+            <div class="fonte-estado" id="fe-docs"></div>
           </div>
+          <div class="fonte-barra"></div>
         </div>
-        <div id="card-drive" onclick="toggleFonte('drive')" style="border:1px solid #a3cfbb; border-radius:8px; padding:10px 14px; background:#e8f5e9; display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-          <div id="chk-drive-box" style="width:16px;height:16px;border-radius:4px;border:1px solid #adb5bd;background:#495057;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;"><span style="color:#fff;font-size:10px;">✓</span></div>
+        <div class="fonte ligada" id="card-drive" role="switch" aria-checked="true" tabindex="0" onclick="toggleFonte('drive')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleFonte('drive');}">
+          <span class="fonte-num" id="fn-drive">2</span>
           <input type="checkbox" id="chk-historico-unidade" checked style="display:none;">
-          <div style="width:32px;height:32px;border-radius:6px;background:#d1fae5;color:#065f46;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-brand-google-drive"></i></div>
-          <div style="flex:1;">
-            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Histórico da unidade
-              <span style="font-size:0.68rem;background:#d1fae5;color:#065f46;padding:2px 7px;border-radius:10px;">Google Drive</span></div>
-            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Compara com os contratos antigos da mesma unidade na pasta LEIS E DECRETOS. A busca é pelo nome do arquivo e pode confundir unidades parecidas, por isso o achado sempre vem marcado para você confirmar.</div>
+          <div class="fonte-corpo">
+            <div class="fonte-tit">Todos os documentos da unidade</div>
+            <div class="fonte-desc">Compara este processo com os documentos anteriores da unidade e aponta o que diverge. Confirme se os arquivos encontrados são da unidade certa.</div>
+            <div class="fonte-estado" id="fe-drive"></div>
           </div>
+          <span class="fonte-sw" aria-hidden="true"></span>
+          <div class="fonte-barra"></div>
         </div>
-        <div id="status-fonte-historico" style="font-size:0.75rem; padding-left:14px;"></div>
-        <div id="card-web" onclick="toggleFonte('web')" style="border:1px solid #dee2e6; border-radius:8px; padding:10px 14px; background:#f8f9fa; display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
-          <div id="chk-web-box" style="width:16px;height:16px;border-radius:4px;border:1px solid #adb5bd;background:#fff;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:8px;"></div>
+        <div class="fonte" id="card-web" role="switch" aria-checked="false" tabindex="0" onclick="toggleFonte('web')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleFonte('web');}">
+          <span class="fonte-num" id="fn-web">3</span>
           <input type="checkbox" id="chk-legislacao-jurisprudencia" style="display:none;">
-          <div style="width:32px;height:32px;border-radius:6px;background:#fef3c7;color:#92400e;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;"><i class="ti ti-world"></i></div>
-          <div style="flex:1;">
-            <div style="font-size:0.82rem;font-weight:600;color:#212529;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Busca jurídica na web
-              <span style="font-size:0.68rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:10px;">Experimental · mais lento</span></div>
-            <div style="font-size:0.75rem;color:#6c757d;margin-top:2px;line-height:1.4;">Pesquisa em fontes públicas: Diário Oficial, legislação federal e estadual, TCU, TCE-PE, TCM-PE, STJ, STF e AGU. Pode trazer fonte não oficial ou desatualizada: confirme antes de citar em parecer.</div>
+          <div class="fonte-corpo">
+            <div class="fonte-tit">Busca em fontes abertas <span class="fonte-chip fonte-chip-exp">Experimental · mais lento</span></div>
+            <div class="fonte-desc">Pesquisa normas e decisões na internet: Diário Oficial, legislação federal e estadual, TCU, TCE-PE, TCM-PE, STJ, STF e AGU. A fonte pode estar desatualizada ou não ser oficial: confira antes de citar em parecer.</div>
+            <div class="fonte-estado" id="fe-web"></div>
           </div>
+          <span class="fonte-sw" aria-hidden="true"></span>
+          <div class="fonte-barra"></div>
         </div>
       </div>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
@@ -3052,16 +3054,35 @@ function montarDadosExtraidos(textoIntegral) {
 // Liga e desliga as fontes opcionais da checagem (cartões clicáveis). Grafite quando ligado;
 // o âmbar fica para a busca na web, que é experimental.
 function toggleFonte(tipo) {
-  const cfg = tipo === 'drive'
-    ? { chk: 'chk-historico-unidade', box: 'chk-drive-box', card: 'card-drive', cor: '#495057', borda: '#a3cfbb', fundo: '#e8f5e9' }
-    : { chk: 'chk-legislacao-jurisprudencia', box: 'chk-web-box', card: 'card-web', cor: '#d97706', borda: '#d97706', fundo: '#fef3c7' };
-  const chk = document.getElementById(cfg.chk), box = document.getElementById(cfg.box), card = document.getElementById(cfg.card);
-  if (!chk || !box || !card) return;
+  const cfg = tipo === 'drive' ? { chk: 'chk-historico-unidade', card: 'card-drive' } : { chk: 'chk-legislacao-jurisprudencia', card: 'card-web' };
+  const chk = document.getElementById(cfg.chk), card = document.getElementById(cfg.card);
+  if (!chk || !card) return;
   chk.checked = !chk.checked;
-  box.innerHTML = chk.checked ? '<span style="color:#fff;font-size:10px;">✓</span>' : '';
-  box.style.background = chk.checked ? cfg.cor : '#fff';
-  card.style.borderColor = chk.checked ? cfg.borda : '#dee2e6';
-  card.style.background = chk.checked ? cfg.fundo : '#f8f9fa';
+  card.classList.toggle('ligada', chk.checked);
+  card.setAttribute('aria-checked', chk.checked ? 'true' : 'false');
+}
+
+// Estado de cada fonte durante a checagem: espera | trabalhando | pronto | aviso | erro | off.
+// A barrinha corre embaixo do cartão enquanto ele trabalha; ao terminar entra o resultado.
+function _fonteEstado(id, estado, texto) {
+  const card = document.getElementById('card-' + id), el = document.getElementById('fe-' + id), num = document.getElementById('fn-' + id);
+  if (!card || !el) return;
+  card.dataset.estado = estado || '';
+  el.innerHTML = texto ? escHtml(texto) : '';
+  if (num) num.innerHTML = estado === 'pronto' ? '✓' : estado === 'erro' ? '✕' : ({ docs: '1', drive: '2', web: '3' })[id];
+}
+function _fontesIniciar() {
+  const d = document.getElementById('chk-historico-unidade')?.checked, w = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
+  _fonteEstado('docs', 'trabalhando', 'Refazendo as contas');
+  _fonteEstado('drive', d ? 'espera' : 'off', d ? 'Na fila' : 'Não usado nesta checagem');
+  _fonteEstado('web', w ? 'espera' : 'off', w ? 'Na fila' : 'Não usado nesta checagem');
+}
+function _fontesFinalizar() {
+  ['docs', 'drive', 'web'].forEach(id => {
+    const st = document.getElementById('card-' + id)?.dataset.estado;
+    if (st === 'trabalhando') _fonteEstado(id, 'erro', 'Não foi concluído');
+    else if (st === 'espera') _fonteEstado(id, '', '');
+  });
 }
 
 
@@ -3365,6 +3386,7 @@ async function rodarRaioX(automatica = false) {
   const prog = _progressoIniciar('progresso-checagem', automatica ? 'Conferindo o processo (checagem automática)' : 'Conferindo o processo', ['Leitura', 'Contas e histórico', 'IA', 'Achados']);
   prog.etapa(0, `${_qtdDocs} documento(s), ${Math.round(textoIntegralAtual.length / 1000)} mil caracteres`, 0.08);
   let houveErro = false;
+  _fontesIniciar();
 
   let achadosCodigo = [];
   let achadosIntegridade = [];
@@ -3388,19 +3410,18 @@ async function rodarRaioX(automatica = false) {
     // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
     let historicoUnidadeBloco = '';
     const historicoUnidadeAtivo = document.getElementById('chk-historico-unidade')?.checked;
-    const statusFonteEl = document.getElementById('status-fonte-historico');
-    if (statusFonteEl) statusFonteEl.innerHTML = '';
     if (!historicoUnidadeAtivo) {
-      if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Cruzamento com o histórico da unidade desligado nesta checagem.</span>`;
+      _fonteEstado('drive', 'off', 'Não usado nesta checagem');
     } else if (!p.unidade) {
-      if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:var(--text-muted);">Processo sem "unidade" definida — não há como buscar.</span>`;
+      _fonteEstado('drive', 'aviso', 'O processo está sem unidade definida, não há como buscar');
     } else {
+      _fonteEstado('drive', 'trabalhando', 'Procurando os documentos da unidade');
       st.innerHTML = `<span class="spinner"></span> Comparando com contratos antigos de "${escHtml(p.unidade)}"...`;
       try {
         const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade });
         if (resHist.ok && resHist.encontrado) {
           const nomes = resHist.arquivos.map(a => a.nome).join(', ');
-          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#2b8a3e;"><i class="ti ti-check"></i> Encontrado: <strong>${escHtml(nomes)}</strong></span>`;
+          _fonteEstado('drive', 'pronto', (resHist.arquivos.length === 1 ? '1 arquivo encontrado: ' : resHist.arquivos.length + ' arquivos encontrados: ') + nomes);
           historicoUnidadeBloco = '\n\nHISTÓRICO CONTRATUAL DA UNIDADE (contratos/aditivos anteriores dessa mesma unidade —\n' +
             'o casamento do arquivo é por nome, então pode confundir unidades parecidas; trate como forte\n' +
             'indício, não certeza):\n' +
@@ -3412,12 +3433,12 @@ async function rodarRaioX(automatica = false) {
               return bloco;
             }).join('\n');
         } else if (resHist.ok && !resHist.encontrado) {
-          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-x"></i> Nenhum arquivo encontrado para "${escHtml(p.unidade)}"</span>`;
+          _fonteEstado('drive', 'aviso', `Nenhum arquivo encontrado para "${p.unidade}"`);
         } else {
-          if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar: ${escHtml(resHist.erro || 'erro desconhecido')}</span>`;
+          _fonteEstado('drive', 'erro', 'Falha ao consultar: ' + (resHist.erro || 'erro desconhecido'));
         }
       } catch (e) {
-        if (statusFonteEl) statusFonteEl.innerHTML = `<span style="color:#c92a2a;"><i class="ti ti-alert-triangle"></i> Falha ao consultar: ${escHtml(e.message)}</span>`;
+        _fonteEstado('drive', 'erro', 'Falha ao consultar: ' + e.message);
       }
     }
 
@@ -3425,7 +3446,9 @@ async function rodarRaioX(automatica = false) {
     // (é busca automática na web, mais lenta, e todo achado baseado nela sai "verificar").
     let externasBloco = '';
     const legislacaoJurisprudenciaAtiva = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
+    if (!legislacaoJurisprudenciaAtiva) _fonteEstado('web', 'off', 'Não usado nesta checagem');
     if (legislacaoJurisprudenciaAtiva) {
+      _fonteEstado('web', 'trabalhando', 'Pesquisando normas e decisões');
       st.innerHTML = `<span class="spinner"></span> Buscando normas e decisões de tribunais na web...`;
       try {
         const [resNormas, resJuris] = await Promise.all([buscarNormasExternas(p), buscarJurisprudencia(p)]);
@@ -3437,11 +3460,14 @@ ${resNormas.texto}
 
 JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ mesmo aviso acima):
 ${resJuris.texto}`;
+        _fonteEstado('web', 'pronto', 'Pesquisa concluída');
       } catch (e) {
+        _fonteEstado('web', 'erro', 'A pesquisa falhou; a checagem seguiu sem ela');
         externasBloco = `\n\n(Busca de normas/jurisprudência falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
       }
     }
 
+    _fonteEstado('docs', 'trabalhando', 'A IA está lendo os documentos');
     st.innerHTML = `<span class="spinner"></span> Analisando documentos...`;
     const prompt = `Atue como Auditor Técnico Sênior (SES-PE). Cheque os documentos da unidade ${p.unidade} e OSS ${p.oss}.
 
@@ -3501,6 +3527,7 @@ ___TEXTO_DO_LOTE___`;
     Object.assign(window._cobChecagem, { lotes: lotes.length, docsTotal: new Set(_nomesBase).size });
     if (automatica && lotes.length > LIMITE_LOTES_AUTOMATICO) {
       window._cobChecagem.iaPulada = true;
+      _fonteEstado('docs', 'aviso', 'Só as contas por código. A IA espera você pedir');
       // Processo muito grande: não gasta a cota de IA sem você pedir.
       st.innerHTML = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.85rem;"><i class="ti ti-player-pause"></i> Este processo é grande (${lotes.length} lotes de IA). Mostrei só as contas conferidas por código. Toque em "Executar Checagem" para a IA analisar também.</div>`;
       contadorEl.innerHTML = (achadosCodigo.length + achadosIntegridade.length)
@@ -3512,6 +3539,7 @@ ___TEXTO_DO_LOTE___`;
     for (let i = 0; i < lotes.length; i++) {
       if (lotes.length > 1) {
         prog.etapa(2, `Parte ${i + 1} de ${lotes.length} (${lotes[i].docs.length} documento(s))`, 0.3 + 0.6 * (i / lotes.length));
+        _fonteEstado('docs', 'trabalhando', `A IA está lendo: parte ${i + 1} de ${lotes.length}`);
       }
       const aviso = lotes.length > 1
         ? `(Este é o lote ${i + 1} de ${lotes.length} do processo. A lista de valores extraídos acima cobre TODOS os documentos; o texto abaixo cobre só os documentos deste lote.)\n`
@@ -3549,6 +3577,7 @@ ___TEXTO_DO_LOTE___`;
     window.achadosAtuais = [...achadosIntegridade, ...achadosCodigo, ...achadosIA];
     contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_visiveis(window.achadosAtuais).length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
+    _fonteEstado('docs', falhasLote.length ? 'aviso' : 'pronto', (_visiveis(window.achadosAtuais).length === 1 ? '1 inconsistência' : _visiveis(window.achadosAtuais).length + ' inconsistências') + (falhasLote.length ? `; ${falhasLote.length} de ${lotes.length} parte(s) sem análise da IA` : ''));
     st.innerHTML = (falhasLote.length
       ? `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;"><i class="ti ti-alert-triangle"></i> ${falhasLote.length} de ${lotes.length} lote(s) não foram analisados pela IA (lote ${falhasLote.map(f => f.lote).join(', ')}). Os achados acima cobrem só os demais. Rode a checagem de novo em alguns minutos para completar.</div>`
       : '') + _avisoConferidosCorretos(conferidosCorretos) + renderPainelMascaramento(window._mascaramentoAcumulado);
@@ -3556,6 +3585,7 @@ ___TEXTO_DO_LOTE___`;
   } catch (e) {
     window._cobChecagem.iaFalhou = true;
     houveErro = true;
+    _fonteEstado('docs', 'erro', 'A IA não concluiu; valem as contas feitas por código');
     st.innerHTML = renderErroAmigavel(e.message);
     // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
     // que ela achou, pra parte financeira nunca ficar sem cobertura.
@@ -3566,6 +3596,7 @@ ___TEXTO_DO_LOTE___`;
       contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_semIA.length} inconsistência(s) — a análise da IA não rodou</span>`;
     }
   } finally {
+    _fontesFinalizar();
     prog.fechar(!houveErro);
     _atualizarCoberturaLeitura();
   }
