@@ -220,3 +220,41 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 .btn-fluxo-principal { color:#fff; border-color:transparent; }
 .btn-fluxo-principal:hover { filter:brightness(1.1); }
 @media (max-width:640px) { .proc-acoes { flex-direction:column; align-items:stretch; } .proc-acoes-fluxo { justify-content:flex-end; } }
+
+/* v25.9 — fontes da checagem: numeradas, com estado e barrinha de progresso */
+.fontes { display:flex; flex-direction:column; gap:8px; margin-bottom:14px; }
+.fonte { position:relative; overflow:hidden; display:flex; align-items:flex-start; gap:12px; padding:12px 14px; border:1px solid #dee2e6; border-radius:8px; background:#f8f9fa; transition:background .2s, border-color .2s; }
+#card-drive, #card-web { cursor:pointer; padding-right:60px; }
+#card-drive:focus-visible, #card-web:focus-visible { outline:2px solid #0b509e; outline-offset:2px; }
+.fonte.ligada { background:#f4f8fd; border-color:#b6d0ee; }
+#card-web.ligada { background:#fffbeb; border-color:#e8c56a; }
+.fonte-num { flex-shrink:0; width:26px; height:26px; border-radius:50%; background:#e9ecef; color:#495057; font-size:0.8rem; font-weight:700; display:flex; align-items:center; justify-content:center; transition:background .2s, color .2s; }
+.fonte.ligada .fonte-num { background:#0b509e; color:#fff; }
+#card-web.ligada .fonte-num { background:#b45309; }
+.fonte[data-estado="pronto"] .fonte-num { background:#198754; color:#fff; }
+.fonte[data-estado="erro"] .fonte-num { background:#c92a2a; color:#fff; }
+.fonte-corpo { flex:1; min-width:0; }
+.fonte-tit { font-size:0.88rem; font-weight:600; color:#212529; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.fonte-chip { font-size:0.68rem; font-weight:600; background:#d1e7dd; color:#0f5132; padding:2px 8px; border-radius:10px; }
+.fonte-chip-exp { background:#fef3c7; color:#92400e; }
+.fonte-desc { font-size:0.78rem; color:#6c757d; margin-top:3px; line-height:1.45; }
+.fonte-estado { font-size:0.78rem; margin-top:5px; color:#6c757d; }
+.fonte-estado:empty { display:none; }
+.fonte[data-estado="trabalhando"] .fonte-estado { color:#0b509e; }
+.fonte[data-estado="pronto"] .fonte-estado { color:#146c43; }
+.fonte[data-estado="aviso"] .fonte-estado { color:#854d0e; }
+.fonte[data-estado="erro"] .fonte-estado { color:#a61e1e; }
+.fonte[data-estado="off"] .fonte-estado, .fonte[data-estado="espera"] .fonte-estado { color:#868e96; }
+.fonte-sw { position:absolute; right:14px; top:14px; width:34px; height:20px; border-radius:10px; background:#ced4da; transition:background .2s; }
+.fonte-sw::after { content:''; position:absolute; left:2px; top:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:transform .2s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+.fonte.ligada .fonte-sw { background:#0b509e; }
+#card-web.ligada .fonte-sw { background:#b45309; }
+.fonte.ligada .fonte-sw::after { transform:translateX(14px); }
+.fonte-barra { position:absolute; left:0; right:0; bottom:0; height:3px; opacity:0; background-repeat:no-repeat; background-size:35% 100%; background-image:linear-gradient(90deg, transparent, #0b509e, transparent); }
+.fonte[data-estado="trabalhando"] .fonte-barra { opacity:1; animation:fonteVarre 1.4s ease-in-out infinite; }
+@keyframes fonteVarre { 0% { background-position:-40% 0; } 100% { background-position:140% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .fonte[data-estado="trabalhando"] .fonte-barra { animation:none; background-size:100% 100%; background-image:none; background-color:#9ec5fe; }
+}
+.fonte[data-estado="pronto"] .fonte-num, #card-web.ligada[data-estado="pronto"] .fonte-num { background:#198754; color:#fff; }
+.fonte[data-estado="erro"] .fonte-num, #card-web.ligada[data-estado="erro"] .fonte-num { background:#c92a2a; color:#fff; }
