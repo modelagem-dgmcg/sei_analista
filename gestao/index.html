@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 07/10/2026 12:05 (horário de Recife)
+  Versão gerada em 08/10/2026 10:57 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -101,6 +101,7 @@
     <a href="#" data-aba="achados" onclick="abrirAba('achados'); return false;">Achados</a>
     <a href="#" data-aba="incoerentes" onclick="abrirAba('incoerentes'); return false;">Incoerentes</a>
     <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
+    <a href="#" data-aba="relatos" onclick="abrirAba('relatos'); return false;">Mapa real</a>
     <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
     <a href="#" data-aba="usuarios" onclick="abrirAba('usuarios'); return false;">Usuários e IA</a>
   </nav>
@@ -112,8 +113,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.7';
-const VERSAO_GESTAO_DATA = '07/10/2026 12:05';
+const VERSAO_GESTAO = 'v1.9';
+const VERSAO_GESTAO_DATA = '09/10/2026 17:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -127,7 +128,8 @@ const NOMES_ACOES = {
   RODOU_CHECAGEM: 'Rodou checagem', REVISOU_PARECER: 'Revisou parecer', PERGUNTOU_AO_PROCESSO: 'Perguntou ao processo',
   PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
-  ACAO_RECUSADA: 'Ação recusada', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
+  LEU_AVISO_RELATOS: 'Leu o aviso do mapa real', ADIOU_AVISO_RELATOS: 'Adiou o aviso do mapa real', REGISTROU_RELATO: 'Registrou um relato', ATUALIZOU_RELATO: 'Corrigiu um relato', EXCLUIU_RELATO: 'Excluiu um relato', GESTAO_VIU_ADESAO_RELATOS: 'Gestão: viu a adesão ao mapa real',
+  ACAO_RECUSADA: 'Ação recusada', 'APP: ERRO_EXIBIDO': 'Erro mostrado ao usuário', 'APP: PEDIU_TEXTO': 'Pediu um texto (rascunho)', 'APP: RASCUNHO_PRONTO': 'Rascunho montado', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
   GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
   GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login'
@@ -273,7 +275,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios, incoerentes: telaIncoerentes })[aba]();
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios, incoerentes: telaIncoerentes, relatos: telaRelatos })[aba]();
 }
 function recarregar() { painel = null; abrirAba(abaAtual); }
 
@@ -285,6 +287,31 @@ async function carregarPainel() {
   sel.innerHTML = '<option value="">Todas</option>' + res.gerencias.map(g => `<option ${g === atual ? 'selected' : ''}>${esc(g)}</option>`).join('');
   painel = res;
   return res;
+}
+
+// ==================== ABA MAPA REAL (adesão ao "Conte como seu trabalho acontece") ====================
+// Só números por gerência. De propósito não mostra textos nem nomes: quem relata precisa confiar
+// que a chefia não vê quem disse o quê. O conteúdo é reunido depois, em conjunto, para montar o fluxo.
+async function telaRelatos() {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Contando a adesão...');
+  const r = await api('adm/relatos-resumo');
+  if (!r.ok) { c.innerHTML = `<div class="erro">${esc(r.erro || 'Não foi possível carregar.')}</div>`; return; }
+  const t = r.total;
+  const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+  const cartao = (rotulo, v, cor) => `<div class="num" style="border-left-color:${cor || '#5c636a'};"><b>${v}</b><span>${esc(rotulo)}</span></div>`;
+  const linhas = r.gerencias.map(x => x.oculto
+    ? `<tr><td><b>${esc(x.gerencia)}</b></td><td>${x.pessoas}</td><td colspan="3" style="color:var(--mudo);">Grupo com menos de 3 pessoas: detalhe oculto para não identificar ninguém (entra no total).</td></tr>`
+    : `<tr><td><b>${esc(x.gerencia)}</b></td><td>${x.pessoas}</td><td>${x.leram} (${pct(x.leram, x.pessoas)})</td><td>${x.contribuiram} (${pct(x.contribuiram, x.pessoas)})</td><td>${x.relatos}</td></tr>`).join('');
+  c.innerHTML = `<div class="bloco"><h2><i class="ti ti-route"></i> Mapa real: adesão</h2>
+    <div style="font-size:.8rem; color:var(--mudo); margin-bottom:10px;">Mostra quantas pessoas leram o aviso e quantas já contaram como trabalham. Os textos e os nomes não aparecem aqui, de propósito.</div>
+    <div class="grade">
+      ${cartao('Pessoas com acesso', t.pessoas)}
+      ${cartao('Leram o aviso', t.leram + ' (' + pct(t.leram, t.pessoas) + ')', '#0b509e')}
+      ${cartao('Já contribuíram', t.contribuiram + ' (' + pct(t.contribuiram, t.pessoas) + ')', '#198754')}
+      ${cartao('Relatos registrados', t.relatos, '#6f42c1')}
+    </div>
+    <div class="rolagem" style="margin-top:12px;"><table class="tabela"><tr><th>Gerência</th><th>Pessoas</th><th>Leram o aviso</th><th>Contribuíram</th><th>Relatos</th></tr>${linhas || '<tr><td colspan="5">Nenhum usuário ativo.</td></tr>'}</table></div></div>`;
 }
 
 // ==================== ABA HOJE (blocos que o gestor escolhe e ordena) ====================
