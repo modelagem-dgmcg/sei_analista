@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
   SEI GESTÃO — painel administrativo do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 08/10/2026 10:57 (horário de Recife)
+  Versão gerada em 12/10/2026 21:00 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -56,6 +56,22 @@
   .filtros > div { min-width:160px; } .filtros label { margin-top:0; }
   .barra { height:14px; background:#e9ecef; border-radius:7px; overflow:hidden; } .barra div { height:100%; background:#5c636a; }
   .barra div.alto { background:var(--bordo); }
+  .pilha { display:flex; height:14px; border-radius:7px; overflow:hidden; background:#e9ecef; } .pilha i { display:block; height:100%; }
+  .p-ok { background:#198754; } .p-and { background:#f0a030; } .p-nao { background:#ced4da; }
+  .legenda-pilha { display:flex; gap:16px; flex-wrap:wrap; margin-top:6px; font-size:.76rem; color:var(--mudo); } .legenda-pilha i { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:5px; }
+  .perg { display:grid; grid-template-columns:minmax(150px,260px) 1fr 80px; gap:10px; align-items:center; margin-bottom:8px; font-size:.82rem; } .perg-n { color:var(--mudo); font-size:.78rem; text-align:right; }
+  .arv-raiz, .arv-no { background:#fff; border:1px solid var(--borda); border-radius:8px; padding:12px 14px; }
+  .arv-raiz { max-width:420px; border-left:4px solid var(--ambar); margin-bottom:6px; }
+  .arv-nome { font-weight:700; font-size:.92rem; margin-bottom:8px; } .arv-nome small { font-weight:400; color:var(--mudo); }
+  .arv-sub { font-size:.78rem; color:var(--mudo); margin-top:7px; line-height:1.45; }
+  .arv-filhos { margin-left:22px; padding-left:22px; border-left:2px solid #ced4da; display:flex; flex-direction:column; gap:8px; padding-top:10px; padding-bottom:4px; }
+  .arv-no { position:relative; display:grid; grid-template-columns:minmax(140px,220px) 1fr minmax(200px,320px); gap:14px; align-items:center; padding:10px 14px; }
+  .arv-no .arv-nome { margin-bottom:0; } .arv-no .arv-sub { margin-top:0; }
+  .arv-no::before { content:''; position:absolute; left:-24px; top:50%; width:22px; border-top:2px solid #ced4da; }
+  .arv-oculto { grid-template-columns:minmax(140px,220px) 1fr; }
+  .arv-clique { cursor:pointer; } .arv-clique:hover { border-color:#adb5bd; background:#fbfbfc; }
+  .etq.verde { background:#d1e7dd; color:#0f5132; }
+  @media (max-width:640px) { .perg { grid-template-columns:1fr; gap:4px; } .perg-n { text-align:left; } .arv-filhos { margin-left:8px; padding-left:14px; } .arv-no, .arv-oculto { grid-template-columns:1fr; gap:6px; } .arv-no::before { left:-16px; width:14px; } }
   .config-blocos { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; font-size:.8rem; }
   .config-blocos .item { background:#fff; border:1px solid var(--borda); border-radius:6px; padding:4px 8px; display:flex; gap:6px; align-items:center; }
   .config-blocos button { border:none; background:none; cursor:pointer; color:var(--mudo); padding:0 2px; }
@@ -113,8 +129,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v1.9';
-const VERSAO_GESTAO_DATA = '09/10/2026 17:30';
+const VERSAO_GESTAO = 'v2.1';
+const VERSAO_GESTAO_DATA = '12/10/2026 22:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -128,7 +144,7 @@ const NOMES_ACOES = {
   RODOU_CHECAGEM: 'Rodou checagem', REVISOU_PARECER: 'Revisou parecer', PERGUNTOU_AO_PROCESSO: 'Perguntou ao processo',
   PAROU_ACOMPANHAMENTO: 'Parou de acompanhar', REMOVEU_DOCUMENTO: 'Removeu documento', ARQUIVOU_REGISTRO: 'Arquivou registro antigo',
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
-  LEU_AVISO_RELATOS: 'Leu o aviso do mapa real', ADIOU_AVISO_RELATOS: 'Adiou o aviso do mapa real', REGISTROU_RELATO: 'Registrou um relato', ATUALIZOU_RELATO: 'Corrigiu um relato', EXCLUIU_RELATO: 'Excluiu um relato', GESTAO_VIU_ADESAO_RELATOS: 'Gestão: viu a adesão ao mapa real',
+  LEU_AVISO_RELATOS: 'Leu o aviso do mapa real', ADIOU_AVISO_RELATOS: 'Adiou o aviso do mapa real', REGISTROU_RELATO: 'Registrou um relato', ATUALIZOU_RELATO: 'Corrigiu um relato', EXCLUIU_RELATO: 'Excluiu um relato', GESTAO_VIU_ADESAO_RELATOS: 'Gestão: viu a adesão ao mapa real', GESTAO_VIU_LISTA_DE_RELATOS: 'Gestão: viu a lista de pessoas do mapa real', GESTAO_ABRIU_RELATOS_DE_PESSOA: 'Gestão: abriu as respostas de uma pessoa', CONFIRMOU_DADOS_RELATO: 'Confirmou nome e setor no mapa real',
   ACAO_RECUSADA: 'Ação recusada', 'APP: ERRO_EXIBIDO': 'Erro mostrado ao usuário', 'APP: PEDIU_TEXTO': 'Pediu um texto (rascunho)', 'APP: RASCUNHO_PRONTO': 'Rascunho montado', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
   GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
@@ -289,29 +305,118 @@ async function carregarPainel() {
   return res;
 }
 
-// ==================== ABA MAPA REAL (adesão ao "Conte como seu trabalho acontece") ====================
-// Só números por gerência. De propósito não mostra textos nem nomes: quem relata precisa confiar
-// que a chefia não vê quem disse o quê. O conteúdo é reunido depois, em conjunto, para montar o fluxo.
+// ==================== ABA MAPA REAL (andamento do "Conte como seu trabalho acontece") ====================
+// As respostas são identificadas: cada pessoa confirma nome e setor e o aviso que ela recebe diz que a gestão
+// vê quem respondeu e o que respondeu (uso: fluxo atual e gestão de riscos). Cada vez que alguém abre as
+// respostas de uma pessoa, o registro de atividades anota quem abriu e de quem, sem o conteúdo.
+let _relPessoas = [], _relFiltro = { ger: '', sit: '', q: '' };
+const SIT_ROT = { concluiu: 'Concluiu', andamento: 'Em andamento', nao_comecou: 'Não começou' };
+const SIT_COR = { concluiu: 'etq verde', andamento: 'etq amarelo', nao_comecou: 'etq vermelho' };
+
 async function telaRelatos() {
   const c = $('conteudo');
-  c.innerHTML = carregando('Contando a adesão...');
-  const r = await api('adm/relatos-resumo');
+  c.innerHTML = carregando('Contando o andamento...');
+  const [r, pe] = await Promise.all([api('adm/relatos-resumo'), api('adm/relatos-pessoas')]);
   if (!r.ok) { c.innerHTML = `<div class="erro">${esc(r.erro || 'Não foi possível carregar.')}</div>`; return; }
-  const t = r.total;
-  const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '—';
+  _relPessoas = (pe && pe.ok) ? pe.pessoas : [];
+  const t = r.total, N = r.perguntas || 5;
+  const pct = (a, b) => b ? Math.round(a * 100 / b) + '%' : '0%';
   const cartao = (rotulo, v, cor) => `<div class="num" style="border-left-color:${cor || '#5c636a'};"><b>${v}</b><span>${esc(rotulo)}</span></div>`;
-  const linhas = r.gerencias.map(x => x.oculto
-    ? `<tr><td><b>${esc(x.gerencia)}</b></td><td>${x.pessoas}</td><td colspan="3" style="color:var(--mudo);">Grupo com menos de 3 pessoas: detalhe oculto para não identificar ninguém (entra no total).</td></tr>`
-    : `<tr><td><b>${esc(x.gerencia)}</b></td><td>${x.pessoas}</td><td>${x.leram} (${pct(x.leram, x.pessoas)})</td><td>${x.contribuiram} (${pct(x.contribuiram, x.pessoas)})</td><td>${x.relatos}</td></tr>`).join('');
-  c.innerHTML = `<div class="bloco"><h2><i class="ti ti-route"></i> Mapa real: adesão</h2>
-    <div style="font-size:.8rem; color:var(--mudo); margin-bottom:10px;">Mostra quantas pessoas leram o aviso e quantas já contaram como trabalham. Os textos e os nomes não aparecem aqui, de propósito.</div>
+  const pilha = x => {
+    const tot = x.pessoas || 1, w = n => (n * 100 / tot).toFixed(1) + '%';
+    return `<div class="pilha" title="${x.concluiram} concluíram · ${x.comecaram} em andamento · ${x.nao_comecaram} ainda não começaram">
+      <i class="p-ok" style="width:${w(x.concluiram)}"></i><i class="p-and" style="width:${w(x.comecaram)}"></i><i class="p-nao" style="width:${w(x.nao_comecaram)}"></i></div>`;
+  };
+  const legenda = '<div class="legenda-pilha"><span><i class="p-ok"></i> concluíram</span><span><i class="p-and"></i> em andamento</span><span><i class="p-nao"></i> ainda não começaram</span></div>';
+  let prazoTxt = '';
+  if (r.prazo && /^\d{4}-\d{2}-\d{2}$/.test(r.prazo)) {
+    const [yy, mm, dd] = r.prazo.split('-').map(Number), fim = new Date(yy, mm - 1, dd), hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+    const dias = Math.round((fim - hoje) / 86400000);
+    prazoTxt = `Prazo: ${String(dd).padStart(2, '0')}/${String(mm).padStart(2, '0')}/${yy} · ` + (dias < 0 ? 'vencido' : dias === 0 ? 'último dia' : dias === 1 ? 'falta 1 dia' : 'faltam ' + dias + ' dias');
+  }
+  const ROT = ['O que faz', 'De quem recebe e para quem segue', 'O que costuma travar', 'Em que se baseia', 'Onde guarda as provas'];
+  const linhaPerg = (nome, v) => `<div class="perg"><span class="perg-nome">${esc(nome)}</span><div class="barra"><div style="width:${t.pessoas ? Math.round(v * 100 / t.pessoas) : 0}%; background:#198754;"></div></div><span class="perg-n">${v} de ${t.pessoas}</span></div>`;
+  const porPerg = linhaPerg('Confirmaram nome e setor', t.confirmaram) + (t.por_pergunta || []).map((v, i) => linhaPerg(ROT[i] || 'Pergunta ' + (i + 1), v)).join('');
+  const filhos = r.gerencias.map(x => `<div class="arv-no arv-clique" onclick="filtrarRelatosGerencia('${esc(x.gerencia).replace(/'/g, '')}')" title="Ver as pessoas desta gerência">
+      <div class="arv-nome">${esc(x.gerencia)}</div>${pilha(x)}
+      <div class="arv-sub"><b>${x.concluiram}</b> de ${x.pessoas} concluíram (${pct(x.concluiram, x.pessoas)}) · ${x.comecaram} em andamento · ${x.nao_comecaram} sem começar</div></div>`).join('');
+  const gers = [...new Set(_relPessoas.map(x => x.gerencia).filter(Boolean))].sort();
+  c.innerHTML = `<div class="bloco"><h2><i class="ti ti-route"></i> Mapa real: andamento <small>${esc(prazoTxt)}</small></h2>
+    <div style="font-size:.8rem; color:var(--mudo); margin-bottom:10px;">Concluiu = confirmou nome e setor e respondeu às ${N} perguntas de sempre. As respostas são identificadas, e as pessoas foram avisadas disso.</div>
     <div class="grade">
       ${cartao('Pessoas com acesso', t.pessoas)}
-      ${cartao('Leram o aviso', t.leram + ' (' + pct(t.leram, t.pessoas) + ')', '#0b509e')}
-      ${cartao('Já contribuíram', t.contribuiram + ' (' + pct(t.contribuiram, t.pessoas) + ')', '#198754')}
-      ${cartao('Relatos registrados', t.relatos, '#6f42c1')}
+      ${cartao('Concluíram', t.concluiram + ' (' + pct(t.concluiram, t.pessoas) + ')', '#198754')}
+      ${cartao('Em andamento', t.comecaram, '#d97706')}
+      ${cartao('Ainda não começaram', t.nao_comecaram, '#8e1628')}
+      ${cartao('Confirmaram nome e setor', t.confirmaram + ' (' + pct(t.confirmaram, t.pessoas) + ')', '#0b509e')}
     </div>
-    <div class="rolagem" style="margin-top:12px;"><table class="tabela"><tr><th>Gerência</th><th>Pessoas</th><th>Leram o aviso</th><th>Contribuíram</th><th>Relatos</th></tr>${linhas || '<tr><td colspan="5">Nenhum usuário ativo.</td></tr>'}</table></div></div>`;
+    <div style="margin-top:14px;">${pilha(t)}${legenda}</div></div>
+  <div class="bloco"><h2><i class="ti ti-sitemap"></i> Por gerência <small>clique numa gerência para ver as pessoas</small></h2>
+    <div class="arv"><div class="arv-raiz"><div class="arv-nome">Diretoria</div>${pilha(t)}<div class="arv-sub"><b>${t.concluiram}</b> de ${t.pessoas} concluíram (${pct(t.concluiram, t.pessoas)})</div></div>
+      <div class="arv-filhos">${filhos || '<div class="vazio">Nenhum usuário ativo.</div>'}</div></div></div>
+  <div class="bloco"><h2><i class="ti ti-list-check"></i> Por etapa <small>onde as pessoas mais respondem e onde mais param</small></h2>${porPerg}</div>
+  <div class="bloco" id="rel-pessoas"><h2><i class="ti ti-users"></i> Pessoas <small>quem fez o quê</small></h2>
+    <div class="filtros">
+      <div><label>Gerência</label><select id="rf-ger" onchange="_relFiltro.ger=this.value; desenharPessoasRelatos()"><option value="">Todas</option>${gers.map(g => `<option value="${esc(g)}">${esc(g)}</option>`).join('')}</select></div>
+      <div><label>Situação</label><select id="rf-sit" onchange="_relFiltro.sit=this.value; desenharPessoasRelatos()"><option value="">Todas</option><option value="concluiu">Concluiu</option><option value="andamento">Em andamento</option><option value="nao_comecou">Não começou</option></select></div>
+      <div><label>Buscar</label><input id="rf-q" placeholder="nome, e-mail ou setor" oninput="_relFiltro.q=this.value; desenharPessoasRelatos()"></div>
+      <div style="min-width:0;"><button class="btn" onclick="baixarPessoasRelatos()"><i class="ti ti-download"></i> Baixar lista (CSV)</button></div>
+    </div>
+    <div id="rel-pessoas-tabela"></div></div>`;
+  _relFiltro = { ger: '', sit: '', q: '' };
+  desenharPessoasRelatos();
+}
+
+function _relPessoasFiltradas() {
+  const f = _relFiltro, q = (f.q || '').toLowerCase().trim();
+  return _relPessoas.filter(x => (!f.ger || x.gerencia === f.ger) && (!f.sit || x.situacao === f.sit)
+    && (!q || [x.nome, x.email, x.gerencia, x.nome_confirmado, x.setor_confirmado].join(' ').toLowerCase().includes(q)));
+}
+function desenharPessoasRelatos() {
+  const el = $('rel-pessoas-tabela'); if (!el) return;
+  const lista = _relPessoasFiltradas();
+  if (!lista.length) { el.innerHTML = '<div class="vazio">Nenhuma pessoa com este filtro.</div>'; return; }
+  const dt = v => v ? new Date(v).toLocaleDateString('pt-BR') : '—';
+  el.innerHTML = `<div class="rolagem"><table class="tabela"><tr><th>Pessoa</th><th>Gerência (cadastro)</th><th>Nome e setor confirmados</th><th>Situação</th><th>Perguntas</th><th>Última resposta</th><th></th></tr>` +
+    lista.map(x => {
+      const dif = x.setor_confirmado && x.gerencia && x.setor_confirmado.trim().toLowerCase() !== x.gerencia.trim().toLowerCase();
+      const conf = x.nome_confirmado ? `${esc(x.nome_confirmado)} · ${esc(x.setor_confirmado)}${x.funcao ? ' · ' + esc(x.funcao) : ''}${dif ? ' <span class="etq amarelo" title="O setor confirmado é diferente do cadastro">difere do cadastro</span>' : ''}` : '<span style="color:var(--mudo);">ainda não confirmou</span>';
+      return `<tr><td><b>${esc(x.nome)}</b><div style="color:var(--mudo); font-size:.74rem;">${esc(x.email)}</div></td><td>${esc(x.gerencia)}</td><td>${conf}</td>
+        <td><span class="${SIT_COR[x.situacao]}">${SIT_ROT[x.situacao]}</span></td><td>${x.perguntas_respondidas} de ${_relPerguntas()}</td><td>${dt(x.ultima)}</td>
+        <td>${x.relatos ? `<button class="btn" onclick="abrirRespostasPessoa('${esc(x.email)}')"><i class="ti ti-eye"></i> Ver respostas</button>` : ''}</td></tr>`;
+    }).join('') + '</table></div>';
+}
+function _relPerguntas() { return 5; }
+function filtrarRelatosGerencia(g) {
+  _relFiltro.ger = g; const s = $('rf-ger'); if (s) s.value = g;
+  desenharPessoasRelatos(); $('rel-pessoas').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function baixarPessoasRelatos() {
+  const lista = _relPessoasFiltradas();
+  const cel = v => '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"';
+  const linhas = [['Nome (cadastro)', 'E-mail', 'Gerência (cadastro)', 'Nome confirmado', 'Setor confirmado', 'Função', 'Situação', 'Perguntas respondidas', 'Registros', 'Última resposta']]
+    .concat(lista.map(x => [x.nome, x.email, x.gerencia, x.nome_confirmado, x.setor_confirmado, x.funcao, SIT_ROT[x.situacao], x.perguntas_respondidas, x.relatos, x.ultima ? new Date(x.ultima).toLocaleDateString('pt-BR') : '']));
+  const csv = '﻿' + linhas.map(l => l.map(cel).join(';')).join('\r\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = 'mapa-real-pessoas.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+async function abrirRespostasPessoa(email) {
+  const c = $('conteudo');
+  c.innerHTML = carregando('Abrindo as respostas...');
+  const r = await api('adm/relatos-da-pessoa', { pessoa_email: email });
+  if (!r.ok) { c.innerHTML = `<div class="erro">${esc(r.erro || 'Não foi possível abrir.')}</div><p style="margin-top:12px;"><button class="btn" onclick="telaRelatos()">Voltar</button></p>`; return; }
+  const p = r.pessoa, dt = v => v ? new Date(v).toLocaleString('pt-BR') : '';
+  const tipo = { fixo: 'Pergunta de sempre', rotativo: 'Pergunta da semana', problema: 'Algo que travou' };
+  c.innerHTML = `<p style="margin-bottom:12px;"><button class="btn" onclick="telaRelatos()"><i class="ti ti-arrow-left"></i> Voltar</button></p>
+    <div class="bloco"><h2><i class="ti ti-user"></i> ${esc(p.nome)} <small>${esc(p.email)}</small></h2>
+      <div style="font-size:.84rem; line-height:1.7;">Gerência no cadastro: <b>${esc(p.gerencia || '—')}</b><br>
+      Confirmado pela pessoa: <b>${p.nome_confirmado ? esc(p.nome_confirmado) + ' · ' + esc(p.setor_confirmado) + (p.funcao ? ' · ' + esc(p.funcao) : '') : 'ainda não confirmou'}</b></div>
+      <div style="font-size:.74rem; color:var(--mudo); margin-top:8px;">Esta abertura ficou registrada no registro de atividades (quem abriu e de quem), sem o conteúdo.</div></div>
+    ${r.relatos.length ? r.relatos.map(x => `<div class="bloco"><div style="font-size:.74rem; color:var(--mudo); margin-bottom:3px;">${esc(tipo[x.tipo] || x.tipo)} · ${esc(dt(x.atualizado_em))}${x.atividade ? ' · ' + esc(x.atividade) : ''}</div>
+      <div style="font-weight:600; font-size:.88rem; margin-bottom:6px;">${esc(x.pergunta)}</div>
+      <div style="white-space:pre-wrap; line-height:1.55; font-size:.88rem;">${esc(x.texto)}</div>
+      ${x.anexo_nome ? `<div style="margin-top:8px; font-size:.78rem; color:var(--mudo);"><i class="ti ti-paperclip"></i> Anexo: ${esc(x.anexo_nome)}</div>` : ''}</div>`).join('') : '<div class="vazio">Esta pessoa ainda não registrou nada.</div>'}`;
 }
 
 // ==================== ABA HOJE (blocos que o gestor escolhe e ordena) ====================
