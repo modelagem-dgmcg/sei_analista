@@ -141,3 +141,36 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 .alert-danger { background-color: var(--alert-bordeaux-light); color: var(--alert-bordeaux); border-color: #f5c2c7; }
 .spinner { display: inline-block; width: 1rem; height: 1rem; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 0.75s linear infinite; margin-right: 8px; }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ===== Assistente do processo (abas Perguntar e Redigir) ===== */
+.assistente { background:#fff; border:1px solid #dee2e6; padding:20px 22px; border-radius:8px; margin-bottom:30px; }
+.assistente-topo { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px; flex-wrap:wrap; }
+.assist-contador { font-size:0.72rem; color:#6c757d; margin-left:2px; }
+.assist-abas { display:flex; gap:4px; border-bottom:2px solid #e9ecef; margin-bottom:14px; }
+.assist-aba { background:none; border:none; padding:10px 18px; font:inherit; font-size:0.95rem; font-weight:600; color:#6c757d; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; display:inline-flex; gap:6px; align-items:center; }
+.assist-aba:hover { color:#343a40; }
+.assist-aba.ativa { color:var(--text-dark, #212529); border-bottom-color:#d97706; }
+.assist-ajuda { font-size:0.88rem; color:var(--text-muted); margin:0 0 12px; line-height:1.5; }
+.assist-pergunta { display:flex; gap:10px; }
+.assist-pergunta input { flex:1; min-width:0; padding:14px; border:1px solid #ced4da; border-radius:6px; outline:none; font-size:1rem; font-family:inherit; }
+.assist-pergunta input:focus, .assist-pedido:focus, .assist-editor:focus { border-color:#d97706; box-shadow:0 0 0 3px rgba(217,119,6,.15); }
+.assist-exemplos { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:10px 0 14px; font-size:0.8rem; color:#6c757d; }
+.assist-chip { background:#f1f3f5; border:1px solid #dee2e6; border-radius:16px; padding:5px 12px; font:inherit; font-size:0.82rem; color:#343a40; cursor:pointer; }
+.assist-chip:hover { background:#e9ecef; }
+.assist-chip.ativa { background:#fff3cd; border-color:#d97706; color:#664d03; font-weight:600; }
+.assist-leitura { position:relative; display:flex; flex-direction:column; gap:14px; background:#f8f9fa; padding:16px; border-radius:8px; border:1px solid #e9ecef; min-height:200px; max-height:72vh; overflow-y:auto; }
+.assist-vazio { color:#868e96; font-size:0.9rem; text-align:center; font-style:italic; margin:auto; max-width:520px; line-height:1.6; }
+.assist-feita { align-self:flex-start; background:#e9ecef; padding:10px 14px; border-radius:8px; font-size:0.92rem; color:#212529; max-width:100%; }
+.assist-resposta { background:#fff; border:1px solid #dee2e6; border-left:4px solid #339af0; border-radius:8px; padding:16px 20px; }
+.assist-resposta-rotulo { font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#1c7ed6; margin-bottom:8px; }
+.assist-resposta-texto { white-space:pre-wrap; font-size:1rem; line-height:1.7; color:#1f2933; max-width:80ch; }
+.assist-tipos { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.assist-pedido { width:100%; padding:12px; border:1px solid #ced4da; border-radius:6px; font:inherit; font-size:0.95rem; outline:none; resize:vertical; margin-bottom:10px; }
+.assist-acoes { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin:6px 0 14px; }
+.assist-aviso { font-size:0.85rem; color:#b45309; }
+.assist-rotulo { display:block; font-weight:600; font-size:0.95rem; margin:14px 0 6px; }
+.assist-rotulo span { display:block; font-weight:400; font-size:0.8rem; color:var(--text-muted); margin-top:2px; line-height:1.5; }
+.assist-editor { width:100%; min-height:420px; padding:18px; border:1px solid #ced4da; border-radius:6px; font:inherit; font-size:1rem; line-height:1.65; outline:none; resize:vertical; margin-bottom:14px; }
+.assist-gaveta { position:fixed; top:0; right:0; bottom:0; width:min(400px, 100vw); background:#fff; border-left:1px solid #dee2e6; box-shadow:-8px 0 24px rgba(0,0,0,.12); z-index:1500; padding:16px; overflow-y:auto; }
+.assist-gaveta-topo { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; font-size:0.9rem; }
+@media (max-width: 640px) { .assistente { padding:14px; } .assist-pergunta { flex-direction:column; } .assist-aba { padding:10px 12px; } }
