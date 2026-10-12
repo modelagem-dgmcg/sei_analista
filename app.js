@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v25.1';
-const VERSAO_APP_DATA = '12/10/2026 11:30';
+const VERSAO_APP = 'v25.2';
+const VERSAO_APP_DATA = '12/10/2026 14:00';
 console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1456,20 +1456,18 @@ async function abrirProcesso(identificador) {
   }).join('');
   let docsHtml = '<span style="color:var(--text-muted); font-size:0.85rem; font-style:italic;">Nenhum documento anexado ainda.</span>';
   if (docs.length > 0) {
-    docsHtml = '<ul style="margin:0; padding-left:20px; font-size:0.85rem; color:#495057; max-height: 120px; overflow-y: auto;">';
+    docsHtml = '<ul class="docs-lista">';
     docs.forEach(d => {
       let resumoTxt = '';
       if (d.resumo_sensiveis) {
         try {
           const lista = JSON.parse(d.resumo_sensiveis);
-          resumoTxt = lista.length
-            ? ` <span style="color:#b45309; font-size:0.72rem;">(${lista.length} dado(s) sensível(is) coberto(s))</span>`
-            : ' <span style="color:#868e96; font-size:0.72rem;">(nenhum dado sensível)</span>';
-        } catch (e) { /* resumo antigo ou inválido — só não mostra */ }
+          // Só destaca quando há dado sensível; "nenhum" em cada linha só poluía a lista.
+          if (lista.length) resumoTxt = ` <span class="docs-sens" title="Dados pessoais ocultados antes de ir à IA">${lista.length} dado(s) sensível(is) coberto(s)</span>`;
+        } catch (e) { /* resumo antigo ou inválido: só não mostra */ }
       }
-      const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO'
-        ? ' <span style="background:#d1e7dd; color:#0f5132; font-size:0.68rem; padding:1px 7px; border-radius:10px; font-weight:600;">✓ VERSÃO ASSINADA</span>' : '';
-      docsHtml += `<li style="margin-bottom:3px;"><i class="ti ti-file-type-pdf" style="color:#dc3545; margin-right:5px;"></i> ${escHtml(d.nome_arquivo)}${seloAssinado}${resumoTxt}</li>`;
+      const seloAssinado = d.tipo_documento === 'FINAL_ASSINADO' ? ' <span class="docs-assinada">✓ versão assinada</span>' : '';
+      docsHtml += `<li><i class="ti ti-file-type-pdf"></i><span class="docs-nome" title="${escAttr(d.nome_arquivo)}">${escHtml(d.nome_arquivo)}</span>${seloAssinado}${resumoTxt}</li>`;
     });
     docsHtml += '</ul>';
   }
@@ -1493,10 +1491,18 @@ async function abrirProcesso(identificador) {
         &nbsp;·&nbsp; <i class="ti ti-flag"></i> ${escHtml(p.status)}
         &nbsp;·&nbsp; <i class="ti ti-user"></i> Com: ${escHtml(p.responsavel_atual)}
       </div>
-      <div style="margin-top:15px; background:#f8f9fa; border:1px solid #dee2e6; padding:12px; border-radius:6px;">
-        <div style="font-weight:600; font-size:0.85rem; color:var(--text-dark); margin-bottom:8px;"><i class="ti ti-paperclip"></i> Documentos Integrados (${docs.length}):</div>
-        ${docsHtml}
-      </div>
+      <details id="docs-processo" class="docs-processo">
+        <summary>
+          <span class="docs-titulo"><i class="ti ti-paperclip"></i> Documentos do processo</span>
+          <span class="docs-qtd">${docs.length === 1 ? '1 documento' : docs.length + ' documentos'}</span>
+          <span id="docs-selo"></span>
+          <i class="ti ti-chevron-down docs-seta"></i>
+        </summary>
+        <div class="docs-corpo">
+          ${docsHtml}
+          <div id="cobertura-leitura" class="docs-leitura"></div>
+        </div>
+      </details>
       <div style="margin-top:15px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-primary btn-sm" onclick="modalUploadZIP()"><i class="ti ti-cloud-upload"></i> Adicionar mais arquivos</button>
         <button class="btn btn-secondary btn-sm" onclick="abrirTabelaDadosProcesso()"><i class="ti ti-table"></i> Gerar tabela de dados</button>
@@ -3307,16 +3313,23 @@ function _htmlCoberturaLeitura() {
   const chip = total
     ? `<span style="background:#fff3cd; color:#664d03; padding:2px 10px; border-radius:10px; font-size:0.75rem;">${pl(total, 'ponto', 'pontos')} para conferir</span>`
     : '<span style="background:#d1e7dd; color:#0f5132; padding:2px 10px; border-radius:10px; font-size:0.75rem;">tudo lido</span>';
-  return `<details ${total ? 'open' : ''} style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px;">
-    <summary style="cursor:pointer; font-size:0.95rem; font-weight:600;"><i class="ti ti-eye-check"></i> Leitura do processo ${chip}</summary>
-    ${secao('O que foi lido', leitura)}${conferir ? secao('Para conferir', conferir) : ''}${secao('Conferência', chec)}
-  </details>`;
+  window._cobTotalPontos = total;
+  window._cobChipHtml = chip;
+  return `${secao('O que foi lido', leitura)}${conferir ? secao('Para conferir', conferir) : ''}${secao('Conferência', chec)}`;
 }
 
 function _atualizarCoberturaLeitura() {
   const cont = document.getElementById('cobertura-leitura');
   if (!cont || !processoAtual) return;
-  try { cont.innerHTML = _htmlCoberturaLeitura(); }
+  try {
+    cont.innerHTML = _htmlCoberturaLeitura();
+    // O selo fica na linha do bloco, visível mesmo fechado. Com pontos a conferir, abre sozinho (uma vez, se a pessoa não mexeu).
+    const selo = document.getElementById('docs-selo');
+    if (selo) selo.innerHTML = window._cobChipHtml || '';
+    const bloco = document.getElementById('docs-processo');
+    if (bloco && window._cobTotalPontos && !window._docsMexidoPelaPessoa) bloco.open = true;
+    if (bloco && !bloco.dataset.ouvindo) { bloco.dataset.ouvindo = '1'; bloco.addEventListener('toggle', () => { window._docsMexidoPelaPessoa = true; }); }
+  }
   catch (e) { cont.innerHTML = `<div style="font-size:0.8rem; color:#a61e4d;">Não foi possível montar a cobertura da leitura: ${escHtml(e.message)}</div>`; }
 }
 function _montarCoberturaLeitura() {
@@ -3325,9 +3338,7 @@ function _montarCoberturaLeitura() {
     cont = document.createElement('div');
     cont.id = 'cobertura-leitura';
     cont.style.marginBottom = '16px';
-    const alvo = document.getElementById('chk-historico-unidade')?.closest('div[style*="padding:20px"]');
-    if (alvo && alvo.parentNode) alvo.parentNode.insertBefore(cont, alvo);
-    else document.getElementById('content')?.appendChild(cont);
+    document.getElementById('content')?.appendChild(cont);   // reserva: o bloco normalmente já existe no card de cima
   }
   _atualizarCoberturaLeitura();
 }
@@ -4378,7 +4389,7 @@ ${contexto}`;
     notas.innerHTML = `<div style="background:#e7f5ff; border-left:3px solid #339af0; padding:10px 12px; border-radius:4px; margin-bottom:12px; font-size:0.85rem; line-height:1.5;">
       <strong>Rascunho de ${escHtml(pend.tipo)} montado no campo abaixo.</strong> As fontes ficam entre colchetes, e o que faltou ficou como [preencher]. Confira cada fonte e apague os colchetes antes de assinar.
       ${lista('O que assumi do seu pedido:', r.assumi)}${lista('O que faltou nos documentos:', r.faltou)}
-      ${aviso.length ? `<div style="margin-top:8px; color:#854d0e;"><i class="ti ti-alert-triangle"></i> A leitura do processo tem pontos de atenção (${escHtml(aviso.join('; '))}). O rascunho pode estar incompleto. Veja a Cobertura da leitura.</div>` : ''}
+      ${aviso.length ? `<div style="margin-top:8px; color:#854d0e;"><i class="ti ti-alert-triangle"></i> A leitura do processo tem pontos de atenção (${escHtml(aviso.join('; '))}). O rascunho pode estar incompleto. Veja "Documentos do processo", no card de cima.</div>` : ''}
     </div>`;
     _registrarNoLog('RASCUNHO_PRONTO', pend.tipo + ' · ' + r.texto.length + ' caracteres');
     document.getElementById('redacao-confirma')?.remove();
