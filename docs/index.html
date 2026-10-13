@@ -11,7 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <!--
   SEI DOCS — base de documentos do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 13/10/2026 11:30 (horário de Recife)
+  Versão gerada em 13/10/2026 15:00 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -92,6 +92,18 @@
   .janela h2 { font-size:1.05rem; margin-bottom:6px; }
   .spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gira .75s linear infinite; vertical-align:middle; margin-right:6px; }
   @keyframes gira { to { transform:rotate(360deg); } }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(235px,1fr)); gap:14px; margin-bottom:16px; }
+  .tile { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:16px 18px; }
+  .tile h3 { font-size:.82rem; color:var(--mudo); font-weight:600; margin-bottom:6px; }
+  .tile .grande { font-size:1.9rem; font-weight:700; line-height:1.1; color:var(--texto); }
+  .tile .grande small { font-size:.85rem; font-weight:500; color:var(--mudo); margin-left:4px; }
+  .barra { height:10px; background:#e6ecef; border-radius:5px; overflow:hidden; margin:10px 0 8px; }
+  .barra > i { display:block; height:100%; border-radius:5px; background:var(--acento); min-width:2px; }
+  .barra.ok > i { background:var(--ok); } .barra.atencao > i { background:var(--ambar); } .barra.critico > i { background:var(--bordo); }
+  .estado { font-size:.78rem; font-weight:600; display:inline-flex; gap:5px; align-items:center; } .estado.ok { color:#0f5132; } .estado.atencao { color:#8a4b00; } .estado.critico { color:var(--bordo); }
+  .tile .nota { font-size:.76rem; color:var(--mudo); line-height:1.45; margin-top:4px; }
+  .linha-tipo { display:grid; grid-template-columns:150px 1fr 56px; gap:10px; align-items:center; font-size:.8rem; padding:3px 0; } .linha-tipo .barra { margin:0; height:8px; } .linha-tipo b { text-align:right; font-variant-numeric:tabular-nums; }
+  .evolucao svg { width:100%; height:150px; display:block; } .evolucao text { font-size:10px; fill:#66757d; }
   footer { text-align:center; font-size:.72rem; color:#97a6ad; padding:20px; }
   @media (max-width:640px) { header, nav.abas, main { padding-left:14px; padding-right:14px; } .campos .largo { grid-column:span 1; } }
 </style>
@@ -121,8 +133,10 @@
   <nav class="abas">
     <a href="#" data-aba="alimentar" onclick="abrirAba('alimentar'); return false;">Alimentar a base</a>
     <a href="#" data-aba="base" onclick="abrirAba('base'); return false;">Base</a>
+    <a href="#" data-aba="volume" onclick="abrirAba('volume'); return false;">Volume</a>
+    <!-- Unidades e Regras ficam guardadas (o código existe), mas escondidas: a conferência passa a ser de outro sistema.
     <a href="#" data-aba="unidades" onclick="abrirAba('unidades'); return false;">Unidades</a>
-    <a href="#" data-aba="regras" onclick="abrirAba('regras'); return false;">Regras</a>
+    <a href="#" data-aba="regras" onclick="abrirAba('regras'); return false;">Regras</a> -->
   </nav>
   <main id="conteudo"></main>
   <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
@@ -132,8 +146,8 @@
 // ============================================================
 // SEI DOCS — lógica da página
 // ============================================================
-const VERSAO_DOCS = 'v1.1';
-const VERSAO_DOCS_DATA = '13/10/2026 11:30';
+const VERSAO_DOCS = 'v1.2';
+const VERSAO_DOCS_DATA = '13/10/2026 15:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const MAX_ORIGINAL_BYTES = 8 * 1024 * 1024;     // acima disso só o texto vai para a base
 const EXT_LIDAS = ['pdf', 'docx', 'html', 'htm', 'txt', 'md', 'csv'];
@@ -289,7 +303,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ alimentar: telaAlimentar, base: telaBase, unidades: telaUnidades, regras: telaRegras })[aba]();
+  ({ alimentar: telaAlimentar, base: telaBase, volume: telaVolume, unidades: telaUnidades, regras: telaRegras })[aba]();
 }
 
 // ==================== MASCARAMENTO (o mesmo código do servidor) ====================
@@ -456,7 +470,6 @@ function telaAlimentar() {
         <div><button class="btn btn-claro" onclick="aplicarLote()"><i class="ti ti-copy"></i> Aplicar aos pendentes</button></div>
         <div><button class="btn btn-principal" id="btn-salvar-todos" onclick="salvarTodos()"><i class="ti ti-device-floppy"></i> Salvar todos os prontos</button></div>
         <div><button class="btn btn-claro" onclick="testarPasta()" title="Confere se o sistema consegue gravar na pasta do Drive"><i class="ti ti-folder-check"></i> Testar a pasta do Drive</button></div>
-        ${usuario && usuario.perfil === 'admin' ? `<div><button class="btn btn-claro" onclick="contarPasta()" title="Conta quantos arquivos há na pasta LEIS E DECRETOS e quantos já estão na base"><i class="ti ti-chart-bar"></i> Contar a pasta LEIS E DECRETOS</button></div>` : ''}
       </div>
       <div id="msg-lote"></div>
       <datalist id="lista-unidades">${((estado && estado.unidades) || []).map(u => `<option value="${esc(u)}">`).join('')}</datalist>
@@ -469,23 +482,79 @@ function telaAlimentar() {
   pintarFila();
 }
 
+const _fmt = n => Number(n || 0).toLocaleString('pt-BR');
+const _pct = n => Number(n || 0).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+function _nivel(pct, atencao, critico) { return pct >= critico ? 'critico' : pct >= atencao ? 'atencao' : 'ok'; }
+const _ROT = { ok: ['ti-circle-check', 'Com folga'], atencao: ['ti-alert-triangle', 'Atenção'], critico: ['ti-alert-octagon', 'Perto do limite'] };
+function _estado(n) { return `<span class="estado ${n}"><i class="ti ${_ROT[n][0]}"></i> ${_ROT[n][1]}</span>`; }
+
+async function telaVolume(aviso) {
+  const c = $('conteudo');
+  c.innerHTML = `<div class="bloco">${carregando('Medindo a base...')}</div>`;
+  const r = await api('docs/volume', {});
+  if (!r.ok) { c.innerHTML = `<div class="bloco"><div class="erro">${esc(r.erro || 'Não consegui medir a base.')}</div></div>`; return; }
+  const cap = r.capacidade, b = r.base, lei = r.leitura, car = r.carga, cont = r.contagem;
+  const nCap = _nivel(cap.pct, 50, 80);
+  const msLei = lei.ms || 0, nLei = msLei >= lei.atencao_ms ? 'critico' : msLei >= lei.atencao_ms / 2 ? 'atencao' : 'ok';
+  const pctLei = Math.min(100, Math.round(msLei * 100 / lei.atencao_ms));
+  const eAdmin = usuario && usuario.perfil === 'admin';
+
+  const tileCarga = car
+    ? `<div class="tile"><h3>Carga da pasta LEIS E DECRETOS</h3>
+        <div class="grande">${_pct(car.pct)}<small>${_fmt(car.na_base)} de ${_fmt(car.legiveis)} arquivos</small></div>
+        <div class="barra" role="img" aria-label="Carga: ${_pct(car.pct)}"><i style="width:${car.pct}%"></i></div>
+        <div class="nota">Faltam <b>${_fmt(car.falta)}</b> arquivos legíveis (Google Docs, PDF e Word) para entrar pelo app.${car.contagem_parcial ? ' <b>A contagem foi parcial: o total real é maior.</b>' : ''}<br>Última contagem: ${esc(new Date(cont.quando).toLocaleString('pt-BR'))}.</div></div>`
+    : `<div class="tile"><h3>Carga da pasta LEIS E DECRETOS</h3><div class="grande">—</div>
+        <div class="nota">Ainda não contei os arquivos da pasta. ${eAdmin ? 'Clique em "Contar a pasta" abaixo.' : 'A gestão precisa rodar a contagem.'}</div></div>`;
+
+  const tipos = Object.keys(b.por_tipo).sort((x, y) => b.por_tipo[y] - b.por_tipo[x]);
+  const maxT = Math.max(1, ...tipos.map(k => b.por_tipo[k]));
+  const nomeTipo = k => ((estado && estado.tipos && estado.tipos[k]) || k);
+  const linhasTipo = tipos.length ? tipos.map(k => `<div class="linha-tipo" title="${esc(nomeTipo(k))}: ${_fmt(b.por_tipo[k])}"><span>${esc(nomeTipo(k))}</span><div class="barra"><i style="width:${Math.round(b.por_tipo[k] * 100 / maxT)}%"></i></div><b>${_fmt(b.por_tipo[k])}</b></div>`).join('') : '<div class="vazio">Nenhum documento entrou ainda.</div>';
+
+  let evol = '<div class="vazio">A evolução aparece a partir do segundo dia em que esta aba for aberta.</div>';
+  const h = r.historico || [];
+  if (h.length >= 2) {
+    const W = 600, H = 130, mx = Math.max(1, ...h.map(x => x.docs)), px = i => 34 + i * (W - 44) / (h.length - 1), py = v => 10 + (H - 30) * (1 - v / mx);
+    const pts = h.map((x, i) => `${px(i).toFixed(1)},${py(x.docs).toFixed(1)}`).join(' ');
+    evol = `<div class="evolucao"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Documentos na base por dia">
+      <line x1="34" y1="${py(0)}" x2="${W - 10}" y2="${py(0)}" stroke="#d9e0e4"/><line x1="34" y1="${py(mx)}" x2="${W - 10}" y2="${py(mx)}" stroke="#eef2f4"/>
+      <text x="30" y="${py(mx) + 3}" text-anchor="end">${_fmt(mx)}</text><text x="30" y="${py(0) + 3}" text-anchor="end">0</text>
+      <polyline points="${pts}" fill="none" stroke="#0e7490" stroke-width="2"/>
+      ${h.map((x, i) => `<circle cx="${px(i).toFixed(1)}" cy="${py(x.docs).toFixed(1)}" r="4" fill="#0e7490" stroke="#fff" stroke-width="2"><title>${esc(x.d.split('-').reverse().join('/'))}: ${_fmt(x.docs)} documentos</title></circle>`).join('')}
+      <text x="34" y="${H - 4}">${esc(h[0].d.split('-').reverse().join('/'))}</text><text x="${W - 10}" y="${H - 4}" text-anchor="end">${esc(h[h.length - 1].d.split('-').reverse().join('/'))}</text></svg></div>`;
+  }
+
+  c.innerHTML = `${aviso || ''}
+    <div class="tiles">
+      <div class="tile"><h3>Documentos na base</h3><div class="grande">${_fmt(b.documentos)}<small>${_fmt(b.trechos)} trechos</small></div>
+        <div class="nota">Cerca de ${_fmt(Math.round(b.caracteres / 1000))} mil caracteres de texto já mascarado.</div></div>
+      <div class="tile"><h3>Espaço usado da planilha</h3><div class="grande">${_pct(cap.pct)}<small>${_fmt(cap.celulas_usadas)} de ${_fmt(cap.limite)} células</small></div>
+        <div class="barra ${nCap}" role="img" aria-label="Espaço usado: ${_pct(cap.pct)}"><i style="width:${Math.min(100, cap.pct)}%"></i></div>${_estado(nCap)}
+        <div class="nota">É o teto da planilha do Google. Perto de 80%, vale conversar com a TI sobre um banco maior.</div></div>
+      ${tileCarga}
+      <div class="tile"><h3>Velocidade da busca</h3><div class="grande">${msLei < 1000 ? _fmt(msLei) + ' ms' : (msLei / 1000).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' s'}<small>para ler toda a base</small></div>
+        <div class="barra ${nLei}" role="img" aria-label="Leitura: ${msLei} ms"><i style="width:${pctLei}%"></i></div>${_estado(nLei)}
+        <div class="nota">Referência nossa, não um limite do Google: acima de ${lei.atencao_ms / 1000} s a pesquisa começa a ficar pesada.</div></div>
+    </div>
+    <div class="bloco"><h2><i class="ti ti-files"></i> Documentos por tipo</h2>${linhasTipo}</div>
+    <div class="bloco"><h2><i class="ti ti-chart-line"></i> Evolução <small>documentos na base, por dia</small></h2>${evol}</div>
+    ${eAdmin ? `<div class="bloco"><h2><i class="ti ti-folder-search"></i> Contar a pasta <small>só a gestão</small></h2>
+      <div class="dica">Conta os arquivos da pasta LEIS E DECRETOS (com as subpastas) para calcular o andamento da carga. Em pastas grandes pode levar alguns minutos.</div>
+      <div class="acoes"><button class="btn btn-claro" onclick="contarPasta()"><i class="ti ti-chart-bar"></i> Contar a pasta LEIS E DECRETOS</button></div>
+      <div id="msg-contagem"></div>
+      ${cont && cont.por_pasta && cont.por_pasta.length ? `<details style="margin-top:10px"><summary>Arquivos por pasta na última contagem</summary><div class="rolagem"><table class="tabela" style="margin-top:6px"><thead><tr><th>Pasta</th><th style="text-align:right">Arquivos</th></tr></thead><tbody>${cont.por_pasta.map(x => `<tr><td>${esc(x.pasta)}</td><td style="text-align:right">${_fmt(x.arquivos)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
+    </div>` : ''}`;
+}
+
 async function contarPasta() {
-  const m = $('msg-lote'); m.innerHTML = `<div class="aviso">${carregando('Contando os arquivos da pasta. Pode levar alguns minutos se a pasta for grande...').replace('class="vazio"', '')}</div>`;
-  const r = await api('docs/contar-pasta', {});
-  if (!r.ok) { m.innerHTML = `<div class="erro">${esc(r.erro || 'Não consegui contar a pasta.')}</div>`; return; }
+  const m = $('msg-contagem');
+  m.innerHTML = `<div class="aviso" style="margin-top:10px">${carregando('Contando os arquivos da pasta. Pode levar alguns minutos se a pasta for grande...').replace('class="vazio"', '')}</div>`;
+  const r = await api('docs/contar-pasta', {}, 330000);
+  if (!r.ok) { m.innerHTML = `<div class="erro" style="margin-top:10px">${esc(r.erro || 'Não consegui contar a pasta.')}</div>`; return; }
   const t = r.tipos || {};
-  const linhasT = [['Google Docs', t.google_docs], ['PDF', t.pdf], ['Word', t.word], ['Planilhas', t.planilha], ['Imagens', t.imagem], ['Outros', t.outros]]
-    .filter(x => x[1]).map(x => `<tr><td>${x[0]}</td><td style="text-align:right">${(x[1] || 0).toLocaleString('pt-BR')}</td></tr>`).join('');
-  const linhasP = (r.por_pasta || []).map(x => `<tr><td>${esc(x.pasta)}</td><td style="text-align:right">${x.arquivos.toLocaleString('pt-BR')}</td></tr>`).join('');
-  const faltam = Math.max(0, (t.google_docs || 0) - (r.google_docs_ja_lidos_pelo_acervo || 0));
-  m.innerHTML = `<div class="ok-msg" style="display:block">
-    <b>${(r.total_arquivos || 0).toLocaleString('pt-BR')} arquivos</b> em ${(r.pastas || 0).toLocaleString('pt-BR')} pastas${r.parcial ? ' <b>(contagem parcial: a pasta é grande e a varredura parou no limite de tempo; o total real é maior)</b>' : ''}.
-    <table style="margin:8px 0;border-collapse:collapse"><tbody>${linhasT}</tbody></table>
-    <div>Google Docs já lidos pelo Acervo antigo (texto sem proteção, fora da busca daqui): <b>${(r.google_docs_ja_lidos_pelo_acervo || 0).toLocaleString('pt-BR')}</b>. Ainda sem leitura: <b>${faltam.toLocaleString('pt-BR')}</b>.</div>
-    <div>Já entraram pelo SEI Docs: <b>${(r.entradas_no_sei_docs || 0).toLocaleString('pt-BR')}</b>.</div>
-    ${linhasP ? `<details style="margin-top:8px"><summary>Arquivos por pasta (as 30 maiores)</summary><table style="margin-top:6px;border-collapse:collapse"><tbody>${linhasP}</tbody></table></details>` : ''}
-    <small>A subpasta "SEI Docs - entradas" não entra na contagem. Tempo da contagem: ${r.segundos || 0} s.</small>
-  </div>`;
+  const lista = [['Google Docs', t.google_docs], ['PDF', t.pdf], ['Word', t.word], ['Planilhas', t.planilha], ['Imagens', t.imagem], ['Outros', t.outros]].filter(x => x[1]).map(x => `${x[0]}: <b>${_fmt(x[1])}</b>`).join(' · ');
+  telaVolume(`<div class="ok-msg" style="display:block;margin-bottom:14px"><b>${_fmt(r.total_arquivos)} arquivos</b> em ${_fmt(r.pastas)} pastas${r.parcial ? ' <b>(contagem parcial: a pasta é grande e a varredura parou no limite de tempo)</b>' : ''}.<br>${lista}<br>Google Docs já lidos pelo Acervo antigo (fora da busca daqui): <b>${_fmt(r.google_docs_ja_lidos_pelo_acervo)}</b>.</div>`);
 }
 
 async function testarPasta() {
