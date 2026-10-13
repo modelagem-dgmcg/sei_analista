@@ -11,7 +11,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <!--
   SEI DOCS — base de documentos do ecossistema SEI (SES-PE — DGMCG/GGPCG)
-  Versão gerada em 13/10/2026 15:00 (horário de Recife)
+  Versão gerada em 13/10/2026 16:00 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
@@ -104,6 +104,10 @@
   .tile .nota { font-size:.76rem; color:var(--mudo); line-height:1.45; margin-top:4px; }
   .linha-tipo { display:grid; grid-template-columns:150px 1fr 56px; gap:10px; align-items:center; font-size:.8rem; padding:3px 0; } .linha-tipo .barra { margin:0; height:8px; } .linha-tipo b { text-align:right; font-variant-numeric:tabular-nums; }
   .evolucao svg { width:100%; height:150px; display:block; } .evolucao text { font-size:10px; fill:#66757d; }
+  .auto { display:flex; gap:8px; align-items:center; font-size:.84rem; margin-top:12px; font-weight:600; color:var(--texto); cursor:pointer; } .auto input { width:auto; margin:0; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .pergunta { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; padding:10px 12px; background:#fffbe0; border:1px solid #e8c93d; border-radius:8px; } .pergunta > div { min-width:220px; flex:1; } .pergunta label { margin-top:0; }
+  .item.salvo { padding:10px 14px; }
   footer { text-align:center; font-size:.72rem; color:#97a6ad; padding:20px; }
   @media (max-width:640px) { header, nav.abas, main { padding-left:14px; padding-right:14px; } .campos .largo { grid-column:span 1; } }
 </style>
@@ -146,8 +150,8 @@
 // ============================================================
 // SEI DOCS — lógica da página
 // ============================================================
-const VERSAO_DOCS = 'v1.2';
-const VERSAO_DOCS_DATA = '13/10/2026 15:00';
+const VERSAO_DOCS = 'v1.3';
+const VERSAO_DOCS_DATA = '13/10/2026 16:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const MAX_ORIGINAL_BYTES = 8 * 1024 * 1024;     // acima disso só o texto vai para a base
 const EXT_LIDAS = ['pdf', 'docx', 'html', 'htm', 'txt', 'md', 'csv'];
@@ -404,7 +408,23 @@ function _datasDoTexto(txt) {
   for (const m of txt.matchAll(/\b(\d{1,2})\s+de\s+([A-Za-zçÇãÃéÉ]+)\s+de\s+(\d{4})\b/gi)) { const mes = _MESES[norm(m[2])]; if (mes) { const iso = _isoDeBR(m[1], mes, m[3]); if (iso) achadas.push({ pos: m.index, iso }); } }
   return achadas.sort((a, b) => a.pos - b.pos);
 }
-function sugerirCampos(nome, texto, unidades) {
+// Procura no começo do texto um nome com cara de unidade de saúde ("Hospital Regional Emília Câmara", "UPAE Goiana"...).
+function unidadePorTexto(texto) {
+  const ini = texto.slice(0, 2500), re = /\b(hospital|upae|upa|policl[ií]nica|maternidade|hemocentro|hemope)\b/gi;
+  const ehNome = w => /^[A-ZÀ-Ú]/.test(w) && w.length > 1, lig = w => /^(d[aoe]s?|e)$/i.test(w);
+  let m;
+  while ((m = re.exec(ini))) {
+    const resto = ini.slice(m.index + m[0].length).split(/[\n(),;:.]| - | – /)[0], pal = resto.trim().split(/\s+/).filter(Boolean), nome = [m[0]];
+    for (const w of pal) { if (nome.length > 7) break; if (ehNome(w) || (lig(w) && nome.length > 1)) nome.push(w); else break; }
+    while (nome.length > 1 && lig(nome[nome.length - 1])) nome.pop();
+    let out = nome.join(' ');
+    if (out === out.toUpperCase()) out = out.toLowerCase().split(' ').map((w, i) => (i > 0 && lig(w)) ? w : (/^upae?$/.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1))).join(' ');
+    if (nome.length >= 2 && !/^hospital\s+d[oa]s?\s+(tricenten|martiniano)/i.test(out) && !/^(hospital|upa|upae)$/i.test(out)) return out;
+  }
+  return '';
+}
+
+function sugerirCampos(nome, texto, unidades, mapa) {
   const s = {}, base = nome.replace(/\.[a-z0-9]+$/i, '');
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
   const titulo = linhas.slice(0, 3).join(' ').slice(0, 300), inicio = texto.slice(0, 3000);
@@ -435,16 +455,18 @@ function sugerirCampos(nome, texto, unidades) {
   // unidade: nome no padrão "003/2021 - UPAE GOIANA" ou uma unidade que a base já conhece citada no começo do texto
   m = base.match(/^\s*\d{1,4}\s*[\/-]\s*\d{4}\s*-\s*(.+)$/);
   if (m) s.unidade = m[1].split(/\s+[-–—]\s+/)[0].trim();   // "003/2021 - UPAE GOIANA - Contrato" -> "UPAE GOIANA"
+  if (!s.unidade && s.contrato && mapa && mapa[s.contrato]) { s.unidade = mapa[s.contrato]; s._origem_unidade = 'contrato'; }   // o contrato já é conhecido na base: a unidade vem dele
   if (!s.unidade && unidades && unidades.length) {
     const alvo = ' ' + norm(base + ' ' + texto.slice(0, 2500)) + ' ';
     const casou = unidades.filter(u => norm(u).length >= 4 && alvo.includes(' ' + norm(u) + ' ')).sort((a, b) => norm(b).length - norm(a).length)[0];
     if (casou) s.unidade = casou;
   }
+  if (!s.unidade) { const u = unidadePorTexto(texto); if (u) { s.unidade = u; s._origem_unidade = 'texto'; } }   // nome novo, achado no texto: o sistema pede uma confirmação
   // data do documento: a última data depois de "Recife," (rodapé da assinatura); senão a primeira data do texto
   const datas = _datasDoTexto(texto);
   const recife = [...texto.matchAll(/Recife[,\s]+(?:aos\s+)?/gi)].map(x => x.index + x[0].length);
   const depoisRecife = datas.filter(d => recife.some(r => d.pos >= r && d.pos - r < 8)).pop();
-  if (depoisRecife) s.data_doc = depoisRecife.iso; else if (datas.length) s.data_doc = datas[0].iso;
+  if (depoisRecife) s.data_doc = depoisRecife.iso; else { const cedo = datas.find(d => d.pos < 700); if (cedo) s.data_doc = cedo.iso; }   // sem data de assinatura: só aceita uma data logo no começo; datas soltas pelo meio do texto enganam
   // vigência: "vigência ... de 01/03/2021 a 01/03/2022"
   m = texto.match(/vig[êe]ncia[^.]{0,100}?(\d{1,2}\/\d{1,2}\/\d{4})[^.\d]{0,40}?(\d{1,2}\/\d{1,2}\/\d{4})/i);
   if (m) { const a = m[1].split('/'), b = m[2].split('/'); const i1 = _isoDeBR(a[0], a[1], a[2]), i2 = _isoDeBR(b[0], b[1], b[2]); if (i1 && i2) { s.vigencia_ini = i1; s.vigencia_fim = i2; } }
@@ -454,22 +476,26 @@ function sugerirCampos(nome, texto, unidades) {
 }
 
 // ==================== TELA: ALIMENTAR A BASE ====================
+let autoSalvar = true;
+try { if (localStorage.getItem('docs_auto_salvar') === 'nao') autoSalvar = false; } catch (e) { /* sem armazenamento: fica ligado */ }
+function mudarAuto(el) { autoSalvar = el.checked; try { localStorage.setItem('docs_auto_salvar', autoSalvar ? 'sim' : 'nao'); } catch (e) { /* tudo bem */ } }
+
 function telaAlimentar() {
   $('conteudo').innerHTML = `
     <div class="bloco">
-      <h2><i class="ti ti-file-import"></i> Alimentar a base <small>é aqui que o arquivo entra</small></h2>
-      <p class="dica">O arquivo é lido neste computador. Os dados pessoais (CPF, RG, e-mail, telefone, dados bancários, matrícula e o bloco do representante) são trocados por marcas <b>antes</b> de sair daqui. Só o texto já mascarado vai para a base; o arquivo original vai para a pasta do Drive. Confira os campos que o sistema sugeriu (em amarelo) e salve.</p>
+      <h2><i class="ti ti-file-import"></i> Alimentar a base <small>solte os arquivos; o sistema reconhece e guarda</small></h2>
       <div class="dropzone" id="dz" onclick="$('arq').click()">
         <i class="ti ti-cloud-upload"></i><strong>Solte aqui os arquivos ou clique para escolher</strong>
         <small>PDF, Word (.docx), HTML do SEI, texto, ou um .zip com vários arquivos de uma vez</small>
       </div>
       <input type="file" id="arq" multiple accept=".pdf,.docx,.html,.htm,.txt,.md,.csv,.zip" class="hidden" onchange="receberArquivos(this.files); this.value='';">
-      <div class="lote">
-        <div><label>Unidade (para todos os pendentes)</label><input id="lote-unidade" list="lista-unidades" placeholder="Ex.: UPAE Goiana"></div>
+      <label class="auto"><input type="checkbox" id="chk-auto" ${autoSalvar ? 'checked' : ''} onchange="mudarAuto(this)"> Guardar sozinho o que o sistema reconhecer (só pergunta quando faltar algo)</label>
+      <p class="dica">Os dados pessoais (CPF, RG, e-mail, telefone, dados bancários, matrícula e o bloco do representante) são trocados por marcas neste computador, <b>antes</b> de irem para a base. Nomes de pessoas não são apagados sozinhos. Desmarque a opção acima se quiser conferir o texto antes de guardar.</p>
+      <div class="lote hidden" id="lote">
+        <div><label>Unidade (para todos que estão esperando)</label><input id="lote-unidade" list="lista-unidades" placeholder="Ex.: UPAE Goiana"></div>
         <div><label>Nº do contrato (para todos)</label><input id="lote-contrato" placeholder="Ex.: 003/2021"></div>
-        <div><button class="btn btn-claro" onclick="aplicarLote()"><i class="ti ti-copy"></i> Aplicar aos pendentes</button></div>
-        <div><button class="btn btn-principal" id="btn-salvar-todos" onclick="salvarTodos()"><i class="ti ti-device-floppy"></i> Salvar todos os prontos</button></div>
-        <div><button class="btn btn-claro" onclick="testarPasta()" title="Confere se o sistema consegue gravar na pasta do Drive"><i class="ti ti-folder-check"></i> Testar a pasta do Drive</button></div>
+        <div><button class="btn btn-claro" onclick="aplicarLote()"><i class="ti ti-copy"></i> Aplicar aos que esperam</button></div>
+        <div><button class="btn btn-principal" id="btn-salvar-todos" onclick="salvarTodos()"><i class="ti ti-device-floppy"></i> Guardar os que esperam</button></div>
       </div>
       <div id="msg-lote"></div>
       <datalist id="lista-unidades">${((estado && estado.unidades) || []).map(u => `<option value="${esc(u)}">`).join('')}</datalist>
@@ -541,7 +567,8 @@ async function telaVolume(aviso) {
     <div class="bloco"><h2><i class="ti ti-chart-line"></i> Evolução <small>documentos na base, por dia</small></h2>${evol}</div>
     ${eAdmin ? `<div class="bloco"><h2><i class="ti ti-folder-search"></i> Contar a pasta <small>só a gestão</small></h2>
       <div class="dica">Conta os arquivos da pasta LEIS E DECRETOS (com as subpastas) para calcular o andamento da carga. Em pastas grandes pode levar alguns minutos.</div>
-      <div class="acoes"><button class="btn btn-claro" onclick="contarPasta()"><i class="ti ti-chart-bar"></i> Contar a pasta LEIS E DECRETOS</button></div>
+      <div class="acoes"><button class="btn btn-claro" onclick="contarPasta()"><i class="ti ti-chart-bar"></i> Contar a pasta LEIS E DECRETOS</button>
+        <button class="btn btn-claro" onclick="testarPasta()" title="Confere se o sistema consegue gravar na pasta do Drive"><i class="ti ti-folder-check"></i> Testar a pasta do Drive</button></div>
       <div id="msg-contagem"></div>
       ${cont && cont.por_pasta && cont.por_pasta.length ? `<details style="margin-top:10px"><summary>Arquivos por pasta na última contagem</summary><div class="rolagem"><table class="tabela" style="margin-top:6px"><thead><tr><th>Pasta</th><th style="text-align:right">Arquivos</th></tr></thead><tbody>${cont.por_pasta.map(x => `<tr><td>${esc(x.pasta)}</td><td style="text-align:right">${_fmt(x.arquivos)}</td></tr>`).join('')}</tbody></table></div></details>` : ''}
     </div>` : ''}`;
@@ -558,7 +585,7 @@ async function contarPasta() {
 }
 
 async function testarPasta() {
-  const m = $('msg-lote'); m.innerHTML = `<div class="aviso">${carregando('Testando a gravação na pasta do Drive...').replace('class="vazio"', '')}</div>`;
+  const m = $('msg-contagem') || $('msg-lote'); m.innerHTML = `<div class="aviso">${carregando('Testando a gravação na pasta do Drive...').replace('class="vazio"', '')}</div>`;
   const r = await api('docs/testar-pasta', {});
   if (r.ok && r.pasta_ok) m.innerHTML = `<div class="ok-msg"><i class="ti ti-check"></i> O sistema consegue gravar na pasta do Drive ("${esc(r.nome)}").</div>`;
   else m.innerHTML = `<div class="erro">O sistema <b>não</b> conseguiu gravar na pasta do Drive: ${esc(r.motivo || r.erro || 'motivo desconhecido')}.<br>Sem isso, os documentos entram na base só como texto, sem o arquivo original. Para resolver, dê permissão de <b>edição</b> na pasta "LEIS E DECRETOS" à conta Google que publica o Apps Script.</div>`;
@@ -594,13 +621,28 @@ async function processarUm(nome, buf) {
     item.texto = (await lerTexto(nome, buf)).replace(/\u0000/g, '');
     if (item.texto.trim().length < 40) throw new Error('Nenhum texto foi lido. Se for um PDF escaneado (imagem), esta versão ainda não faz leitura por OCR.');
     if (item.tamanho <= MAX_ORIGINAL_BYTES) item.b64 = bufParaB64(buf);
-    Object.assign(item.campos, sugerirCampos(nome, item.texto, (estado && estado.unidades) || []));
+    const sug = sugerirCampos(nome, item.texto, (estado && estado.unidades) || [], (estado && estado.contratos_unidades) || {});
+    item.origemUnidade = sug._origem_unidade || ''; delete sug._origem_unidade;
+    Object.assign(item.campos, sug);
     Object.keys(item.campos).forEach(k => { if (item.campos[k]) item.sug[k] = true; });
     remascarar(item);
-    item.estado = 'pronto';
+    item.estado = 'pronto'; avaliar(item);
   } catch (e) { item.estado = 'erro'; item.erro = e.message || String(e); item.texto = ''; item.b64 = ''; }
   pintarFila();
+  if (item.estado === 'pronto' && item.nivel === 'auto' && autoSalvar && TOKEN) await salvarItem(item.id);
   await new Promise(r => setTimeout(r, 0));
+}
+
+// 'auto' = o sistema reconheceu o bastante e pode guardar; 'confirmar' = achou a unidade no texto e quer um aval; 'manual' = falta algo.
+function avaliar(item) {
+  const c = item.campos, contr = ehContratual(c.tipo_doc);
+  item.faltas = [];
+  if (!c.tipo_doc) item.faltas.push('tipo_doc');
+  if (contr && !(c.unidade || '').trim()) item.faltas.push('unidade');
+  if (item.faltas.length) item.nivel = 'manual';
+  else if (contr && item.origemUnidade === 'texto' && item.sug.unidade) item.nivel = 'confirmar';
+  else item.nivel = 'auto';
+  return item.nivel;
 }
 
 function remascarar(item) {
@@ -614,21 +656,24 @@ function realcarMarcas(texto) {
   return esc(texto).replace(re, (m) => `<mark class="m">${m}</mark>`);
 }
 
-function htmlItem(i) {
-  const chip = { lendo: '<span class="etq azul"><span class="spinner"></span>Lendo…</span>', pronto: '<span class="etq azul">Pronto para conferir</span>', salvando: '<span class="etq azul"><span class="spinner"></span>Salvando…</span>',
-    salvo: '<span class="etq verde">Salvo na base</span>', duplicado: '<span class="etq vermelho">Já estava na base</span>', erro: '<span class="etq vermelho">Não entrou</span>' }[i.estado];
-  const topo = `<div class="item-topo"><div class="item-nome">${esc(i.nome)}<small>${i.tamanho ? Math.round(i.tamanho / 1024) + ' KB' : ''}</small></div>${chip}</div>`;
-  if (i.estado === 'lendo') return topo;
-  if (i.estado === 'erro' || i.estado === 'duplicado') return topo + `<div class="${i.estado === 'erro' ? 'erro' : 'aviso'}" style="margin-top:8px;">${esc(i.erro)}</div>` + `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="descartar(${i.id})">Tirar da lista</button></div>`;
-  if (i.estado === 'salvo') return topo + `<div class="ok-msg">${esc(i.resumoSalvo || 'Salvo.')}</div>` + (i.avisoOriginal ? `<div class="aviso">${esc(i.avisoOriginal)}</div>` : '') + `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="descartar(${i.id})">Tirar da lista</button></div>`;
+function chipsDoItem(i) {
+  const c = i.campos, nomeTipo = (estado && estado.tipos && estado.tipos[c.tipo_doc]) || '';
+  const partes = [];
+  if (nomeTipo) partes.push(`<span class="etq azul">${esc(nomeTipo)}${c.numero_doc ? ' ' + esc(c.numero_doc) : ''}</span>`);
+  if (c.contrato) partes.push(`<span class="etq">Contrato ${esc(c.contrato)}</span>`);
+  if (c.unidade) partes.push(`<span class="etq">${esc(c.unidade)}</span>`);
+  if (c.data_doc) partes.push(`<span class="etq">${esc(c.data_doc.split('-').reverse().join('/'))}</span>`);
+  if (c.processo_sei) partes.push(`<span class="etq">SEI ${esc(c.processo_sei)}</span>`);
+  if (i.masc && i.masc.trocas) partes.push(`<span class="etq verde" title="Dados pessoais trocados por marcas antes de sair deste computador">${i.masc.trocas} dado(s) protegido(s)</span>`);
+  return `<div class="chips">${partes.join('') || '<span class="vazio">Nada reconhecido ainda.</span>'}</div>`;
+}
+
+function camposCompletos(i) {
   const c = i.campos, dis = i.estado === 'salvando' ? 'disabled' : '';
   const campo = (k, rot, tipo, extra) => `<div ${extra && extra.largo ? 'class="largo"' : ''}><label>${rot}</label><input ${dis} type="${tipo || 'text'}" value="${esc(c[k] || '')}" class="${i.sug[k] ? 'sug' : ''}" ${extra && extra.lista ? 'list="' + extra.lista + '"' : ''} ${extra && extra.ph ? 'placeholder="' + esc(extra.ph) + '"' : ''} oninput="mudarCampo(${i.id},'${k}',this)"></div>`;
   const tipos = Object.keys((estado && estado.tipos) || {}).map(t => `<option value="${t}" ${c.tipo_doc === t ? 'selected' : ''}>${esc(estado.tipos[t])}</option>`).join('');
   const contr = ehContratual(c.tipo_doc);
-  const trocas = i.masc.trocas, porTipo = Object.keys(i.masc.por_tipo).map(k => `${i.masc.por_tipo[k]}× ${k.replace(/[\[\]]/g, '')}`).join(', ');
-  const provaveis = (i.provaveis || []).map(n => `<span class="chip" onclick="mascararNome(${i.id}, this.dataset.n)" data-n="${esc(n)}" title="Clique para mascarar este nome neste documento">${esc(n)} +</span>`).join('');
-  return topo + `
-    <div class="campos">
+  return `<div class="campos">
       <div><label>Tipo do documento *</label><select ${dis} class="${i.sug.tipo_doc ? 'sug' : ''}" onchange="mudarCampo(${i.id},'tipo_doc',this); pintarItem(${i.id})"><option value="">Escolha…</option>${tipos}</select></div>
       ${campo('numero_doc', 'Nº do documento', 'text', { ph: 'Ex.: 2º ou 309/2025' })}
       ${campo('contrato', 'Nº do contrato', 'text', { ph: 'Ex.: 003/2021' })}
@@ -637,21 +682,51 @@ function htmlItem(i) {
       ${contr ? campo('vigencia_ini', 'Vigência: início', 'date') + campo('vigencia_fim', 'Vigência: fim', 'date') : ''}
       ${campo('processo_sei', 'Processo SEI', 'text', { ph: 'Ex.: 2300000266.008100/2026-89' })}
       ${campo('assunto', 'Assunto (opcional)', 'text', { largo: true })}
-    </div>
-    <details class="masc" ${trocas || (i.provaveis || []).length ? 'open' : ''}>
-      <summary><i class="ti ti-eye-off"></i> ${trocas ? trocas + ' dado(s) pessoal(is) mascarado(s)' + (porTipo ? ' (' + esc(porTipo) + ')' : '') : 'Nenhum dado pessoal encontrado pelo mascarador'} — conferir o texto que vai para a base</summary>
-      ${provaveis ? `<div class="aviso" style="margin-top:8px;">Parecem nomes de pessoas que o mascarador não pega sozinho. Clique para mascarar: <div>${provaveis}</div></div>` : ''}
+    </div>`;
+}
+
+function blocoProtegido(i) {
+  const dis = i.estado === 'salvando' ? 'disabled' : '';
+  const trocas = i.masc.trocas, porTipo = Object.keys(i.masc.por_tipo).map(k => `${i.masc.por_tipo[k]}× ${k.replace(/[\[\]]/g, '')}`).join(', ');
+  const provaveis = (i.provaveis || []).map(n => `<span class="chip" onclick="mascararNome(${i.id}, this.dataset.n)" data-n="${esc(n)}" title="Clique para mascarar este nome neste documento">${esc(n)} +</span>`).join('');
+  return `<div class="masc">
+      <b>${trocas ? trocas + ' dado(s) pessoal(is) protegido(s)' + (porTipo ? ' (' + esc(porTipo) + ')' : '') : 'Nenhum dado pessoal encontrado pelo mascarador'}</b>
+      ${provaveis ? `<div class="aviso" style="margin-top:8px;">Parecem nomes de pessoas, que o mascarador não apaga sozinho. Clique para mascarar: <div>${provaveis}</div></div>` : ''}
       <label>Mascarar também estes nomes (um por linha)</label>
       <textarea ${dis} placeholder="Ex.: Maria da Silva" onchange="mudarNomes(${i.id}, this.value)">${esc(i.nomes)}</textarea>
       <pre>${realcarMarcas(i.masc.texto.slice(0, 5000))}${i.masc.texto.length > 5000 ? '\n\n… (mostrando os primeiros 5.000 de ' + i.masc.texto.length.toLocaleString('pt-BR') + ' caracteres)' : ''}</pre>
-    </details>
-    ${i.b64 ? '' : '<div class="dica">Arquivo grande: só o texto mascarado vai para a base; o original não será guardado no Drive.</div>'}
-    <div class="acoes"><button class="btn btn-principal" ${dis} onclick="salvarItem(${i.id})"><i class="ti ti-device-floppy"></i> Salvar na base</button>
-      <button class="btn btn-claro" ${dis} onclick="descartar(${i.id})">Descartar</button><span class="dica" id="aviso-${i.id}"></span></div>`;
+    </div>`;
 }
+
+function htmlItem(i) {
+  const chip = { lendo: '<span class="etq azul"><span class="spinner"></span>Lendo…</span>', salvando: '<span class="etq azul"><span class="spinner"></span>Guardando…</span>',
+    salvo: '<span class="etq verde">Guardado</span>', duplicado: '<span class="etq vermelho">Já estava na base</span>', erro: '<span class="etq vermelho">Não entrou</span>' }[i.estado]
+    || (i.nivel === 'confirmar' ? '<span class="etq amarelo">Confira a unidade</span>' : '<span class="etq amarelo">Falta uma informação</span>');
+  const topo = `<div class="item-topo"><div class="item-nome">${esc(i.nome)}<small>${i.tamanho ? Math.round(i.tamanho / 1024) + ' KB' : ''}</small></div>${chip}</div>`;
+  if (i.estado === 'lendo') return topo;
+  if (i.estado === 'erro' || i.estado === 'duplicado') return topo + `<div class="${i.estado === 'erro' ? 'erro' : 'aviso'}" style="margin-top:8px;">${esc(i.erro)}</div>` + `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="descartar(${i.id})">Tirar da lista</button></div>`;
+  if (i.estado === 'salvo') return topo + chipsDoItem(i) + `<div class="dica">${esc(i.resumoSalvo || 'Guardado.')}</div>` + (i.avisoOriginal ? `<div class="aviso">${esc(i.avisoOriginal)}</div>` : '');
+  const c = i.campos, dis = i.estado === 'salvando' ? 'disabled' : '';
+  const tipos = Object.keys((estado && estado.tipos) || {}).map(t => `<option value="${t}" ${c.tipo_doc === t ? 'selected' : ''}>${esc(estado.tipos[t])}</option>`).join('');
+  let pergunta = '';
+  if (!i.editando) {
+    if (i.faltas && i.faltas.includes('tipo_doc')) pergunta += `<div><label>Que tipo de documento é?</label><select ${dis} onchange="mudarCampo(${i.id},'tipo_doc',this); avaliar(fila.find(x=>x.id===${i.id})); pintarItem(${i.id})"><option value="">Escolha…</option>${tipos}</select></div>`;
+    if ((i.faltas && i.faltas.includes('unidade')) || i.nivel === 'confirmar') pergunta += `<div><label>${i.nivel === 'confirmar' ? 'O sistema achou esta unidade no texto. Está certo?' : 'De qual unidade é?'}</label><input ${dis} list="lista-unidades" value="${esc(c.unidade || '')}" oninput="mudarCampo(${i.id},'unidade',this); const it=fila.find(x=>x.id===${i.id}); it.origemUnidade='';" placeholder="Ex.: UPAE Goiana"></div>`;
+  }
+  return topo + chipsDoItem(i) +
+    (i.editando ? camposCompletos(i) : (pergunta ? `<div class="pergunta">${pergunta}</div>` : '')) +
+    (i.verMasc ? blocoProtegido(i) : '') +
+    (i.b64 ? '' : '<div class="dica">Arquivo grande: só o texto mascarado vai para a base; o original não será guardado no Drive.</div>') +
+    `<div class="acoes"><button class="btn btn-principal" ${dis} onclick="salvarItem(${i.id})"><i class="ti ti-device-floppy"></i> Guardar na base</button>
+      <button class="btn btn-sm btn-claro" ${dis} onclick="alternar(${i.id},'editando')">${i.editando ? 'Fechar a edição' : 'Editar tudo'}</button>
+      <button class="btn btn-sm btn-claro" ${dis} onclick="alternar(${i.id},'verMasc')">${i.verMasc ? 'Esconder o que foi protegido' : 'Ver o que foi protegido'}</button>
+      <button class="btn btn-sm btn-claro" ${dis} onclick="descartar(${i.id})">Descartar</button><span class="dica" id="aviso-${i.id}"></span></div>`;
+}
+function alternar(id, k) { const i = fila.find(x => x.id === id); if (!i) return; i[k] = !i[k]; pintarItem(id); }
 
 function pintarFila() {
   const el = $('fila'); if (!el) return;
+  const lote = $('lote'); if (lote) lote.classList.toggle('hidden', !fila.some(i => i.estado === 'pronto'));
   if (!fila.length) { el.innerHTML = ''; return; }
   el.innerHTML = fila.map(i => `<div class="item ${i.estado}" id="item-${i.id}">${htmlItem(i)}</div>`).join('');
 }
@@ -662,6 +737,8 @@ function pintarItem(id) {
 function mudarCampo(id, k, el) {
   const i = fila.find(x => x.id === id); if (!i) return;
   i.campos[k] = el.value; delete i.sug[k]; el.classList.remove('sug');
+  if (k === 'unidade') i.origemUnidade = '';
+  if (i.estado === 'pronto') { const antes = i.nivel; avaliar(i); if (antes !== i.nivel && k !== 'unidade') pintarItem(id); }
 }
 function mudarNomes(id, v) { const i = fila.find(x => x.id === id); if (!i) return; i.nomes = v; remascarar(i); pintarItem(id); }
 function mascararNome(id, nome) { const i = fila.find(x => x.id === id); if (!i) return; i.nomes = (i.nomes ? i.nomes.trim() + '\n' : '') + nome; remascarar(i); pintarItem(id); }
@@ -670,8 +747,8 @@ function aplicarLote() {
   const un = $('lote-unidade').value.trim(), co = $('lote-contrato').value.trim();
   if (!un && !co) { $('msg-lote').innerHTML = '<div class="aviso">Escreva a unidade e/ou o contrato para aplicar.</div>'; return; }
   let n = 0;
-  fila.filter(i => i.estado === 'pronto').forEach(i => { if (un) { i.campos.unidade = un; delete i.sug.unidade; } if (co) { i.campos.contrato = co; delete i.sug.contrato; } n++; });
-  pintarFila(); $('msg-lote').innerHTML = `<div class="ok-msg">Aplicado a ${n} arquivo(s) pendente(s).</div>`;
+  fila.filter(i => i.estado === 'pronto').forEach(i => { if (un) { i.campos.unidade = un; delete i.sug.unidade; i.origemUnidade = ''; } if (co) { i.campos.contrato = co; delete i.sug.contrato; } avaliar(i); n++; });
+  pintarFila(); $('msg-lote').innerHTML = `<div class="ok-msg">Aplicado a ${n} arquivo(s) que esperavam.</div>`;
 }
 
 function faltaNoItem(i) {
@@ -691,9 +768,16 @@ async function salvarItem(id) {
     vigencia_fim: c.vigencia_fim, processo_sei: c.processo_sei, assunto: c.assunto, nome_arquivo: i.nome, hash: i.hash, texto: i.masc.texto, trocas_cliente: i.masc.trocas, original_b64: i.b64 }, 120000);
   if (r.ok) {
     i.estado = 'salvo'; i.texto = ''; i.b64 = ''; i.masc = { texto: '', trocas: 0, por_tipo: {} };
-    i.resumoSalvo = `Salvo: ${r.trechos} trecho(s) · ${r.original_guardado ? 'original guardado no Drive' : 'só o texto (sem original no Drive)'}.`;
+    i.resumoSalvo = `${r.trechos} trecho(s) · ${r.original_guardado ? 'original guardado no Drive' : 'só o texto (sem original no Drive)'}.`;
     i.avisoOriginal = r.original_guardado ? '' : (r.aviso_original || '');
-    carregarEstado().then(() => { const dl = $('lista-unidades'); if (dl && estado) dl.innerHTML = (estado.unidades || []).map(u => `<option value="${esc(u)}">`).join(''); });
+    // atualiza o que o app já sabe, sem chamar o servidor: o próximo arquivo do mesmo contrato já sai com a unidade certa
+    if (estado) {
+      estado.unidades = estado.unidades || []; estado.contratos_unidades = estado.contratos_unidades || {};
+      if (c.unidade && !estado.unidades.some(u => norm(u) === norm(c.unidade))) estado.unidades.push(c.unidade);
+      const kc = (c.contrato || '').trim(); if (kc && c.unidade && !estado.contratos_unidades[kc]) estado.contratos_unidades[kc] = c.unidade;
+      estado.total_documentos = (estado.total_documentos || 0) + 1;
+      const dl = $('lista-unidades'); if (dl) dl.innerHTML = estado.unidades.map(u => `<option value="${esc(u)}">`).join('');
+    }
   } else if (r.duplicado) { i.estado = 'duplicado'; i.erro = r.erro; i.texto = ''; i.b64 = ''; }
   else { i.estado = 'pronto'; pintarItem(id); const a = $('aviso-' + id); if (a) { a.style.color = '#8e1628'; a.textContent = r.erro || 'Não foi possível salvar.'; } return false; }
   pintarItem(id);
@@ -701,12 +785,12 @@ async function salvarItem(id) {
 }
 async function salvarTodos() {
   const btn = $('btn-salvar-todos'); const prontos = fila.filter(i => i.estado === 'pronto');
-  if (!prontos.length) { $('msg-lote').innerHTML = '<div class="aviso">Não há arquivos prontos para salvar.</div>'; return; }
+  if (!prontos.length) { $('msg-lote').innerHTML = '<div class="aviso">Não há arquivos esperando.</div>'; return; }
   const semCampo = prontos.filter(i => faltaNoItem(i));
   btn.disabled = true; let ok = 0;
   for (const i of prontos) { if (faltaNoItem(i)) continue; if (!TOKEN) break; if (await salvarItem(i.id)) ok++; }
   btn.disabled = false;
-  $('msg-lote').innerHTML = `<div class="${semCampo.length ? 'aviso' : 'ok-msg'}">${ok} arquivo(s) salvo(s).${semCampo.length ? ` ${semCampo.length} ficou(aram) de fora por falta de campo obrigatório (tipo ou unidade): confira os cartões abaixo.` : ''}</div>`;
+  $('msg-lote').innerHTML = `<div class="${semCampo.length ? 'aviso' : 'ok-msg'}">${ok} arquivo(s) guardado(s).${semCampo.length ? ` ${semCampo.length} ficou(aram) de fora porque falta o tipo ou a unidade: responda nos cartões abaixo.` : ''}</div>`;
 }
 
 // ==================== TELA: BASE ====================
