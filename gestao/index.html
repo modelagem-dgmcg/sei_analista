@@ -108,6 +108,7 @@
       <button class="btn" onclick="recarregar()" title="Buscar os dados de novo"><i class="ti ti-refresh"></i> Atualizar</button>
       <span id="quem"></span>
       <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o SEI Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Ir para o Analista</button>
+      <button class="btn hidden" id="btn-ir-docs" onclick="irParaOutroApp('docs')" title="Abre o SEI Docs em outra aba, sem pedir a senha de novo"><i class="ti ti-files"></i> Docs</button>
       <button class="btn" onclick="sair()"><i class="ti ti-logout"></i> Sair</button>
     </div>
   </header>
@@ -129,8 +130,8 @@
 // ============================================================
 // SEI GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v2.1';
-const VERSAO_GESTAO_DATA = '12/10/2026 22:30';
+const VERSAO_GESTAO = 'v2.2';
+const VERSAO_GESTAO_DATA = '13/10/2026 10:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -148,7 +149,8 @@ const NOMES_ACOES = {
   ACAO_RECUSADA: 'Ação recusada', 'APP: ERRO_EXIBIDO': 'Erro mostrado ao usuário', 'APP: PEDIU_TEXTO': 'Pediu um texto (rascunho)', 'APP: RASCUNHO_PRONTO': 'Rascunho montado', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
   GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
-  GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login'
+  GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login',
+  DOCS_ENVIOU_DOCUMENTO: 'Docs: enviou documento à base', DOCS_REMOVEU_DOCUMENTO: 'Docs: removeu documento da base', DOCS_BUSCOU: 'Docs: pesquisou na base', DOCS_VIU_UNIDADE: 'Docs: viu a linha do tempo de uma unidade', DOCS_CONTOU_PASTA: 'Docs: contou a pasta LEIS E DECRETOS'
 };
 const nomeAcao = a => NOMES_ACOES[a] || String(a || '').replace(/_/g, ' ').toLowerCase();
 
@@ -208,16 +210,17 @@ function _entrarGestao(res) {
   // "Ir para o Analista" só para quem também tem acesso ao SEI Analista
   const apps = Array.isArray(usuario.apps) ? usuario.apps : [];
   $('btn-ir-analista').classList.toggle('hidden', !apps.includes('analista'));
+  $('btn-ir-docs').classList.toggle('hidden', !apps.includes('docs'));
   abrirAba('hoje');
 }
 
 // ==================== TROCA ENTRE OS APPS (passe de uso único) ====================
 async function irParaOutroApp(destino) {
-  const nomeAba = destino === 'gestao' ? 'sei_gestao' : 'sei_analista';
+  const nomeAba = destino === 'gestao' ? 'sei_gestao' : destino === 'docs' ? 'sei_docs' : 'sei_analista';
   // Endereço completo, sempre a partir da pasta do repositório (ex.: /sei_analista/), para não
   // depender de o endereço atual terminar ou não com barra.
   const repo = '/' + (location.pathname.split('/').filter(Boolean)[0] || 'sei_analista') + '/';
-  const endereco = location.origin + repo + (destino === 'gestao' ? 'gestao/' : '');
+  const endereco = location.origin + repo + (destino === 'gestao' ? 'gestao/' : destino === 'docs' ? 'docs/' : '');
   let aba = null;
   try { aba = window.open('', nomeAba); } catch (e) { aba = null; }
   try { if (aba && aba.__seiLogado) { aba.focus(); return; } } catch (e) { /* ignora */ }
@@ -646,8 +649,8 @@ async function telaUsuarios() {
   if (resCh.ok) { _chaves = resCh.chaves || []; _chavesUsuarios = resCh.usuarios || []; _servicosIA = resCh.servicos || {}; }
   const ativos = _usuarios.filter(u => u.ativo).length;
   const acesso = u => {
-    const lista = u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao'] : ['analista']);
-    return lista.map(a => a === 'gestao' ? 'Gestão' : 'Analista').join(' + ') + (u.apps ? '' : ' <span style="color:var(--mudo);">(padrão)</span>');
+    const lista = u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs'] : ['analista']);
+    return lista.map(a => a === 'gestao' ? 'Gestão' : a === 'docs' ? 'Docs' : 'Analista').join(' + ') + (u.apps ? '' : ' <span style="color:var(--mudo);">(padrão)</span>');
   };
   c.innerHTML = `${_avisoUsuarios ? `<div class="ok-msg">${esc(_avisoUsuarios)}</div>` : ''}
     <div class="bloco">
@@ -674,7 +677,7 @@ async function telaUsuarios() {
 
 function formUsuario(id) {
   const u = id ? _usuarios.find(x => x.id === id) : null;
-  const lista = u ? (u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao'] : ['analista'])) : ['analista'];
+  const lista = u ? (u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs'] : ['analista'])) : ['analista'];
   const gerencias = [...new Set(_usuarios.map(x => x.gerencia).filter(Boolean))].sort();
   const fundo = document.createElement('div');
   fundo.className = 'janela-fundo'; fundo.id = 'janela-usuario';
@@ -689,6 +692,7 @@ function formUsuario(id) {
     <label>Acesso aos aplicativos</label>
     <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> SEI Analista</label>
     <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> SEI Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> SEI Docs <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
     ${secaoIAHtml(u ? u.login : '')}
@@ -712,10 +716,10 @@ function fecharJanela() { $('janela-usuario')?.remove(); }
 async function salvarUsuario(id) {
   const erro = $('fu-erro'); erro.classList.add('hidden');
   const perfil = $('fu-perfil').value;
-  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null].filter(Boolean);
+  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null, $('fu-app-docs').checked ? 'docs' : null].filter(Boolean);
   if (!marcados.length) { erro.textContent = 'Marque pelo menos um aplicativo.'; erro.classList.remove('hidden'); return; }
   // Se o acesso marcado é o padrão do perfil, grava vazio (padrão); senão grava a lista.
-  const padrao = perfil === 'admin' ? 'analista,gestao' : 'analista';
+  const padrao = perfil === 'admin' ? 'analista,gestao,docs' : 'analista';
   const corpo = { nome_usuario: $('fu-nome').value.trim(), gerencia_usuario: $('fu-gerencia').value.trim(), perfil_usuario: perfil,
     apps_usuario: marcados.join(',') === padrao ? '' : marcados.join(',') };
   corpo.ia_escolhas = escolhasIA();
