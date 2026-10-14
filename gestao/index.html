@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#1a1d20">
-<title>SEI Gestão</title>
+<title>Gestão</title>
 <link rel="icon" href="../icons/mascote-analista.png" type="image/png">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <!--
@@ -14,7 +14,7 @@
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
   Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
   (Lei 9.609/98, art. 2º, §1º; Lei 9.610/98, art. 24, I).
-  Usa o MESMO servidor (Code.gs) e a MESMA planilha do SEI Analista. Só entra quem tem perfil admin.
+  Usa o MESMO servidor (Code.gs) e a MESMA planilha do Analista. Só entra quem tem perfil admin.
 -->
 <style>
   :root { --grafite:#1a1d20; --grafite2:#2a2e33; --fundo:#f0f2f5; --texto:#212529; --mudo:#6c757d; --borda:#dee2e6;
@@ -24,7 +24,7 @@
   .hidden { display:none !important; }
   #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--grafite); }
   .login-box { background:#fff; padding:36px; border-radius:8px; width:100%; max-width:380px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
-  h1.marca { font-size:1.7rem; text-align:center; margin-bottom:6px; } h1.marca span { color:var(--ambar); }
+  h1.marca { font-size:2.1rem; font-weight:600; letter-spacing:.01em; line-height:1.1; text-align:center; margin-bottom:6px; } h1.marca::after { content:""; display:block; width:34px; height:2px; background:var(--ambar); margin:14px auto 0; border-radius:2px; opacity:.85; } h1.marca span { color:var(--ambar); }
   .sub { text-align:center; color:var(--mudo); font-size:.8rem; margin-bottom:24px; }
   label { display:block; font-size:.85rem; font-weight:500; color:#495057; margin:12px 0 5px; }
   input, select { width:100%; padding:9px 10px; border:1px solid #ced4da; border-radius:6px; font-size:.9rem; outline:none; }
@@ -32,7 +32,7 @@
   .btn:hover { background:#dee2e6; } .btn-escuro { background:#5c636a; color:#fff; } .btn-escuro:hover { background:#495057; }
   .erro { background:var(--bordo-claro); color:var(--bordo); padding:10px; border-radius:6px; font-size:.85rem; margin-top:12px; }
   header { background:var(--grafite); color:#f8f9fa; padding:12px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-  header h1 { font-size:1.15rem; } header h1 span { color:var(--ambar); }
+  header h1 { font-size:1.3rem; font-weight:600; letter-spacing:.01em; } header h1 span { color:var(--ambar); }
   header .dir { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.8rem; color:#adb5bd; }
   header select { width:auto; padding:5px 8px; font-size:.8rem; background:var(--grafite2); color:#f8f9fa; border-color:#495057; }
   nav.abas { background:#fff; border-bottom:1px solid var(--borda); padding:0 24px; display:flex; gap:4px; flex-wrap:wrap; }
@@ -89,25 +89,25 @@
 <body>
 <div id="login">
   <div class="login-box">
-    <h1 class="marca">SEI <span>Gestão</span></h1>
+    <h1 class="marca"><span>Gestão</span></h1>
     <div class="sub">Painel da gestão — acesso restrito a administradores</div>
     <label for="l-usuario">Login institucional</label><input id="l-usuario" placeholder="nome.sobrenome">
     <label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') entrar()">
     <button class="btn btn-escuro" style="width:100%; justify-content:center; margin-top:18px; padding:11px;" onclick="entrar()"><i class="ti ti-login-2"></i> Entrar</button>
     <div id="l-erro" class="erro hidden"></div>
-    <div style="text-align:center; margin-top:16px; font-size:.78rem;"><a href="../" style="color:#495057;">Ir para o SEI Analista</a></div>
+    <div style="text-align:center; margin-top:16px; font-size:.78rem;"><a href="../" style="color:#495057;">Ir para o Analista</a></div>
   </div>
 </div>
 
 <div id="app" class="hidden">
   <header>
-    <h1>SEI <span>Gestão</span></h1>
+    <h1><span>Gestão</span></h1>
     <div class="dir">
       <label style="margin:0; color:#adb5bd;">Gerência</label>
       <select id="f-gerencia" onchange="recarregar()"><option value="">Todas</option></select>
       <button class="btn" onclick="recarregar()" title="Buscar os dados de novo"><i class="ti ti-refresh"></i> Atualizar</button>
       <span id="quem"></span>
-      <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o SEI Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Ir para o Analista</button>
+      <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Ir para o Analista</button>
       <button class="btn hidden" id="btn-ir-docs" onclick="irParaOutroApp('docs')" title="Abre o SEI Docs em outra aba, sem pedir a senha de novo"><i class="ti ti-files"></i> Docs</button>
       <button class="btn" onclick="sair()"><i class="ti ti-logout"></i> Sair</button>
     </div>
@@ -128,10 +128,10 @@
 
 <script>
 // ============================================================
-// SEI GESTÃO — lógica da página
+// GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v2.2';
-const VERSAO_GESTAO_DATA = '13/10/2026 10:30';
+const VERSAO_GESTAO = 'v2.3';
+const VERSAO_GESTAO_DATA = '14/10/2026 16:10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -199,7 +199,7 @@ async function entrar() {
   _entrarGestao(res);
 }
 
-// Entrada depois que o servidor aceitou: vale para o login com senha e para o passe vindo do SEI Analista.
+// Entrada depois que o servidor aceitou: vale para o login com senha e para o passe vindo do Analista.
 function _entrarGestao(res) {
   TOKEN = res.token; usuario = res.usuario; versaoServidor = res.versao_backend || '';
   window.__seiLogado = true;
@@ -207,7 +207,7 @@ function _entrarGestao(res) {
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('quem').textContent = usuario.nome;
   $('rodape-versao').textContent = `Gestão ${VERSAO_GESTAO} · ${VERSAO_GESTAO_DATA} — Servidor ${versaoServidor || 'sem versão (antigo)'}`;
-  // "Ir para o Analista" só para quem também tem acesso ao SEI Analista
+  // "Ir para o Analista" só para quem também tem acesso ao Analista
   const apps = Array.isArray(usuario.apps) ? usuario.apps : [];
   $('btn-ir-analista').classList.toggle('hidden', !apps.includes('analista'));
   $('btn-ir-docs').classList.toggle('hidden', !apps.includes('docs'));
@@ -688,10 +688,10 @@ function formUsuario(id) {
     <label>Gerência</label><input id="fu-gerencia" list="fu-gerencias" value="${esc(u ? u.gerencia : '')}"><datalist id="fu-gerencias">${gerencias.map(g => `<option value="${esc(g)}">`).join('')}</datalist>
     <label>Perfil</label><select id="fu-perfil" onchange="ajustarAcessoGestao()">
       <option value="usuario" ${u && u.perfil === 'admin' ? '' : 'selected'}>Analista</option>
-      <option value="admin" ${u && u.perfil === 'admin' ? 'selected' : ''}>Administrador (pode usar o SEI Gestão)</option></select>
+      <option value="admin" ${u && u.perfil === 'admin' ? 'selected' : ''}>Administrador (pode usar o Gestão)</option></select>
     <label>Acesso aos aplicativos</label>
-    <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> SEI Analista</label>
-    <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> SEI Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> Analista</label>
+    <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
     <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> SEI Docs <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
