@@ -4,13 +4,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="theme-color" content="#14232b">
-<title>SEI Docs</title>
+<title>Acervo</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.5.1/mammoth.browser.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <!--
-  SEI DOCS — base de documentos do ecossistema SEI (SES-PE — DGMCG/GGPCG)
+  ACERVO — base de documentos (SES-PE — DGMCG/GGPCG)
   Versão gerada em 13/10/2026 16:00 (horário de Recife)
   © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
   Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
@@ -26,7 +26,7 @@
   .hidden { display:none !important; }
   #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--noite); padding:16px; }
   .login-box { background:#fff; padding:36px; border-radius:10px; width:100%; max-width:380px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
-  h1.marca { font-size:1.7rem; text-align:center; margin-bottom:6px; } h1.marca span { color:var(--acento); }
+  h1.marca { font-size:2.1rem; font-weight:600; letter-spacing:.01em; line-height:1.1; text-align:center; margin-bottom:6px; } h1.marca::after { content:""; display:block; width:34px; height:2px; background:var(--acento); margin:14px auto 0; border-radius:2px; opacity:.85; } h1.marca span { color:var(--acento); }
   .sub { text-align:center; color:var(--mudo); font-size:.8rem; margin-bottom:24px; }
   label { display:block; font-size:.82rem; font-weight:500; color:#455a64; margin:10px 0 4px; }
   input, select, textarea { width:100%; padding:8px 10px; border:1px solid #c5d0d6; border-radius:6px; font-size:.88rem; outline:none; background:#fff; color:var(--texto); }
@@ -41,7 +41,7 @@
   .aviso { background:#fff4d6; color:#664d03; padding:9px 12px; border-radius:6px; font-size:.82rem; margin-top:10px; }
   .ok-msg { background:#d9f1e3; color:#0f5132; padding:9px 12px; border-radius:6px; font-size:.84rem; margin-top:10px; }
   header { background:var(--noite); color:#f3f7f9; padding:12px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
-  header h1 { font-size:1.15rem; } header h1 span { color:#5fd0e8; }
+  header h1 { font-size:1.3rem; font-weight:600; letter-spacing:.01em; } header h1 span { color:#5fd0e8; }
   header .dir { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.8rem; color:#b6c4cb; }
   header .btn { background:var(--noite2); color:#e8f0f3; } header .btn:hover { background:#2a4552; }
   nav.abas { background:#fff; border-bottom:1px solid var(--borda); padding:0 24px; display:flex; gap:4px; flex-wrap:wrap; }
@@ -115,7 +115,7 @@
 <body>
 <div id="login">
   <div class="login-box">
-    <h1 class="marca">SEI <span>Docs</span></h1>
+    <h1 class="marca"><span>Acervo</span></h1>
     <div class="sub">Base de documentos — contratos, aditivos, pareceres, notas técnicas e normas</div>
     <label for="l-usuario">Login institucional</label><input id="l-usuario" placeholder="nome.sobrenome">
     <label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') entrar()">
@@ -126,11 +126,11 @@
 
 <div id="app" class="hidden">
   <header>
-    <h1>SEI <span>Docs</span></h1>
+    <h1><span>Acervo</span></h1>
     <div class="dir">
       <span id="quem"></span>
-      <button class="btn hidden" id="btn-ir-gestao" onclick="irParaOutroApp('gestao')" title="Abre o SEI Gestão em outra aba, sem pedir a senha de novo"><i class="ti ti-chart-dots"></i> Gestão</button>
-      <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o SEI Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Analista</button>
+      <button class="btn hidden" id="btn-ir-gestao" onclick="irParaOutroApp('gestao')" title="Abre o Gestão em outra aba, sem pedir a senha de novo"><i class="ti ti-chart-dots"></i> Gestão</button>
+      <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Analista</button>
       <button class="btn" onclick="sair()"><i class="ti ti-logout"></i> Sair</button>
     </div>
   </header>
@@ -148,10 +148,10 @@
 
 <script>
 // ============================================================
-// SEI DOCS — lógica da página
+// ACERVO — lógica da página
 // ============================================================
-const VERSAO_DOCS = 'v1.3';
-const VERSAO_DOCS_DATA = '13/10/2026 16:00';
+const VERSAO_DOCS = 'v1.4';
+const VERSAO_DOCS_DATA = '14/10/2026 16:20';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const MAX_ORIGINAL_BYTES = 8 * 1024 * 1024;     // acima disso só o texto vai para a base
 const EXT_LIDAS = ['pdf', 'docx', 'html', 'htm', 'txt', 'md', 'csv'];
@@ -222,7 +222,7 @@ async function _entrarDocs(res) {
   $('l-senha').value = ''; $('l-erro').classList.add('hidden');
   $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('quem').textContent = usuario.nome;
-  $('rodape-versao').textContent = `Docs ${VERSAO_DOCS} · ${VERSAO_DOCS_DATA} — Servidor ${versaoServidor || 'sem versão (antigo)'}`;
+  $('rodape-versao').textContent = `Acervo ${VERSAO_DOCS} · ${VERSAO_DOCS_DATA} — Servidor ${versaoServidor || 'sem versão (antigo)'}`;
   const apps = Array.isArray(usuario.apps) ? usuario.apps : [];
   $('btn-ir-analista').classList.toggle('hidden', !apps.includes('analista'));
   $('btn-ir-gestao').classList.toggle('hidden', !(apps.includes('gestao') && usuario.perfil === 'admin'));
@@ -913,7 +913,7 @@ async function telaRegras() {
     <div class="rolagem"><table class="tabela" style="margin-top:8px;"><thead><tr><th>Regra</th><th>O que olha</th><th>Peso</th></tr></thead><tbody>${rs.map(r => `<tr><td><b>${esc(r.nome)}</b></td><td>${esc(r.faz)}</td><td><span class="etq ${r.gravidade === 'atencao' ? 'vermelho' : 'amarelo'}">${r.gravidade === 'atencao' ? 'Atenção' : 'Conferir'}</span></td></tr>`).join('')}</tbody></table></div></div>
     <div class="bloco"><h2>Ainda não faz <small>combinado, vem nas próximas versões</small></h2>
     <ul style="margin:8px 0 0 20px; font-size:.86rem; line-height:1.7;"><li>Comparar o valor do repasse entre um aditivo e o anterior.</li><li>Conferir leis e decretos federais, estaduais e municipais (precisa da base de normas).</li>
-    <li>Leitura por OCR de PDF escaneado.</li><li>Pesquisar por sentido (hoje a pesquisa é por palavras).</li><li>Ligar o Perguntar e a análise do SEI Analista a esta base.</li></ul></div>
+    <li>Leitura por OCR de PDF escaneado.</li><li>Pesquisar por sentido (hoje a pesquisa é por palavras).</li><li>Ligar o Perguntar e a análise do Analista a esta base.</li></ul></div>
     <div class="bloco"><h2>Sobre os dados guardados</h2><p class="dica" style="font-size:.84rem;">A base guarda o <b>texto mascarado</b>. O arquivo original fica só na pasta do Drive, com as permissões do Drive. Cada envio e cada remoção ficam no registro de atividades da Gestão (sem o conteúdo). Nomes de pessoas não são mascarados sozinhos: o sistema sugere os que parecem nomes e você decide.</p></div>`;
 }
 </script>
