@@ -108,7 +108,7 @@
       <button class="btn" onclick="recarregar()" title="Buscar os dados de novo"><i class="ti ti-refresh"></i> Atualizar</button>
       <span id="quem"></span>
       <button class="btn hidden" id="btn-ir-analista" onclick="irParaOutroApp('analista')" title="Abre o Analista em outra aba, sem pedir a senha de novo"><i class="ti ti-layout-sidebar"></i> Ir para o Analista</button>
-      <button class="btn hidden" id="btn-ir-docs" onclick="irParaOutroApp('docs')" title="Abre o SEI Docs em outra aba, sem pedir a senha de novo"><i class="ti ti-files"></i> Docs</button>
+      <button class="btn hidden" id="btn-ir-docs" onclick="irParaOutroApp('docs')" title="Abre o Acervo em outra aba, sem pedir a senha de novo"><i class="ti ti-files"></i> Acervo</button>
       <button class="btn" onclick="sair()"><i class="ti ti-logout"></i> Sair</button>
     </div>
   </header>
@@ -130,8 +130,8 @@
 // ============================================================
 // GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v2.3';
-const VERSAO_GESTAO_DATA = '14/10/2026 16:10';
+const VERSAO_GESTAO = 'v2.5';
+const VERSAO_GESTAO_DATA = '14/10/2026 19:40';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -692,7 +692,8 @@ function formUsuario(id) {
     <label>Acesso aos aplicativos</label>
     <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> Analista</label>
     <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
-    <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> SEI Docs <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> Acervo <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-raiox" ${lista.includes('raiox') ? 'checked' : ''}> Raio-X <span class="dica" style="margin:0;">(escrutínio geral; só quem for liberado)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
     ${secaoIAHtml(u ? u.login : '')}
@@ -716,7 +717,7 @@ function fecharJanela() { $('janela-usuario')?.remove(); }
 async function salvarUsuario(id) {
   const erro = $('fu-erro'); erro.classList.add('hidden');
   const perfil = $('fu-perfil').value;
-  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null, $('fu-app-docs').checked ? 'docs' : null].filter(Boolean);
+  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null, $('fu-app-docs').checked ? 'docs' : null, $('fu-app-raiox').checked ? 'raiox' : null].filter(Boolean);
   if (!marcados.length) { erro.textContent = 'Marque pelo menos um aplicativo.'; erro.classList.remove('hidden'); return; }
   // Se o acesso marcado é o padrão do perfil, grava vazio (padrão); senão grava a lista.
   const padrao = perfil === 'admin' ? 'analista,gestao,docs' : 'analista';
