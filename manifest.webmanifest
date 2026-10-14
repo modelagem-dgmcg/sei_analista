@@ -1,6 +1,6 @@
 {
-  "name": "SEI Analista",
-  "short_name": "SEI Analista",
+  "name": "Analista",
+  "short_name": "Analista",
   "description": "Bancada digital de análise de processos SEI.",
   "lang": "pt-BR",
   "start_url": "./",
