@@ -1,5 +1,5 @@
 // ============================================================
-// SEI ANALISTA v24.9 — app.js
+// ANALISTA v24.9 — app.js
 // Versão gerada em 08/10/2026 10:57 (horário de Recife)
 // Junção do v22.3 (sessão, segurança, histórico de perguntas, registro no servidor) com o
 // v23.5 (DeepSeek, Panorama, Mensageiro, Assumir, botões de fluxo, lotes, diagnóstico da IA).
@@ -15,9 +15,9 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.4';
-const VERSAO_APP_DATA = '12/10/2026 22:30';
-console.log('SEI Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
+const VERSAO_APP = 'v26.5';
+const VERSAO_APP_DATA = '14/10/2026 15:40';
+console.log('ANALISTA ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
 // depois do login (ver _carregarChavesDaGestao). Ficam só na memória desta aba; chaves
@@ -156,7 +156,7 @@ function injetarMarcaDagua() {
 // Texto final, decantado ao longo de várias rodadas de revisão — prosa corrida, sem
 // lista com negrito (evita o padrão de texto gerado por IA), em linguagem simples.
 const TEXTO_SOBRE_FERRAMENTA = `
-  <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o SEI Analista</h2>
+  <h2 style="margin-bottom:4px; font-size:1.25rem;">O que é o ANALISTA</h2>
   <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:18px;">
     Ferramenta da DGMCG e da GGPCG para apoiar a análise de processos de Contrato de Gestão
     com Organizações Sociais de Saúde na SES-PE.
@@ -235,7 +235,7 @@ function injetarBotaoSobre() {
   const link = document.createElement('button');
   link.id = 'link-sobre-ferramenta';
   link.type = 'button';
-  link.innerHTML = '<i class="ti ti-info-circle"></i> O que é o SEI Analista?';
+  link.innerHTML = '<i class="ti ti-info-circle"></i> O que é o ANALISTA?';
   link.style = "display:block; width:100%; text-align:center; margin-top:18px; padding:0; border:none; background:none; font-size:0.85rem; color:#495057; text-decoration:underline; cursor:pointer;";
   link.addEventListener('click', abrirSobreFerramenta);
   loginBox.appendChild(link);
@@ -1343,7 +1343,7 @@ function abrirPainelEvidencias() {
   painelEvidenciasWin.document.write(`
       <html>
       <head>
-          <title>Painel de Evidências - SEI Analista</title>
+          <title>Painel de Evidências - ANALISTA</title>
           <style>
               body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f1f3f5; color: #212529; padding: 20px; margin: 0; }
               h2 { font-size: 1.3rem; border-bottom: 3px solid #0dcaf0; padding-bottom: 10px; margin-top: 0; color: #343a40; }
@@ -2500,7 +2500,7 @@ async function invocarOpenRouter(prompt, isChat, statusEl) {
   const body = { model: 'openrouter/free', messages: [{ role: 'user', content: prompt }], temperature: 0.1 };
   if (!isChat) body.response_format = { type: 'json_object' };
   const resp = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'HTTP-Referer': location.origin, 'X-Title': 'SEI Analista' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + OPENROUTER_KEY, 'HTTP-Referer': location.origin, 'X-Title': 'ANALISTA' },
     body: JSON.stringify(body), signal: controller.signal
   });
   clearTimeout(timer);
@@ -2667,7 +2667,7 @@ function _htmlRelatorioAchados(lista, modoWord) {
     <p class="meta">${p.unidade ? 'Unidade: ' + escHtml(p.unidade) : ''}${p.oss ? ' · OSS: ' + escHtml(p.oss) : ''}</p>
     <p class="meta">${f.size ? 'Setor(es): ' + [...f].map(escHtml).join(', ') : 'Todos os setores'} · ${lista.length} ${lista.length === 1 ? 'achado' : 'achados'}</p>
     ${corpo}
-    <p class="rodape">Gerado pelo SEI Analista ${escHtml(typeof VERSAO_APP !== 'undefined' ? VERSAO_APP : '')} em ${new Date().toLocaleString('pt-BR')}${quem ? ' por ' + escHtml(quem) : ''}. Os apontamentos são sugestões técnicas para conferência do analista; a decisão é sempre dele.</p>
+    <p class="rodape">Gerado pelo ANALISTA ${escHtml(typeof VERSAO_APP !== 'undefined' ? VERSAO_APP : '')} em ${new Date().toLocaleString('pt-BR')}${quem ? ' por ' + escHtml(quem) : ''}. Os apontamentos são sugestões técnicas para conferência do analista; a decisão é sempre dele.</p>
   </body></html>`;
 }
 
