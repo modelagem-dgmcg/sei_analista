@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sei-analista-shell-v5';
+const CACHE_NAME = 'sei-analista-shell-v7';
 const APP_SHELL = [
   './',
   './index.html',
