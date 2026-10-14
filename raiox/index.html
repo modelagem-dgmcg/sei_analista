@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#212529">
+<title>Raio-X</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<!--
+  RAIO-X — escrutínio geral da base de documentos (SES-PE — DGMCG/GGPCG)
+  © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
+  Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD, matrícula 18515045.
+  Direitos econômicos da SES-PE (Lei 9.609/98, art. 4º); paternidade preservada ao autor
+  (Lei 9.609/98, art. 2º, §1º; Lei 9.610/98, art. 24, I).
+  Usa o MESMO servidor (Code.gs + Raiox.gs). A IA é chamada daqui, pelo navegador, com as chaves que a Gestão entrega.
+-->
+<style>
+  :root { --noite:#14232b; --noite2:#1f343e; --fundo:#f0f3f5; --texto:#1f2a30; --mudo:#66757d; --borda:#d9e0e4;
+          --acento:#0e7490; --acento-claro:#e0f2f7; --ambar:#d97706; --bordo:#8e1628; --bordo-claro:#f8d7da; --ok:#198754; }
+  * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', system-ui, sans-serif; }
+  body { background:var(--fundo); color:var(--texto); }
+  .hidden { display:none !important; }
+  #login { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:var(--noite); padding:16px; }
+  .login-box { background:#fff; padding:36px; border-radius:10px; width:100%; max-width:380px; box-shadow:0 10px 30px rgba(0,0,0,.5); }
+  h1.marca { font-size:2.1rem; font-weight:600; letter-spacing:.01em; line-height:1.1; text-align:center; margin-bottom:6px; } h1.marca::after { content:""; display:block; width:34px; height:2px; background:var(--acento); margin:14px auto 0; border-radius:2px; opacity:.85; } h1.marca span { color:var(--acento); }
+  .sub { text-align:center; color:var(--mudo); font-size:.8rem; margin-bottom:24px; }
+  label { display:block; font-size:.82rem; font-weight:500; color:#455a64; margin:10px 0 4px; }
+  input, select, textarea { width:100%; padding:8px 10px; border:1px solid #c5d0d6; border-radius:6px; font-size:.88rem; outline:none; background:#fff; color:var(--texto); }
+  input:focus, select:focus, textarea:focus { border-color:var(--acento); box-shadow:0 0 0 2px var(--acento-claro); }
+  textarea { resize:vertical; min-height:56px; font-family:inherit; }
+  .btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border:none; border-radius:6px; cursor:pointer; font-size:.85rem; font-weight:500; background:#e6ecef; color:var(--texto); }
+  .btn:hover { background:#d6dfe3; } .btn:disabled { opacity:.55; cursor:not-allowed; }
+  .btn-principal { background:var(--acento); color:#fff; } .btn-principal:hover { background:#0b5d73; }
+  .btn-claro { background:transparent; border:1px solid var(--borda); } .btn-sm { padding:5px 10px; font-size:.78rem; }
+  .btn-perigo { background:#fff; color:var(--bordo); border:1px solid #e3b4bb; } .btn-perigo:hover { background:var(--bordo-claro); }
+  .erro { background:var(--bordo-claro); color:var(--bordo); padding:10px; border-radius:6px; font-size:.85rem; margin-top:12px; }
+  .aviso { background:#fff4d6; color:#664d03; padding:9px 12px; border-radius:6px; font-size:.82rem; margin-top:10px; }
+  .ok-msg { background:#d9f1e3; color:#0f5132; padding:9px 12px; border-radius:6px; font-size:.84rem; margin-top:10px; }
+  header { background:var(--noite); color:#f3f7f9; padding:12px 24px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+  header h1 { font-size:1.3rem; font-weight:600; letter-spacing:.01em; } header h1 span { color:#5fd0e8; }
+  header .dir { margin-left:auto; display:flex; gap:10px; align-items:center; flex-wrap:wrap; font-size:.8rem; color:#b6c4cb; }
+  header .btn { background:var(--noite2); color:#e8f0f3; } header .btn:hover { background:#2a4552; }
+  nav.abas { background:#fff; border-bottom:1px solid var(--borda); padding:0 24px; display:flex; gap:4px; flex-wrap:wrap; }
+  nav.abas a { padding:12px 14px; font-size:.88rem; color:var(--mudo); text-decoration:none; border-bottom:3px solid transparent; }
+  nav.abas a.ativa { color:var(--texto); border-bottom-color:var(--acento); font-weight:600; }
+  main { padding:24px; max-width:1200px; margin:0 auto; }
+  .bloco { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:18px 20px; margin-bottom:16px; }
+  .bloco h2 { font-size:1rem; margin-bottom:6px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .bloco h2 small { font-weight:400; color:var(--mudo); font-size:.78rem; }
+  .dica { font-size:.78rem; color:var(--mudo); margin-top:4px; line-height:1.45; }
+  .vazio { color:var(--mudo); font-style:italic; font-size:.85rem; }
+  .dropzone { border:2px dashed #aebfc7; border-radius:12px; padding:34px 20px; text-align:center; cursor:pointer; background:#f7fafb; color:#455a64; margin-top:12px; transition:background .15s,border-color .15s; }
+  .dropzone:hover, .dropzone.sobre { border-color:var(--acento); background:var(--acento-claro); }
+  .dropzone i { font-size:2rem; color:var(--acento); display:block; margin-bottom:6px; } .dropzone strong { font-size:.95rem; } .dropzone small { display:block; margin-top:4px; color:var(--mudo); }
+  .lote { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-top:14px; padding-top:12px; border-top:1px solid #edf1f3; }
+  .lote > div { min-width:150px; flex:1; } .lote label { margin-top:0; }
+  .item { background:#fff; border:1px solid var(--borda); border-left:4px solid #9fb2bb; border-radius:10px; padding:14px 16px; margin-bottom:12px; }
+  .item.pronto { border-left-color:var(--acento); } .item.salvo { border-left-color:var(--ok); background:#fbfefc; } .item.erro, .item.duplicado { border-left-color:var(--bordo); }
+  .item-topo { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .item-nome { font-weight:600; font-size:.9rem; word-break:break-all; flex:1; min-width:200px; } .item-nome small { font-weight:400; color:var(--mudo); margin-left:6px; }
+  .etq { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:600; background:#e6ecef; color:#455a64; white-space:nowrap; }
+  .etq.azul { background:var(--acento-claro); color:#0b5d73; } .etq.verde { background:#d9f1e3; color:#0f5132; } .etq.vermelho { background:var(--bordo-claro); color:var(--bordo); } .etq.amarelo { background:#fff4d6; color:#664d03; }
+  .campos { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:4px 12px; margin-top:6px; }
+  .campos .largo { grid-column:span 2; } .campos label { margin:8px 0 3px; }
+  .sug { background:#fffbe0 !important; border-color:#e8c93d !important; }
+  .masc { margin-top:10px; font-size:.8rem; color:#455a64; }
+  .masc summary { cursor:pointer; font-weight:600; color:#0b5d73; }
+  .masc pre { white-space:pre-wrap; word-break:break-word; background:#f4f7f8; border:1px solid var(--borda); border-radius:6px; padding:10px; margin-top:6px; max-height:260px; overflow:auto; font:.78rem/1.5 Consolas,monospace; }
+  mark { background:#ffe58a; padding:0 1px; border-radius:2px; } mark.m { background:#cfeaf1; color:#0b5d73; font-weight:600; }
+  .chip { display:inline-block; border:1px solid #c5d0d6; background:#fff; border-radius:12px; padding:2px 9px; font-size:.76rem; margin:3px 4px 0 0; cursor:pointer; } .chip:hover { background:var(--acento-claro); border-color:var(--acento); }
+  .acoes { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+  .tabela { width:100%; border-collapse:collapse; font-size:.82rem; } .rolagem { overflow-x:auto; }
+  .tabela th { text-align:left; background:#f4f7f8; color:#455a64; font-weight:600; padding:7px 8px; border-bottom:1px solid var(--borda); white-space:nowrap; }
+  .tabela td { padding:8px; border-bottom:1px solid #eef2f4; vertical-align:top; }
+  .tabela tr.clique { cursor:pointer; } .tabela tr.clique:hover td { background:#f7fbfc; }
+  .filtros { display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:12px; } .filtros > div { min-width:170px; } .filtros label { margin-top:0; }
+  .achado { border:1px solid var(--borda); border-left:4px solid var(--ambar); border-radius:8px; padding:10px 14px; margin-bottom:8px; background:#fff; }
+  .achado.atencao { border-left-color:var(--bordo); } .achado b { font-size:.88rem; display:block; } .achado span { font-size:.8rem; color:var(--mudo); }
+  .res { border:1px solid var(--borda); border-radius:8px; padding:12px 14px; margin-bottom:10px; background:#fff; }
+  .res h3 { font-size:.88rem; margin-bottom:2px; } .res .meta { font-size:.76rem; color:var(--mudo); margin-bottom:6px; } .res p { font-size:.83rem; line-height:1.55; white-space:pre-wrap; }
+  .consultei { font-size:.78rem; color:var(--mudo); margin:6px 0 12px; }
+  .linha-tempo { border-left:2px solid #c5d0d6; margin-left:8px; padding-left:18px; }
+  .lt-item { position:relative; padding:0 0 16px; } .lt-item::before { content:''; position:absolute; left:-25px; top:5px; width:10px; height:10px; border-radius:50%; background:var(--acento); border:2px solid #fff; box-shadow:0 0 0 1px #c5d0d6; }
+  .lt-item b { font-size:.88rem; } .lt-item .meta { font-size:.76rem; color:var(--mudo); } .vals { margin-top:4px; }
+  .val { display:inline-block; background:#eef4f6; border-radius:6px; padding:2px 8px; font-size:.76rem; margin:2px 4px 0 0; }
+  .janela-fundo { position:fixed; inset:0; background:rgba(0,0,0,.45); display:flex; align-items:center; justify-content:center; z-index:50; padding:16px; }
+  .janela { background:#fff; border-radius:10px; padding:22px; width:100%; max-width:760px; max-height:90vh; overflow:auto; box-shadow:0 10px 30px rgba(0,0,0,.3); }
+  .janela h2 { font-size:1.05rem; margin-bottom:6px; }
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:gira .75s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes gira { to { transform:rotate(360deg); } }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit,minmax(235px,1fr)); gap:14px; margin-bottom:16px; }
+  .tile { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:16px 18px; }
+  .tile h3 { font-size:.82rem; color:var(--mudo); font-weight:600; margin-bottom:6px; }
+  .tile .grande { font-size:1.9rem; font-weight:700; line-height:1.1; color:var(--texto); }
+  .tile .grande small { font-size:.85rem; font-weight:500; color:var(--mudo); margin-left:4px; }
+  .barra { height:10px; background:#e6ecef; border-radius:5px; overflow:hidden; margin:10px 0 8px; }
+  .barra > i { display:block; height:100%; border-radius:5px; background:var(--acento); min-width:2px; }
+  .barra.ok > i { background:var(--ok); } .barra.atencao > i { background:var(--ambar); } .barra.critico > i { background:var(--bordo); }
+  .estado { font-size:.78rem; font-weight:600; display:inline-flex; gap:5px; align-items:center; } .estado.ok { color:#0f5132; } .estado.atencao { color:#8a4b00; } .estado.critico { color:var(--bordo); }
+  .tile .nota { font-size:.76rem; color:var(--mudo); line-height:1.45; margin-top:4px; }
+  .linha-tipo { display:grid; grid-template-columns:150px 1fr 56px; gap:10px; align-items:center; font-size:.8rem; padding:3px 0; } .linha-tipo .barra { margin:0; height:8px; } .linha-tipo b { text-align:right; font-variant-numeric:tabular-nums; }
+  .evolucao svg { width:100%; height:150px; display:block; } .evolucao text { font-size:10px; fill:#66757d; }
+  .auto { display:flex; gap:8px; align-items:center; font-size:.84rem; margin-top:12px; font-weight:600; color:var(--texto); cursor:pointer; } .auto input { width:auto; margin:0; }
+  .chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .pergunta { display:flex; gap:14px; flex-wrap:wrap; margin-top:10px; padding:10px 12px; background:#fffbe0; border:1px solid #e8c93d; border-radius:8px; } .pergunta > div { min-width:220px; flex:1; } .pergunta label { margin-top:0; }
+  .item.salvo { padding:10px 14px; }
+  footer { text-align:center; font-size:.72rem; color:#97a6ad; padding:20px; }
+  @media (max-width:640px) { header, nav.abas, main { padding-left:14px; padding-right:14px; } .campos .largo { grid-column:span 1; } }
+
+  :root { --noite:#212529; --noite2:#343a40; --acento:#b45309; --acento-claro:#fdf0e0; }
+  header h1 span { color:#f5a524; }
+  .tabela td.n, .tabela th.n { text-align:right; font-variant-numeric:tabular-nums; }
+  .sev { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
+  .sev.alta { background:var(--bordo-claro); color:var(--bordo); } .sev.media { background:#fff4d6; color:#664d03; } .sev.baixa { background:#e6ecef; color:#455a64; }
+  .card-ach { background:#fff; border:1px solid var(--borda); border-left:4px solid var(--ambar); border-radius:8px; padding:12px 16px; margin-bottom:10px; }
+  .card-ach.alta { border-left-color:var(--bordo); } .card-ach.baixa { border-left-color:#9fb2bb; }
+  .card-ach h3 { font-size:.92rem; margin:6px 0 4px; }
+  .card-ach .rot { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:var(--mudo); margin-top:8px; }
+  .card-ach p { font-size:.84rem; line-height:1.5; margin-top:2px; white-space:pre-wrap; }
+  .card-ach blockquote { font-size:.8rem; background:#f7f5f1; border-left:3px solid #d8cfc0; padding:6px 10px; margin-top:4px; color:#4a4237; }
+  .progresso { font-size:.82rem; color:#455a64; margin-top:10px; min-height:20px; }
+  .log { font:.74rem/1.5 Consolas,monospace; background:#f4f7f8; border:1px solid var(--borda); border-radius:6px; padding:8px 10px; max-height:200px; overflow:auto; white-space:pre-wrap; margin-top:10px; }
+</style>
+</head>
+<body>
+<div id="login">
+  <div class="login-box">
+    <h1 class="marca"><span>Raio-X</span></h1>
+    <div class="sub">Escrutínio geral da base de documentos — acesso restrito</div>
+    <label for="l-usuario">Login institucional</label><input id="l-usuario" placeholder="nome.sobrenome">
+    <label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') entrar()">
+    <button class="btn btn-principal" style="width:100%; justify-content:center; margin-top:18px; padding:11px;" onclick="entrar()"><i class="ti ti-login-2"></i> Entrar</button>
+    <div id="l-erro" class="erro hidden"></div>
+  </div>
+</div>
+
+<div id="app" class="hidden">
+  <header>
+    <h1><span>Raio-X</span></h1>
+    <div class="dir"><span id="quem"></span><button class="btn btn-sm" onclick="sair()"><i class="ti ti-logout"></i> Sair</button></div>
+  </header>
+  <nav class="abas">
+    <a href="#" id="aba-rodar" onclick="abrirAba('rodar'); return false;">Rodar</a>
+    <a href="#" id="aba-achados" onclick="abrirAba('achados'); return false;">Achados</a>
+    <a href="#" id="aba-rx" onclick="abrirAba('rx'); return false;">Raio-X para a diretoria</a>
+  </nav>
+  <main id="conteudo"></main>
+  <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
+</div>
+
+<script>
+// ============================================================
+// RAIO-X — lógica da página
+// ============================================================
+const VERSAO_RAIOX = 'v0.1';
+const VERSAO_RAIOX_DATA = '14/10/2026 19:30';
+const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
+const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
+const CHUNK_IA = 30000;          // caracteres por chamada à IA
+
+let TOKEN = null, usuario = null, abaAtual = 'rodar';
+let escopos = [], achados = [], chaves = [], parar = false, rodando = false;
+
+function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+const $ = id => document.getElementById(id);
+const fmt = n => Number(n || 0).toLocaleString('pt-BR');
+const dorme = ms => new Promise(r => setTimeout(r, ms));
+async function sha256(txt) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(txt));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+async function api(acao, corpo, tempoMs) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), tempoMs || 120000);
+  try {
+    const r = await fetch(API_URL + '?action=' + encodeURIComponent(acao), {
+      method: 'POST', headers: { 'Content-Type': 'text/plain' }, signal: ctrl.signal,
+      body: JSON.stringify(Object.assign({}, corpo || {}, { token: TOKEN }))
+    });
+    let res;
+    try { res = JSON.parse(await r.text()); } catch (e) { return { ok: false, erro: 'O servidor respondeu de um jeito inesperado. Tente de novo em instantes.' }; }
+    if (res && res.sessao_expirada && acao !== 'auth/login') sessaoVencida();
+    return res || { ok: false, erro: 'Resposta vazia do servidor.' };
+  } catch (e) {
+    return { ok: false, erro: e.name === 'AbortError' ? 'O servidor demorou demais para responder.' : 'Sem conexão com o servidor: ' + e.message };
+  } finally { clearTimeout(timer); }
+}
+function sessaoVencida() {
+  TOKEN = null; parar = true;
+  $('app').classList.add('hidden'); $('login').classList.remove('hidden');
+  const e = $('l-erro'); e.textContent = 'Sua sessão venceu. Entre de novo.'; e.classList.remove('hidden');
+  if (usuario) $('l-usuario').value = usuario.email;
+}
+async function entrar() {
+  const erro = $('l-erro'); erro.classList.add('hidden');
+  const email = $('l-usuario').value.trim(), senha = $('l-senha').value;
+  if (!email || !senha) { erro.textContent = 'Preencha login e senha.'; erro.classList.remove('hidden'); return; }
+  const res = await api('auth/login', { email, senha_hash: await sha256(senha), app: 'raiox' });
+  if (!res.ok) { erro.textContent = res.erro || 'Não foi possível entrar.'; erro.classList.remove('hidden'); return; }
+  TOKEN = res.token; usuario = res.usuario;
+  $('l-senha').value = ''; $('login').classList.add('hidden'); $('app').classList.remove('hidden');
+  $('quem').textContent = usuario.nome;
+  $('rodape-versao').textContent = `Raio-X ${VERSAO_RAIOX} · ${VERSAO_RAIOX_DATA} — Servidor ${res.versao_backend || 'sem versão'}`;
+  const r = await api('ia/minhas-chaves', {});
+  chaves = (r && r.ok && r.chaves) || [];
+  abrirAba('rodar');
+}
+async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN = null; location.reload(); }
+
+// ==================== ABAS ====================
+function abrirAba(a) {
+  abaAtual = a;
+  ['rodar', 'achados', 'rx'].forEach(x => $('aba-' + x).classList.toggle('ativa', x === a));
+  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else telaRx();
+}
+const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
+
+// ==================== IA (chamada pelo navegador, com as chaves da Gestão) ====================
+const DADOS_PROV = {
+  gemini: { url: k => `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${k}`, modelo: 'gemini-3.6-flash' },
+  groq: { url: () => 'https://api.groq.com/openai/v1/chat/completions', modelo: 'llama-3.3-70b-versatile' },
+  kimi: { url: () => 'https://api.moonshot.ai/v1/chat/completions', modelo: 'kimi-k2.6', espera: 240000 },
+  openrouter: { url: () => 'https://openrouter.ai/api/v1/chat/completions', modelo: 'openrouter/free' },
+  deepseek: { url: () => 'https://api.deepseek.com/v1/chat/completions', modelo: 'deepseek-chat' }
+};
+async function chamarProvedor(servico, chave, prompt) {
+  const d = DADOS_PROV[servico]; if (!d) throw new Error('serviço desconhecido');
+  const ctrl = new AbortController(), timer = setTimeout(() => ctrl.abort(), d.espera || 120000);
+  try {
+    let resp, txt;
+    if (servico === 'gemini') {
+      resp = await fetch(d.url(chave), { method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ctrl.signal,
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.1, responseMimeType: 'application/json' } }) });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + (await resp.text()).slice(0, 200));
+      const j = await resp.json(); txt = j.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('');
+    } else {
+      const body = { model: d.modelo, messages: [{ role: 'user', content: prompt }], response_format: { type: 'json_object' } };
+      if (servico !== 'kimi') body.temperature = 0.1;
+      resp = await fetch(d.url(), { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + chave }, signal: ctrl.signal, body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status + ': ' + (await resp.text()).slice(0, 200));
+      const j = await resp.json(); txt = j.choices?.[0]?.message?.content;
+    }
+    if (!txt) throw new Error('sem conteúdo');
+    return txt.replace(/```json/g, '').replace(/```/g, '').trim();
+  } catch (e) { throw new Error(e.name === 'AbortError' ? 'sem resposta no prazo' : e.message); }
+  finally { clearTimeout(timer); }
+}
+let _provedorAtual = '';
+async function perguntarIA(prompt, log) {
+  if (!chaves.length) throw new Error('Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.');
+  const erros = [];
+  for (const c of chaves) {
+    if (!DADOS_PROV[c.servico]) continue;
+    try { const t = await chamarProvedor(c.servico, c.chave, prompt); _provedorAtual = DADOS_PROV[c.servico].modelo; return t; }
+    catch (e) { erros.push(c.nome + ': ' + e.message); log('  ' + c.nome + ' falhou: ' + e.message.slice(0, 120)); }
+  }
+  throw new Error('Nenhum provedor respondeu. ' + erros.join(' | ').slice(0, 400));
+}
+
+// ==================== MÁSCARA (mesma função do servidor) ====================
+function docsMascarar_(texto, nomesExtra) {
+  let txt = String(texto || ''), n = 0;
+  const por = {};
+  const conta = marca => { n++; por[marca] = (por[marca] || 0) + 1; };
+  const troca = (re, marca) => { txt = txt.replace(re, () => { conta(marca); return marca; }); };
+  const trocaComRotulo = (re, marca) => { txt = txt.replace(re, (m, rotulo) => { conta(marca); return rotulo + marca; }); };
+
+  // 1) bloco de qualificação do representante: da âncora até o fim da frase (no máximo 220 caracteres)
+  const ANC = /(neste\s+ato\s+representad[oa]\s+por|representad[oa]\s+neste\s+ato\s+por|por\s+seu[a]?\s+representante\s+legal[,:]?)/gi;
+  let saida = '', pos = 0, m;
+  while ((m = ANC.exec(txt))) {
+    const ini = m.index + m[0].length, resto = txt.substr(ini, 220), k = resto.search(/[.;]\s/), tam = k >= 0 ? k : resto.length;
+    if (tam < 3) { ANC.lastIndex = ini; continue; }
+    saida += txt.slice(pos, ini) + ' [REPRESENTANTE]'; pos = ini + tam; ANC.lastIndex = pos; conta('[REPRESENTANTE]');
+  }
+  txt = saida + txt.slice(pos);
+
+  // 2) documentos e contatos
+  troca(/\b\d{3}\.\d{3}\.\d{3}-\d{2}\b/g, '[CPF]');
+  trocaComRotulo(/(\bCPF\b[^\d\n]{0,12})\d{11}\b/gi, '[CPF]');
+  troca(/\b\d{1,2}\.\d{3}\.\d{3}-[\dxX]\b/g, '[RG]');
+  trocaComRotulo(/((?:\bRG\b|\bidentidade\b)[^\d\n]{0,15})[\d][\d.\-xX]{4,13}/gi, '[RG]');
+  troca(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[E-MAIL]');
+  troca(/\+55\s?\(?\d{2}\)?\s?9?\d{4}-?\d{4}\b/g, '[TELEFONE]');
+  troca(/\(\d{2}\)\s?9?\d{4}-?\d{4}\b/g, '[TELEFONE]');
+  trocaComRotulo(/((?:\btel(?:efone)?\b\.?|\bcel(?:ular)?\b\.?|\bfone\b)[^\d\n]{0,8})\d{2}\s?9?\d{4}-?\d{4}\b/gi, '[TELEFONE]');
+  troca(/\b(?:ag[êe]ncia|conta\s+corrente|conta\s+poupan[çc]a|conta\s+banc[áa]ria|c\/c)\s*(?:n[º°o.]*)?\s*:?\s*\d{3,10}(?:-\d)?\b/gi, '[DADO BANCÁRIO]');
+  troca(/\bmatr[íi]cula\s*(?:n[º°o.]*)?\s*:?\s*\d[\d.\-]{3,11}\b/gi, '[MATRÍCULA]');
+
+  // 3) nomes que a pessoa pediu para mascarar neste documento
+  (nomesExtra || []).forEach(nome => {
+    const t = String(nome || '').trim();
+    if (t.length < 3) return;
+    const re = new RegExp(t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+'), 'gi');
+    troca(re, '[NOME]');
+  });
+  return { texto: txt, trocas: n, por_tipo: por };
+}
+
+
+// ==================== PROMPT ====================
+function montarPrompt(rotulo, texto) {
+  return `Você é um auditor de contratos de gestão firmados pela Secretaria de Saúde de Pernambuco (SES-PE) com Organizações Sociais de Saúde.
+Leia o material abaixo (${rotulo}) e aponte SOMENTE inconsistências que o próprio texto sustenta: valores que não fecham (soma, valor por extenso x numérico, mesmo valor diferente em dois lugares), datas fora de ordem ou impossíveis, lacunas ou sobreposições de vigência, parte/unidade/CNPJ/número de contrato divergente, cláusulas que se contradizem, remissão a cláusula, anexo ou aditivo que não existe, numeração repetida ou faltando, objeto que não bate entre documentos.
+
+Regras:
+- Não invente. Se o texto não sustenta, não aponte. Se não houver inconsistência, devolva uma lista vazia.
+- "trecho" deve ser copiado EXATAMENTE do material (até 300 caracteres), para ser conferido depois.
+- "impacto" é a consequência concreta se a inconsistência for real (financeira, jurídica ou operacional), em 1 ou 2 frases.
+- "risco_controle" diz como um órgão de controle (TCE-PE, MPPE, CGE-PE) poderia ver o ponto, em 1 frase. Não cite artigo de lei nem acórdão.
+- "sugestao" é o que a equipe pode fazer para sanar, em 1 frase.
+- "gravidade": alta (afeta valor, vigência ou validade), media ou baixa (formal).
+- "tipo": valor, data, vigencia, parte, clausula, numero, unidade, objeto, formalizacao, processo ou outro.
+- Português do Brasil, linguagem simples e direta.
+
+Responda só com JSON neste formato:
+{"achados":[{"titulo":"","descricao":"","documento":"nome do documento onde está","trecho":"","gravidade":"","tipo":"","impacto":"","risco_controle":"","sugestao":""}]}
+
+MATERIAL:
+${texto}`;
+}
+const normT = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
+
+// ==================== TELA: RODAR ====================
+async function telaRodar() {
+  $('conteudo').innerHTML = carregando('Buscando os contratos e processos da base...');
+  const r = await api('raiox/escopos', {});
+  if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
+  escopos = r.escopos;
+  desenharRodar(r.total_documentos);
+}
+function desenharRodar(totalDocs) {
+  const c = escopos.filter(e => e.tipo === 'contrato'), p = escopos.filter(e => e.tipo === 'processo');
+  const feitos = escopos.filter(e => e.estado === 'concluido').length;
+  const linhas = escopos.map(e => `<tr>
+      <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
+      <td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td>
+      <td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
+      <td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${rodando ? 'disabled' : ''}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
+  $('conteudo').innerHTML = `
+    <div class="bloco"><h2><i class="ti ti-code"></i> 1. Conferências por código <small>(rápidas, sem IA)</small></h2>
+      <div class="dica">Datas fora de ordem, vigência, sequência de aditivos, contrato ou unidade citados no texto, documento de outro contrato dentro de um processo. Substitui os achados por código anteriores.</div>
+      <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar conferências por código</button></div>
+    </div>
+    <div class="bloco"><h2><i class="ti ti-sparkles"></i> 2. Leitura com IA <small>${c.length} contratos e ${p.length} processos · ${feitos} concluídos · ${fmt(totalDocs)} documentos na base</small></h2>
+      <div class="dica">A IA lê cada contrato (com seus aditivos) e cada processo, e aponta achados com trecho, impacto, risco perante os órgãos de controle e sugestão. Dados pessoais são mascarados antes de irem para a nuvem. O trecho citado é conferido contra o texto; se não bater, o achado vem marcado.</div>
+      <div class="acoes">
+        <button class="btn btn-principal" onclick="rodarPendentes('contrato')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar contratos pendentes</button>
+        <button class="btn btn-principal" onclick="rodarPendentes('processo')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar processos pendentes</button>
+        <button class="btn btn-perigo" onclick="parar = true" ${rodando ? '' : 'disabled'}><i class="ti ti-player-stop"></i> Parar</button>
+      </div>
+      <div class="progresso" id="progresso"></div><div class="log hidden" id="log"></div>
+      ${chaves.length ? '' : '<div class="aviso">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
+    </div>
+    <div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Escopo</th><th class="n">Docs</th><th class="n">Caracteres</th><th>Estado</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="7" class="vazio">Nada na base ainda.</td></tr>'}</tbody></table></div></div>`;
+}
+function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
+function prog(t) { const p = $('progresso'); if (p) p.innerHTML = t; }
+
+async function rodarCodigo() {
+  rodando = true; $('btn-codigo').disabled = true; prog('<span class="spinner"></span>Rodando as conferências por código na base inteira (pode levar um ou dois minutos)...');
+  const r = await api('raiox/codigo', {}, 300000);
+  rodando = false;
+  prog(r.ok === false ? `<span style="color:var(--bordo)">${esc(r.erro)}</span>` : `Pronto: ${fmt(r.achados_codigo)} achados por código em ${fmt(r.documentos)} documentos.`);
+  $('btn-codigo').disabled = false;
+}
+async function rodarPendentes(tipo) {
+  const fila = escopos.filter(e => e.tipo === tipo && e.estado === 'pendente');
+  if (!fila.length) { prog('Não há ' + (tipo === 'contrato' ? 'contratos' : 'processos') + ' pendentes.'); return; }
+  parar = false; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
+  let i = 0;
+  for (const e of fila) {
+    if (parar) break; i++;
+    prog(`<span class="spinner"></span>${i} de ${fila.length}: ${esc(e.rotulo)}`);
+    await rodarEscopo(e);
+  }
+  rodando = false; parar = false; await telaRodar();
+}
+async function rodarUm(id) {
+  const e = escopos.find(x => x.escopo === id); if (!e) return;
+  parar = false; rodando = true; desenharRodar(escopos.reduce((s, x) => s + x.n_docs, 0));
+  prog(`<span class="spinner"></span>${esc(e.rotulo)}`);
+  await rodarEscopo(e);
+  rodando = false; await telaRodar();
+}
+async function rodarEscopo(e) {
+  logar('▶ ' + e.rotulo);
+  const todos = []; let inicio = 0, janelas = 0, total = 0, lido = 0, parcial = false, modelo = '';
+  while (inicio !== null && janelas < JANELAS_MAX) {
+    if (parar) { parcial = true; break; }
+    const pk = await api('raiox/pacote', { escopo: e.escopo, inicio });
+    if (pk.ok === false) { logar('  erro: ' + pk.erro); parcial = true; break; }
+    total = pk.total_chars; lido = pk.fim; janelas++;
+    const masc = docsMascarar_(pk.texto, []).texto;
+    for (let i = 0; i < masc.length; i += CHUNK_IA) {
+      if (parar) { parcial = true; break; }
+      const parte = masc.slice(i, i + CHUNK_IA);
+      try {
+        const bruto = await perguntarIA(montarPrompt(e.rotulo, parte), logar);
+        modelo = _provedorAtual;
+        let j; try { j = JSON.parse(bruto); } catch (x) { logar('  resposta fora do formato; trecho ignorado'); continue; }
+        (Array.isArray(j) ? j : (j.achados || [])).forEach(a => {
+          if (!a || !a.titulo) return;
+          const confere = a.trecho && normT(parte).includes(normT(a.trecho)) ? 'sim' : (a.trecho ? 'nao' : '');
+          todos.push(Object.assign({}, a, { trecho_confere: confere }));
+        });
+      } catch (x) { logar('  ' + x.message.slice(0, 200)); parcial = true; break; }
+    }
+    if (parcial) break;
+    inicio = pk.proximo;
+  }
+  if (inicio !== null && !parcial) parcial = true;       // sobrou texto além do limite de janelas
+  const vistos = {}, unicos = todos.filter(a => { const k = normT(a.titulo); if (vistos[k]) return false; vistos[k] = 1; return true; });
+  const s = await api('raiox/salvar', { escopo: e.escopo, achados: unicos, parcial, lido_chars: lido, total_chars: total, modelo });
+  logar(s.ok === false ? '  não salvou: ' + s.erro : `  ${unicos.length} achados guardados${parcial ? ' (leitura parcial: ' + fmt(lido) + ' de ' + fmt(total) + ' caracteres)' : ''}`);
+  const x = escopos.find(z => z.escopo === e.escopo); if (x && s.ok !== false) { x.estado = parcial ? 'parcial' : 'concluido'; x.n_achados = unicos.length; }
+}
+
+// ==================== TELA: ACHADOS ====================
+async function telaAchados() {
+  $('conteudo').innerHTML = carregando('Carregando os achados...');
+  const r = await api('raiox/achados', {});
+  if (!r.ok && r.erro) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
+  achados = r.achados || [];
+  const opt = (campo) => [...new Set(achados.map(a => a[campo]).filter(Boolean))].sort().map(v => `<option>${esc(v)}</option>`).join('');
+  $('conteudo').innerHTML = `
+    <div class="bloco"><h2><i class="ti ti-list-search"></i> Achados <small id="cont-ach"></small></h2>
+      <div class="filtros">
+        <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
+        <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
+        <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Código</option><option value="ia">IA</option></select></div>
+        <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
+        <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
+        <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
+      </div></div>
+    <div id="lista-ach"></div>`;
+  pintarAchados();
+}
+const ordemGrav = { alta: 0, media: 1, baixa: 2 };
+function filtrados() {
+  const v = id => ($(id) || {}).value || '';
+  const q = normT(v('f-q'));
+  return achados.filter(a => (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
+    (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
+    (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
+    .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
+}
+function pintarAchados() {
+  const lista = filtrados(); $('cont-ach').textContent = `${lista.length} de ${achados.length}`;
+  $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, true)).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
+}
+function cartao(a, comBotoes) {
+  const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
+  const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">trecho não encontrado no texto</span>' : '';
+  return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
+    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${a.origem === 'ia' ? 'IA' : 'código'}</span> <span class="etq azul">${esc(a.tipo)}</span> ${conf}${trechoAviso}
+      <span class="dica" style="margin-left:6px;">${esc(a.unidade)}${a.contrato ? ' · contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</span></div>
+    <h3>${esc(a.titulo)}</h3>
+    ${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
+    ${a.documentos ? `<div class="rot">Documento</div><p>${esc(a.documentos)}</p>` : ''}
+    ${a.trecho ? `<div class="rot">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
+    ${a.impacto ? `<div class="rot">Impacto</div><p>${esc(a.impacto)}</p>` : ''}
+    ${a.risco_controle ? `<div class="rot">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
+    ${a.sugestao ? `<div class="rot">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}
+    ${comBotoes ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','sim')"><i class="ti ti-check"></i> Procede</button>
+      <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','nao')"><i class="ti ti-x"></i> Não procede</button>
+      <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','')">Limpar</button></div>` : ''}
+  </div>`;
+}
+async function conferir(id, valor) {
+  const r = await api('raiox/conferir', { id, conferido: valor });
+  if (r.ok === false) { alert(r.erro); return; }
+  const a = achados.find(x => x.id === id); if (a) a.conferido = valor;
+  pintarAchados();
+}
+
+// ==================== TELA: RAIO-X PARA A DIRETORIA ====================
+async function telaRx() {
+  $('conteudo').innerHTML = carregando('Montando o resumo...');
+  const r = await api('raiox/achados', {});
+  achados = r.achados || [];
+  const ativos = achados.filter(a => a.conferido !== 'nao');
+  const cont = (lista, campo) => { const m = {}; lista.forEach(a => { const k = a[campo] || '(sem)'; m[k] = (m[k] || 0) + 1; }); return m; };
+  const porGrav = cont(ativos, 'gravidade'), conferidos = ativos.filter(a => a.conferido === 'sim').length;
+  $('conteudo').innerHTML = `
+    <div class="tiles">
+      <div class="tile"><h3>Achados (sem os que não procedem)</h3><div class="grande">${fmt(ativos.length)}</div></div>
+      <div class="tile"><h3>Gravidade alta</h3><div class="grande">${fmt(porGrav.alta || 0)}</div></div>
+      <div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conferidos)}<small>de ${fmt(ativos.length)}</small></div></div>
+      <div class="tile"><h3>Marcados "não procede"</h3><div class="grande">${fmt(achados.length - ativos.length)}</div></div>
+    </div>
+    <div class="bloco"><h2><i class="ti ti-file-text"></i> Relatório para a diretoria</h2>
+      <div class="dica">Gera um arquivo HTML único, que abre em qualquer computador e imprime como PDF. Os achados que você marcou "não procede" ficam de fora. O que ainda não foi conferido aparece como "a conferir".</div>
+      <label class="auto"><input type="checkbox" id="so-conf"> Incluir só os já conferidos (procedem)</label>
+      <div class="acoes"><button class="btn btn-principal" onclick="gerarRelatorio()"><i class="ti ti-download"></i> Baixar o relatório (HTML)</button></div>
+      <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
+    </div>`;
+}
+function gerarRelatorio() {
+  const soConf = $('so-conf').checked;
+  let lista = achados.filter(a => a.conferido !== 'nao' && (!soConf || a.conferido === 'sim'));
+  lista.sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
+  const por = {}; lista.forEach(a => { const u = a.unidade || '(sem unidade)'; (por[u] = por[u] || []).push(a); });
+  const unidades = Object.keys(por).sort((a, b) => por[b].length - por[a].length || a.localeCompare(b, 'pt-BR'));
+  const tipos = {}; lista.forEach(a => { tipos[a.tipo] = (tipos[a.tipo] || 0) + 1; });
+  const hoje = new Date().toLocaleDateString('pt-BR');
+  const css = `body{font-family:Segoe UI,system-ui,sans-serif;color:#1f2a30;margin:0;background:#f4f2ee}main{max-width:980px;margin:0 auto;padding:28px 20px}
+    h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.15rem;margin:30px 0 10px;border-bottom:2px solid #b45309;padding-bottom:4px}.sub{color:#66757d;font-size:.9rem}
+    .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}.tile{background:#fff;border:1px solid #ddd6ca;border-radius:8px;padding:12px 14px}
+    .tile b{display:block;font-size:1.8rem}.tile span{font-size:.8rem;color:#66757d}table{border-collapse:collapse;width:100%;background:#fff;font-size:.86rem}
+    th,td{padding:7px 9px;border-bottom:1px solid #e7e2d8;text-align:left}th{background:#efebe3}td.n,th.n{text-align:right}
+    .a{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #d97706;border-radius:8px;padding:12px 16px;margin:10px 0;page-break-inside:avoid}.a.alta{border-left-color:#8e1628}.a.baixa{border-left-color:#9fb2bb}
+    .a h3{font-size:.95rem;margin:4px 0}.r{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#66757d;margin-top:8px}.a p{margin:2px 0;font-size:.86rem;line-height:1.5}
+    blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.82rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
+    .s.alta{background:#f8d7da;color:#8e1628}.s.media{background:#fff4d6;color:#664d03}.s.baixa{background:#e6ecef;color:#455a64}.e{background:#e6ecef;color:#455a64}.c{background:#d9f1e3;color:#0f5132}.p{background:#fff4d6;color:#664d03}
+    .aviso{background:#fff4d6;border-radius:6px;padding:10px 14px;font-size:.84rem;margin:14px 0}@media print{body{background:#fff}.a{border-color:#bbb}}`;
+  const tabUn = unidades.map(u => { const l = por[u]; return `<tr><td>${esc(u)}</td><td class="n">${l.length}</td><td class="n">${l.filter(a => a.gravidade === 'alta').length}</td><td class="n">${l.filter(a => a.conferido === 'sim').length}</td></tr>`; }).join('');
+  const tabTipo = Object.keys(tipos).sort((a, b) => tipos[b] - tipos[a]).map(t => `<tr><td>${esc(t)}</td><td class="n">${tipos[t]}</td></tr>`).join('');
+  const corpo = unidades.map(u => `<h2>${esc(u)} <small style="font-weight:400;color:#66757d">(${por[u].length})</small></h2>` + por[u].map(a => `
+    <div class="a ${esc(a.gravidade)}"><span class="s ${esc(a.gravidade)}">${esc(a.gravidade)}</span><span class="s e">${esc(a.tipo)}</span><span class="s ${a.conferido === 'sim' ? 'c' : 'p'}">${a.conferido === 'sim' ? 'conferido: procede' : 'a conferir'}</span>
+    <span style="font-size:.78rem;color:#66757d">${a.contrato ? 'contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</span>
+    <h3>${esc(a.titulo)}</h3>${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
+    ${a.documentos ? `<div class="r">Documento</div><p>${esc(a.documentos)}</p>` : ''}${a.trecho ? `<div class="r">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
+    ${a.impacto ? `<div class="r">Impacto</div><p>${esc(a.impacto)}</p>` : ''}${a.risco_controle ? `<div class="r">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
+    ${a.sugestao ? `<div class="r">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}</div>`).join('')).join('');
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${css}</style></head><body><main>
+    <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.</div>
+    <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa.
+    Não se afirma que a inconsistência tenha causado dano ou tenha passado sem correção posterior: o relatório mostra o que consta nos documentos.</div>
+    <div class="tiles"><div class="tile"><b>${lista.length}</b><span>achados</span></div><div class="tile"><b>${lista.filter(a => a.gravidade === 'alta').length}</b><span>de gravidade alta</span></div>
+      <div class="tile"><b>${lista.filter(a => a.conferido === 'sim').length}</b><span>já conferidos (procedem)</span></div><div class="tile"><b>${unidades.length}</b><span>unidades com achados</span></div></div>
+    <h2>Por unidade</h2><table><thead><tr><th>Unidade</th><th class="n">Achados</th><th class="n">Alta</th><th class="n">Conferidos</th></tr></thead><tbody>${tabUn}</tbody></table>
+    <h2>Por tipo</h2><table><thead><tr><th>Tipo</th><th class="n">Achados</th></tr></thead><tbody>${tabTipo}</tbody></table>
+    ${corpo}<p class="sub" style="margin-top:30px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' }), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'Raio-X_documental_' + new Date().toISOString().slice(0, 10) + '.html'; document.body.appendChild(a); a.click(); a.remove();
+}
+
+// ==================== AVISO DE VERSÃO NOVA ====================
+let _ultimaChecagemVersao = 0;
+async function verificarVersaoNova(forcar) {
+  if (!forcar && Date.now() - _ultimaChecagemVersao < 5 * 60 * 1000) return;
+  _ultimaChecagemVersao = Date.now();
+  try {
+    const r = await fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }); if (!r.ok) return;
+    const t = await r.text(), v = t.match(/const VERSAO_RAIOX\s*=\s*'([^']+)'/), d = t.match(/const VERSAO_RAIOX_DATA\s*=\s*'([^']+)'/);
+    if (v && (v[1] !== VERSAO_RAIOX || (d && d[1] !== VERSAO_RAIOX_DATA)) && !document.getElementById('faixa-versao')) {
+      const f = document.createElement('div'); f.id = 'faixa-versao';
+      f.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:2000;background:#212529;color:#f3f7f9;padding:10px 14px;border-radius:8px;font-size:.85rem;display:flex;gap:10px;align-items:center';
+      f.innerHTML = `<span>Há uma versão nova. Salve o que estiver fazendo e atualize.</span><button class="btn btn-sm btn-principal" onclick="location.reload()">Atualizar</button>`;
+      document.body.appendChild(f);
+    }
+  } catch (e) { /* sem rede */ }
+}
+window.name = 'sei_raiox';
+window.addEventListener('load', () => { setTimeout(() => verificarVersaoNova(true), 4000); document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') verificarVersaoNova(); }); });
+window.addEventListener('beforeunload', e => { if (rodando) { e.preventDefault(); e.returnValue = ''; } });
+</script>
+</body>
+</html>
