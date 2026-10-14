@@ -34,8 +34,9 @@ body { background-color: var(--bg-main); color: var(--text-dark); overflow: hidd
 }
 .login-box { background: #ffffff; padding: 40px; border-radius: 8px; width: 100%; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
 .login-header { text-align: center; margin-bottom: 30px; }
-.login-header h1 { color: #212529; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.5px; }
+.login-header h1 { color: #212529; font-size: 2.1rem; font-weight: 600; letter-spacing: 0.01em; line-height: 1.1; }
 .login-header h1 span { color: var(--action-amber); }
+.login-header h1::after { content: ''; display: block; width: 34px; height: 2px; background: var(--action-amber); margin: 14px auto 0; border-radius: 2px; opacity: .85; }
 .login-header p { color: #6c757d; font-size: 0.85rem; margin-top: 5px; text-transform: uppercase; letter-spacing: 1px; }
 
 /* === ESTRUTURA PRINCIPAL CORRIGIDA === */
@@ -60,7 +61,7 @@ body { background-color: var(--bg-main); color: var(--text-dark); overflow: hidd
   z-index: 10; 
 }
 .sidebar-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); text-align: center; }
-.sidebar-header h1 { font-size: 1.2rem; font-weight: 600; color: var(--text-light); }
+.sidebar-header h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: 0.01em; color: var(--text-light); }
 .sidebar-header h1 span { color: var(--action-amber); font-weight: 700; }
 .user-info { padding: 15px 20px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; color: #adb5bd; }
 .user-info strong { display: block; color: var(--text-light); font-size: 0.9rem; margin-bottom: 2px; }
@@ -258,3 +259,41 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 }
 .fonte[data-estado="pronto"] .fonte-num, #card-web.ligada[data-estado="pronto"] .fonte-num { background:#198754; color:#fff; }
 .fonte[data-estado="erro"] .fonte-num, #card-web.ligada[data-estado="erro"] .fonte-num { background:#c92a2a; color:#fff; }
+
+/* v26.0 — achados agrupados pela fonte de onde saíram */
+.grupo-achados { margin-top:12px; border:1px solid #dee2e6; border-radius:8px; background:#fff; }
+.grupo-achados > summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:10px; padding:12px 14px; }
+.grupo-achados > summary::-webkit-details-marker { display:none; }
+.grupo-achados > summary:hover { background:#f8f9fa; border-radius:8px; }
+.grupo-achados .fonte-num { background:#0b509e; color:#fff; }
+.grupo-nome { font-weight:600; font-size:0.9rem; color:#212529; }
+.grupo-qtd { font-size:0.8rem; color:#842029; background:#f8d7da; padding:2px 10px; border-radius:10px; }
+.grupo-achados[open] > summary .docs-seta { transform:rotate(180deg); }
+.grupo-achados > summary .docs-seta { margin-left:auto; color:#868e96; transition:transform .2s; }
+.grupo-corpo { padding:4px 14px 10px; border-top:1px solid #eef0f2; }
+.grupo-corpo .rx-card { margin-top:10px; margin-bottom:0; }
+.grupo-vazio { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#f8f9fa; border-style:solid; }
+.grupo-vazio .fonte-num { background:#198754; }
+.grupo-vazio .grupo-qtd { color:#146c43; background:#d1e7dd; }
+
+/* v26.2 — contagem regressiva do "Meu trabalho" */
+.header-acoes { display:flex; align-items:center; gap:12px; }
+.prazo-selo { float:right; padding:1px 8px; border-radius:10px; font-size:0.68rem; font-weight:700; background:#f5c518; color:#1a1f24; }
+.prazo-selo.prazo-atencao { background:#fd7e14; color:#fff; }
+.prazo-selo.prazo-critico { background:#e03131; color:#fff; }
+.prazo-selo.prazo-ok { background:#2f9e44; color:#fff; }
+.prazo-pill { display:inline-flex; align-items:center; gap:6px; height:32px; padding:0 12px; border-radius:16px; border:1px solid #f0d26b; background:#fff8db; color:#664d03; font-size:0.8rem; font-weight:600; cursor:pointer; }
+.prazo-pill.prazo-atencao { background:#fff1e0; border-color:#f5b36b; color:#8a4300; }
+.prazo-pill.prazo-critico { background:#ffe3e3; border-color:#f1a3a3; color:#9b1c1c; }
+.prazo-card { display:flex; align-items:center; gap:16px; padding:16px 20px; border-radius:8px; margin-bottom:14px; background:#fff8db; border:1px solid #f0d26b; }
+.prazo-card.prazo-atencao { background:#fff1e0; border-color:#f5b36b; }
+.prazo-card.prazo-critico { background:#ffe3e3; border-color:#f1a3a3; }
+.prazo-card.prazo-ok { background:#e8f5ec; border-color:#b7dfc3; }
+.prazo-num { flex-shrink:0; min-width:54px; height:54px; padding:0 8px; border-radius:12px; background:#fff; display:flex; align-items:center; justify-content:center; font-size:1.7rem; font-weight:800; color:#664d03; }
+.prazo-atencao .prazo-num { color:#8a4300; } .prazo-critico .prazo-num { color:#9b1c1c; } .prazo-ok .prazo-num { color:#2f9e44; }
+.prazo-tit { font-weight:700; font-size:0.95rem; color:#212529; }
+.prazo-sub { font-size:0.82rem; color:#495057; margin-top:2px; line-height:1.45; }
+.prazo-seg { display:flex; gap:4px; margin-top:10px; max-width:320px; }
+.prazo-seg span { flex:1; height:6px; border-radius:3px; background:rgba(0,0,0,0.12); }
+.prazo-seg span.feito { background:#2f9e44; }
+@media (max-width:640px) { .prazo-pill { font-size:0.72rem; padding:0 9px; } }
