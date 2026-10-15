@@ -153,7 +153,7 @@
 // RAIO-X — lógica da página
 // ============================================================
 const VERSAO_RAIOX = 'v0.3';
-const VERSAO_RAIOX_DATA = '15/10/2026 09:30';
+const VERSAO_RAIOX_DATA = '15/10/2026 12:40';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -371,6 +371,7 @@ function desenharRodar(totalDocs) {
         <button class="btn btn-principal" id="bg-iniciar" onclick="filaIniciar()"><i class="ti ti-player-play"></i> Rodar em segundo plano</button>
       </div>
       <div id="fila-estado" class="progresso"></div>
+      <div id="fila-metricas"></div>
     </div>
     <div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Escopo</th><th class="n">Docs</th><th class="n">Caracteres</th><th>Estado</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="7" class="vazio">Nada na base ainda.</td></tr>'}</tbody></table></div></div>`;
   painelFila();
@@ -388,6 +389,24 @@ async function filaIniciar() {
 }
 async function filaParar() { if (!confirm('Parar a leitura em segundo plano? O que já foi lido fica salvo.')) return; await api('raiox/fila-parar', {}); painelFila(); }
 async function filaRetomar() { const r = await api('raiox/fila-retomar', {}); if (r.ok === false) alert(r.erro); painelFila(); }
+const fmtMin = m => { m = Number(m) || 0; if (m < 1) return Math.round(m * 60) + ' s'; if (m < 90) return (Math.round(m * 10) / 10).toLocaleString('pt-BR') + ' min'; return (Math.floor(m / 60)) + ' h ' + Math.round(m % 60) + ' min'; };
+let _metTodas = false;
+async function painelMetricas() {
+  const el = $('fila-metricas'); if (!el || !TOKEN) return;
+  const m = await api('raiox/metricas', { rodada: _metTodas ? 'todas' : '' });
+  const el2 = $('fila-metricas'); if (!el2 || m.ok === false) return;
+  const t = m.total || {}, g = m.por_provedor || [];
+  if (!t.tentativas) { el2.innerHTML = ''; return; }
+  const nome = s => ({ gemini: 'Gemini', groq: 'Groq', kimi: 'Kimi', openrouter: 'OpenRouter', deepseek: 'DeepSeek' }[s] || s);
+  el2.innerHTML = `<div style="margin-top:12px;"><b>Desempenho</b> ·
+      <select onchange="_metTodas = this.value === 'todas'; painelMetricas()"><option value="rodada" ${_metTodas ? '' : 'selected'}>desta rodada</option><option value="todas" ${_metTodas ? 'selected' : ''}>de todas as rodadas</option></select>
+      <div class="dica">${fmt(t.escopos)} contratos/processos lidos · média ${fmtMin(t.duracao_min_media)} por item · esperando a IA: ${fmtMin(t.tempo_ia_min)} · ${fmt(t.tentativas)} chamadas (${fmt(t.falhas)} falharam) · tokens enviados ${fmt(t.tokens_prompt)} / recebidos ${fmt(t.tokens_resposta)} · ${fmt(t.achados)} achados</div>
+      <div class="rolagem"><table class="tabela"><thead><tr><th>IA</th><th class="n">Respostas</th><th class="n">Sucesso</th><th class="n">Seg. médio</th><th class="n">Seg. p90</th><th class="n">Tokens env.</th><th class="n">Tokens rec.</th><th class="n">Tokens/seg</th><th class="n">Achados/chamada</th><th class="n">Trecho confere</th><th class="n">Como reserva</th></tr></thead><tbody>
+      ${g.map(x => `<tr title="${esc((x.erros || []).join(' | '))}"><td>${esc(nome(x.servico))}<br><small>${esc(x.modelo)}</small></td><td class="n">${fmt(x.respondeu)}</td><td class="n">${x.taxa_ok}%</td><td class="n">${x.s_medio}</td><td class="n">${x.s_p90}</td><td class="n">${fmt(x.tokens_prompt)}</td><td class="n">${fmt(x.tokens_resposta)}</td><td class="n">${fmt(x.tokens_por_s)}</td><td class="n">${x.achados_por_chamada}</td><td class="n">${x.pct_trecho_confere === null ? '—' : x.pct_trecho_confere + '%'}</td><td class="n">${fmt(x.como_reserva)}</td></tr>`).join('')}
+      </tbody></table></div>
+      ${(m.qualidade || []).length ? '<div class="dica">Conferência das pessoas, por modelo: ' + m.qualidade.map(q => esc(q.modelo) + ' — ' + q.procede + ' procedem, ' + q.nao_procede + ' não procedem, ' + q.a_conferir + ' a conferir').join(' · ') + '</div>' : ''}
+      <div class="dica">Tokens marcados como estimados quando o serviço não informa. Os dados completos ficam nas abas RaioxMetricas e RaioxMetricasEscopo da planilha.</div></div>`;
+}
 async function painelFila() {
   clearInterval(_timerFila); _timerFila = null;
   const el = $('fila-estado'); if (!el || !TOKEN) return;
@@ -402,7 +421,8 @@ async function painelFila() {
   if (j.ativo) {
     const a = r.atual;
     el2.innerHTML = `<span class="spinner"></span><b>Rodando no servidor.</b> ${esc(barra)}${a ? '<br>Agora: ' + esc(a.rotulo) + ' (janela ' + (a.janelas + 1) + ', trecho ' + (a.chunk + 1) + ')' : ''}
-      <br>Início: ${esc(quando(j.iniciado_em))} · aviso para ${esc(j.avisar_em)}. Pode fechar esta tela. <button class="btn btn-sm btn-perigo" onclick="filaParar()">Parar</button>`;
+      <br>Início: ${esc(quando(j.iniciado_em))} · aviso para ${esc(j.avisar_em)}. Pode fechar esta tela. <button class="btn btn-sm btn-perigo" onclick="filaParar()">Parar</button>
+      ${r.totais ? '<br>Decorrido: ' + fmtMin(r.totais.decorrido_min) + (r.totais.eta_min !== null ? ' · falta cerca de ' + fmtMin(r.totais.eta_min) + ' (estimativa)' : '') + ' · ritmo: ' + fmt(r.totais.chars_por_min) + ' caracteres/min' : ''}`;
     _timerFila = setTimeout(() => { if (abaAtual === 'rodar') painelFila(); }, 20000);
   } else if (j.pausado) {
     el2.innerHTML = `<b style="color:var(--bordo)">Parada.</b> ${esc(j.pausado)}<br>${esc(barra)}.
@@ -411,6 +431,7 @@ async function painelFila() {
     el2.innerHTML = `<b>Última rodada terminou</b> em ${esc(quando(j.concluido_em))}. ${esc(barra)}. Achados gravados: ${fmt(j.achados_gravados)}.
       ${(r.com_erro || []).length ? '<br>Não lidos: ' + r.com_erro.map(e => esc(e.rotulo)).join('; ') : ''}`;
   }
+  painelMetricas();
 }
 
 function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
