@@ -152,8 +152,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.2';
-const VERSAO_RAIOX_DATA = '14/10/2026 22:00';
+const VERSAO_RAIOX = 'v0.3';
+const VERSAO_RAIOX_DATA = '15/10/2026 09:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -361,8 +361,58 @@ function desenharRodar(totalDocs) {
       <div class="progresso" id="progresso"></div><div class="log hidden" id="log"></div>
       ${chaves.length ? '' : '<div class="aviso">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
     </div>
+    <div class="bloco"><h2><i class="ti ti-cloud-computing"></i> Leitura com IA em segundo plano <small>(recomendado)</small></h2>
+      <div class="dica">O servidor faz a leitura sozinho, sem precisar deixar esta tela aberta, nem o computador ligado, nem a sessão ativa. Você dá o comando, pode fechar tudo, e recebe um e-mail quando terminar (ou se travar). Usa as suas chaves de IA da Gestão.</div>
+      <div class="acoes" style="align-items:center;">
+        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-contrato" checked> contratos pendentes</label>
+        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-processo"> processos pendentes</label>
+        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-parciais"> incluir os parciais</label>
+        <input id="bg-email" type="email" placeholder="e-mail para o aviso" value="${esc((usuario && usuario.email) || '')}" style="min-width:230px;">
+        <button class="btn btn-principal" id="bg-iniciar" onclick="filaIniciar()"><i class="ti ti-player-play"></i> Rodar em segundo plano</button>
+      </div>
+      <div id="fila-estado" class="progresso"></div>
+    </div>
     <div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Escopo</th><th class="n">Docs</th><th class="n">Caracteres</th><th>Estado</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="7" class="vazio">Nada na base ainda.</td></tr>'}</tbody></table></div></div>`;
+  painelFila();
 }
+// ----- segundo plano -----
+let _timerFila = null;
+async function filaIniciar() {
+  const tipos = ['contrato', 'processo'].filter(t => $('bg-' + t).checked);
+  if (!tipos.length) { alert('Marque contratos, processos ou os dois.'); return; }
+  $('bg-iniciar').disabled = true;
+  const r = await api('raiox/fila-iniciar', { tipos, incluir_parciais: $('bg-parciais').checked, avisar_em: $('bg-email').value.trim() });
+  $('bg-iniciar').disabled = false;
+  if (r.ok === false) { $('fila-estado').innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
+  painelFila();
+}
+async function filaParar() { if (!confirm('Parar a leitura em segundo plano? O que já foi lido fica salvo.')) return; await api('raiox/fila-parar', {}); painelFila(); }
+async function filaRetomar() { const r = await api('raiox/fila-retomar', {}); if (r.ok === false) alert(r.erro); painelFila(); }
+async function painelFila() {
+  clearInterval(_timerFila); _timerFila = null;
+  const el = $('fila-estado'); if (!el || !TOKEN) return;
+  const r = await api('raiox/fila-estado', {});
+  const el2 = $('fila-estado'); if (!el2) return;
+  if (r.ok === false) { el2.innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
+  const j = r.job;
+  if (!j) { el2.innerHTML = ''; return; }
+  const feitos = r.feitos + r.erros;
+  const barra = `${feitos} de ${r.total} concluídos${r.erros ? ' · ' + r.erros + ' com erro' : ''}${r.parciais ? ' · ' + r.parciais + ' parciais' : ''}`;
+  const quando = d => d ? new Date(d).toLocaleString('pt-BR') : '';
+  if (j.ativo) {
+    const a = r.atual;
+    el2.innerHTML = `<span class="spinner"></span><b>Rodando no servidor.</b> ${esc(barra)}${a ? '<br>Agora: ' + esc(a.rotulo) + ' (janela ' + (a.janelas + 1) + ', trecho ' + (a.chunk + 1) + ')' : ''}
+      <br>Início: ${esc(quando(j.iniciado_em))} · aviso para ${esc(j.avisar_em)}. Pode fechar esta tela. <button class="btn btn-sm btn-perigo" onclick="filaParar()">Parar</button>`;
+    _timerFila = setTimeout(() => { if (abaAtual === 'rodar') painelFila(); }, 20000);
+  } else if (j.pausado) {
+    el2.innerHTML = `<b style="color:var(--bordo)">Parada.</b> ${esc(j.pausado)}<br>${esc(barra)}.
+      ${r.pendentes + r.andando + r.erros ? '<button class="btn btn-sm btn-principal" onclick="filaRetomar()">Continuar</button>' : ''}`;
+  } else {
+    el2.innerHTML = `<b>Última rodada terminou</b> em ${esc(quando(j.concluido_em))}. ${esc(barra)}. Achados gravados: ${fmt(j.achados_gravados)}.
+      ${(r.com_erro || []).length ? '<br>Não lidos: ' + r.com_erro.map(e => esc(e.rotulo)).join('; ') : ''}`;
+  }
+}
+
 function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
 function prog(t) { const p = $('progresso'); if (p) p.innerHTML = t; }
 
