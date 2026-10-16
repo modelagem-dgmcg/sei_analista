@@ -152,8 +152,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.4';
-const VERSAO_RAIOX_DATA = '15/10/2026 23:30';
+const VERSAO_RAIOX = 'v0.5';
+const VERSAO_RAIOX_DATA = '16/10/2026 00:10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -527,7 +527,7 @@ async function telaAchados() {
   $('conteudo').innerHTML = carregando('Carregando os achados...');
   const r = await api('raiox/achados', {});
   if (!r.ok && r.erro) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
-  achados = r.achados || [];
+  achados = prepararAchados(r.achados || []);
   const opt = (campo) => [...new Set(achados.map(a => a[campo]).filter(Boolean))].sort().map(v => `<option>${esc(v)}</option>`).join('');
   $('conteudo').innerHTML = `
     <div class="bloco"><h2><i class="ti ti-list-search"></i> Achados <small id="cont-ach"></small></h2>
@@ -536,12 +536,19 @@ async function telaAchados() {
         <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
         <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Código</option><option value="ia">IA</option></select></div>
         <div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>
+        <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
         <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
         <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
         <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
         <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
       </div></div>
     <div id="lista-ach"></div>`;
+  if (filtroInicial) {      // veio de um clique na matriz ou nas barras da aba da diretoria
+    const f = filtroInicial; filtroInicial = null;
+    if (f.setor && $('f-setor')) $('f-setor').value = f.setor === 'Sem setor' ? '__sem' : f.setor;
+    if (f.orgao && $('f-orgao')) $('f-orgao').value = f.orgao;
+    if (f.unidade && $('f-unidade')) $('f-unidade').value = f.unidade;
+  }
   pintarAchados();
 }
 const ordemGrav = { alta: 0, media: 1, baixa: 2 };
@@ -550,7 +557,7 @@ function filtrados() {
   const q = normT(v('f-q'));
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
   return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
-    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
+    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
@@ -595,72 +602,213 @@ async function conferir(id, valor) {
 }
 
 // ==================== TELA: RAIO-X PARA A DIRETORIA ====================
+const visivel = a => a.conferido !== 'nao' && !a.oculto_passado;
+const lerOrgaos = a => (a.orgaos ? String(a.orgaos).split(';').map(x => x.trim()).filter(Boolean) : []);
+const SEM_ORGAO = '(sem órgão indicado)';
+// Achados antigos não têm o campo de órgãos: deduz pelo texto do risco e do impacto (aproximado) e marca como deduzido.
+function prepararAchados(lista) {
+  const reg = [['TCE-PE', /\btce\b|tribunal de contas do estado/i], ['MPCO', /\bmpco\b|minist[eé]rio p[uú]blico de contas/i], ['MPPE', /\bmppe\b|minist[eé]rio p[uú]blico(?! de contas)/i],
+    ['TJPE', /\btjpe\b|poder judici[aá]rio|a[cç][aã]o judicial/i], ['CGE-PE', /\bcge\b|\bscge\b|controladoria/i], ['ALEPE', /\balepe\b|assembleia legislativa/i],
+    ['Conselho Estadual de Saúde', /conselho (estadual )?de sa[uú]de/i], ['Federal (TCU/CGU/DENASUS)', /\btcu\b|\bcgu\b|denasus|tribunal de contas da uni[aã]o/i]];
+  lista.forEach(a => { if (a.orgaos) return; const t = [a.risco_controle, a.impacto].join(' '), f = reg.filter(r => r[1].test(t)).map(r => r[0]); if (f.length) { a.orgaos = f.join('; '); a.orgaos_deduzidos = true; } });
+  return lista;
+}
+let filtroInicial = null;                       // usado quando se clica na matriz ou nas barras
+function irAchados(f) { filtroInicial = f; abrirAba('achados'); }
+
+// Estilo único, usado na tela e no relatório impresso.
+const CSS_RX = `
+  .rx-mat{border-collapse:collapse;width:100%;font-size:.82rem;background:#fff}
+  .rx-mat th,.rx-mat td{border:1px solid #e1dbd0;padding:6px 8px;text-align:center}
+  .rx-mat th{background:#efebe3;font-size:.74rem}.rx-mat td.rot,.rx-mat th.rot{text-align:left;font-weight:600}
+  .rx-mat td.c{font-weight:700}.rx-mat td.t{background:#f7f5f1;font-weight:700}
+  .rx-bar{display:grid;grid-template-columns:minmax(120px,240px) 1fr 40px;gap:8px;align-items:center;margin:4px 0;font-size:.82rem}
+  .rx-trilho{display:flex;height:16px;background:#f0ece4;border-radius:4px;overflow:hidden}
+  .rx-trilho i{display:block;height:100%}.rx-trilho i.alta{background:#8e1628}.rx-trilho i.media{background:#d97706}.rx-trilho i.baixa{background:#9fb2bb}
+  .rx-leg{font-size:.74rem;color:#66757d;margin:6px 0}.rx-leg b{display:inline-block;width:10px;height:10px;border-radius:2px;margin:0 4px 0 10px}
+  .rx-tab{border-collapse:collapse;width:100%;font-size:.8rem;background:#fff}
+  .rx-tab th,.rx-tab td{border-bottom:1px solid #e7e2d8;padding:6px 8px;text-align:left;vertical-align:top}
+  .rx-tab th{background:#efebe3;font-size:.74rem}.rx-tab td.n,.rx-tab th.n{text-align:right}
+  .rx-g{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700}
+  .rx-g.alta{background:#f8d7da;color:#8e1628}.rx-g.media{background:#fff4d6;color:#664d03}.rx-g.baixa{background:#e6ecef;color:#455a64}
+  .rx-nota{font-size:.74rem;color:#66757d;margin-top:4px}`;
+(function () { const st = document.createElement('style'); st.textContent = CSS_RX + `
+  .rx-clic{cursor:pointer}.rx-clic:hover{outline:2px solid var(--acento)}
+  .rx-opcoes{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:4px 14px;margin:8px 0}
+  .rx-opcoes label{display:flex;gap:6px;align-items:center;font-size:.84rem;cursor:pointer}.rx-opcoes input{width:auto;margin:0}`; document.head.appendChild(st); })();
+
+const ROTULO_PAPEL = { ativo: 'dentro do prazo', estendido: 'estendido (prazo vencido)', anterior: 'contrato anterior', '': '' };
+const COLUNAS = {
+  gravidade: ['Gravidade', a => a.gravidade, a => `<span class="rx-g ${esc(a.gravidade)}">${esc(a.gravidade)}</span>`],
+  unidade: ['Unidade', a => a.unidade],
+  contrato: ['Contrato / processo', a => a.contrato || a.processo || ''],
+  sei: ['Processo SEI', a => [a.sei_contrato, a.sei_instrumento ? (a.instrumento_citado + ': ' + a.sei_instrumento) : ''].filter(Boolean).join(' · ')],
+  titulo: ['Achado', a => a.titulo],
+  tipo: ['Tipo', a => a.tipo],
+  setor: ['Setor', a => a.setor || 'Sem setor'],
+  orgaos: ['Órgãos', a => a.orgaos || ''],
+  conferido: ['Conferência', a => a.conferido === 'sim' ? 'procede' : 'a conferir'],
+  ligacao: ['Ligação com o passado', a => a.liga_passado === 'sim' ? a.ligacao : ''],
+  documentos: ['Documento', a => a.documentos],
+  impacto: ['Impacto', a => a.impacto],
+  sugestao: ['Sugestão', a => a.setor === 'CCGP' ? '' : a.sugestao]
+};
+const COLUNAS_PADRAO = ['gravidade', 'unidade', 'contrato', 'sei', 'titulo', 'setor', 'orgaos'];
+
+function htmlMatriz(lista, clicavel) {
+  if (!lista.length) return '<div class="vazio">Sem achados neste filtro.</div>';
+  const setores = [...new Set(lista.map(a => a.setor || 'Sem setor'))].sort((x, y) => lista.filter(a => (a.setor || 'Sem setor') === y).length - lista.filter(a => (a.setor || 'Sem setor') === x).length);
+  const orgs = ORGAOS.filter(o => lista.some(a => lerOrgaos(a).includes(o)));
+  if (lista.some(a => !lerOrgaos(a).length)) orgs.push(SEM_ORGAO);
+  const noCel = (a, s, o) => (a.setor || 'Sem setor') === s && (o === SEM_ORGAO ? !lerOrgaos(a).length : lerOrgaos(a).includes(o));
+  let max = 1; setores.forEach(s => orgs.forEach(o => { max = Math.max(max, lista.filter(a => noCel(a, s, o)).length); }));
+  const linhas = setores.map(s => `<tr><td class="rot">${esc(s)}</td>${orgs.map(o => {
+    const n = lista.filter(a => noCel(a, s, o)).length, al = n ? 0.1 + 0.75 * n / max : 0;
+    return `<td class="c ${clicavel && n ? 'rx-clic' : ''}" style="${n ? 'background:rgba(142,22,40,' + al.toFixed(2) + ');color:' + (al > 0.5 ? '#fff' : '#1f2a30') + ';-webkit-print-color-adjust:exact;print-color-adjust:exact;' : 'color:#b8b2a6'}" ${clicavel && n ? `onclick="irAchados(${esc(JSON.stringify({ setor: s, orgao: o === SEM_ORGAO ? '' : o }))})"` : ''}>${n || '·'}</td>`;
+  }).join('')}<td class="t">${lista.filter(a => (a.setor || 'Sem setor') === s).length}</td></tr>`).join('');
+  const total = `<tr><td class="rot t">Total</td>${orgs.map(o => `<td class="t">${lista.filter(a => o === SEM_ORGAO ? !lerOrgaos(a).length : lerOrgaos(a).includes(o)).length}</td>`).join('')}<td class="t">${lista.length}</td></tr>`;
+  return `<table class="rx-mat"><thead><tr><th class="rot">Setor responsável</th>${orgs.map(o => `<th>${esc(o)}</th>`).join('')}<th>Total</th></tr></thead><tbody>${linhas}${total}</tbody></table>
+    <div class="rx-nota">Só aparecem os órgãos citados nos achados. Um achado pode interessar a mais de um órgão e contar em mais de uma coluna; o total da linha conta cada achado uma vez.${lista.some(a => a.orgaos_deduzidos) ? ' Nos achados lidos antes desta versão, os órgãos foram deduzidos do texto do risco (aproximado).' : ''}</div>`;
+}
+
+function htmlBarras(lista, clicavel) {
+  if (!lista.length) return '<div class="vazio">Sem achados neste filtro.</div>';
+  const por = {}; lista.forEach(a => { const u = a.unidade || '(sem unidade)', o = por[u] = por[u] || { alta: 0, media: 0, baixa: 0, n: 0 }; o[a.gravidade] = (o[a.gravidade] || 0) + 1; o.n++; });
+  const us = Object.keys(por).sort((x, y) => por[y].alta - por[x].alta || por[y].n - por[x].n || x.localeCompare(y, 'pt-BR')).slice(0, 20), max = Math.max(...us.map(u => por[u].n));
+  return `<div class="rx-leg"><b style="background:#8e1628"></b>alta<b style="background:#d97706"></b>média<b style="background:#9fb2bb"></b>baixa${Object.keys(por).length > 20 ? ' · mostrando as 20 unidades com mais achados graves' : ''}</div>` +
+    us.map(u => { const o = por[u], w = k => (100 * (o[k] || 0) / max).toFixed(1);
+      return `<div class="rx-bar ${clicavel ? 'rx-clic' : ''}" ${clicavel ? `onclick="irAchados(${esc(JSON.stringify({ unidade: u }))})"` : ''}><span>${esc(u)}</span><span class="rx-trilho"><i class="alta" style="width:${w('alta')}%"></i><i class="media" style="width:${w('media')}%"></i><i class="baixa" style="width:${w('baixa')}%"></i></span><b>${o.n}</b></div>`; }).join('');
+}
+
+function htmlTabContratos(lista) {
+  if (!lista.length) return '<div class="vazio">Sem achados neste filtro.</div>';
+  const por = {}; lista.forEach(a => { const k = (a.unidade || '') + '|' + (a.contrato || a.processo || '—'); const o = por[k] = por[k] || { unidade: a.unidade || '(sem unidade)', cod: a.contrato || (a.processo ? 'processo ' + a.processo : '—'), papel: a.papel || '', sei: a.sei_contrato || '', n: 0, alta: 0, conf: 0 }; o.n++; if (a.gravidade === 'alta') o.alta++; if (a.conferido === 'sim') o.conf++; });
+  const ks = Object.keys(por).sort((x, y) => por[y].alta - por[x].alta || por[y].n - por[x].n);
+  return `<table class="rx-tab"><thead><tr><th>Unidade</th><th>Contrato / processo</th><th>Situação</th><th>Processo SEI</th><th class="n">Achados</th><th class="n">Alta</th><th class="n">Conferidos</th></tr></thead><tbody>${ks.map(k => { const o = por[k]; return `<tr><td>${esc(o.unidade)}</td><td>${esc(o.cod)}</td><td>${esc(ROTULO_PAPEL[o.papel] || '')}</td><td>${esc(o.sei)}</td><td class="n">${o.n}</td><td class="n">${o.alta}</td><td class="n">${o.conf}</td></tr>`; }).join('')}</tbody></table>`;
+}
+
+function htmlTabelaAchados(lista, cols) {
+  if (!cols.length) return '<div class="vazio">Escolha ao menos uma coluna.</div>';
+  const cab = cols.map(c => `<th>${esc(COLUNAS[c][0])}</th>`).join('');
+  const ord = lista.slice().sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
+  return `<table class="rx-tab"><thead><tr>${cab}</tr></thead><tbody>${ord.map(a => `<tr>${cols.map(c => `<td>${COLUNAS[c][2] ? COLUNAS[c][2](a) : esc(COLUNAS[c][1](a))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+function htmlDetalhe(lista, agrupar) {
+  const chave = a => agrupar === 'setor' ? [a.setor || 'Sem setor'] : agrupar === 'orgao' ? (lerOrgaos(a).length ? lerOrgaos(a) : [SEM_ORGAO]) : [a.unidade || '(sem unidade)'];
+  const por = {}; lista.forEach(a => chave(a).forEach(k => { (por[k] = por[k] || []).push(a); }));
+  return Object.keys(por).sort((x, y) => por[y].length - por[x].length || x.localeCompare(y, 'pt-BR')).map(k => `<h2>${esc(k)} <small style="font-weight:400;color:#66757d">(${por[k].length})</small></h2>` +
+    por[k].sort((x, y) => ordemGrav[x.gravidade] - ordemGrav[y.gravidade]).map(a => `
+    <div class="a ${esc(a.gravidade)}"><span class="s ${esc(a.gravidade)}">${esc(a.gravidade)}</span><span class="s e">${esc(a.tipo)}</span><span class="s ${a.conferido === 'sim' ? 'c' : 'p'}">${a.conferido === 'sim' ? 'conferido: procede' : 'a conferir'}</span>${a.papel === 'anterior' ? '<span class="s e">contrato anterior</span>' : a.papel === 'estendido' ? '<span class="s p">estendido</span>' : ''}
+    <span style="font-size:.78rem;color:#66757d">${esc(a.unidade)}${a.contrato ? ' · contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}${a.setor ? ' · ' + esc(a.setor) : ''}</span>
+    <h3>${esc(a.titulo)}</h3>${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
+    ${a.liga_passado === 'sim' && a.ligacao ? `<div class="r">Ligação com o passado</div><p>${esc(a.ligacao)}</p>` : ''}
+    ${a.sei_contrato ? `<div class="r">Processo SEI</div><p>Contrato: ${esc(a.sei_contrato)}${a.sei_instrumento ? ' · ' + esc(a.instrumento_citado) + ': ' + esc(a.sei_instrumento) : ''}</p>` : ''}
+    ${a.documentos ? `<div class="r">Documento</div><p>${esc(a.documentos)}</p>` : ''}${a.trecho ? `<div class="r">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
+    ${a.impacto ? `<div class="r">Impacto</div><p>${esc(a.impacto)}</p>` : ''}${a.risco_controle ? `<div class="r">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
+    ${lerOrgaos(a).length ? `<div class="r">Órgãos que podem se interessar</div><p>${esc(lerOrgaos(a).join(', '))}</p>` : ''}
+    ${a.sugestao && a.setor !== 'CCGP' ? `<div class="r">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}</div>`).join('')).join('');
+}
+
+function listaRx() {
+  const v = id => ($(id) || {}).value || '';
+  return achados.filter(a => visivel(a) && (!v('rx-setor') || (a.setor || 'Sem setor') === v('rx-setor')) && (!v('rx-orgao') || lerOrgaos(a).includes(v('rx-orgao'))) &&
+    (!v('rx-grav') || a.gravidade === v('rx-grav')) && (!v('rx-conf') || (v('rx-conf') === 'sim' ? a.conferido === 'sim' : !a.conferido)));
+}
+function pintarRx() {
+  const l = listaRx(), alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
+  const contratos = new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size;
+  $('rx-tiles').innerHTML = `
+    <div class="tile"><h3>Achados no filtro</h3><div class="grande">${fmt(l.length)}</div></div>
+    <div class="tile"><h3>Gravidade alta</h3><div class="grande">${fmt(alta)}</div></div>
+    <div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conf)}<small>de ${fmt(l.length)}</small></div></div>
+    <div class="tile"><h3>Contratos com achados</h3><div class="grande">${fmt(contratos)}</div></div>`;
+  $('rx-matriz').innerHTML = htmlMatriz(l, true);
+  $('rx-barras').innerHTML = htmlBarras(l, true);
+  $('rx-contratos').innerHTML = htmlTabContratos(l);
+}
+
 async function telaRx() {
   $('conteudo').innerHTML = carregando('Montando o resumo...');
   const r = await api('raiox/achados', {});
-  achados = r.achados || [];
-  const ativos = achados.filter(a => a.conferido !== 'nao' && !a.oculto_passado);
-  const cont = (lista, campo) => { const m = {}; lista.forEach(a => { const k = a[campo] || '(sem)'; m[k] = (m[k] || 0) + 1; }); return m; };
-  const porGrav = cont(ativos, 'gravidade'), conferidos = ativos.filter(a => a.conferido === 'sim').length;
+  if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
+  achados = prepararAchados(r.achados || []);
+  const vis = achados.filter(visivel), escondidos = achados.filter(a => a.oculto_passado).length, naoProcede = achados.filter(a => a.conferido === 'nao').length;
+  const setoresPres = [...new Set(vis.map(a => a.setor || 'Sem setor'))].sort(), orgsPres = ORGAOS.filter(o => vis.some(a => lerOrgaos(a).includes(o)));
   $('conteudo').innerHTML = `
-    <div class="tiles">
-      <div class="tile"><h3>Achados (sem os que não procedem)</h3><div class="grande">${fmt(ativos.length)}</div></div>
-      <div class="tile"><h3>Gravidade alta</h3><div class="grande">${fmt(porGrav.alta || 0)}</div></div>
-      <div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conferidos)}<small>de ${fmt(ativos.length)}</small></div></div>
-      <div class="tile"><h3>Marcados "não procede"</h3><div class="grande">${fmt(achados.length - ativos.length)}</div></div>
+    <div class="bloco"><h2><i class="ti ti-filter"></i> Filtro <small>vale para a tela e para o relatório</small></h2>
+      <div class="filtros">
+        <div><label>Setor</label><select id="rx-setor" onchange="pintarRx()"><option value="">Todos</option>${setoresPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
+        <div><label>Órgão</label><select id="rx-orgao" onchange="pintarRx()"><option value="">Todos</option>${orgsPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
+        <div><label>Gravidade</label><select id="rx-grav" onchange="pintarRx()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
+        <div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>
+      </div>
+      <div class="dica">Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado.</div>
     </div>
-    <div class="bloco"><h2><i class="ti ti-file-text"></i> Relatório para a diretoria</h2>
-      <div class="dica">Gera um arquivo HTML único, que abre em qualquer computador e imprime como PDF. Os achados que você marcou "não procede" ficam de fora. O que ainda não foi conferido aparece como "a conferir".</div>
-      <label class="auto"><input type="checkbox" id="so-conf"> Incluir só os já conferidos (procedem)</label>
-      <label class="auto">Organizar os achados do relatório por: <select id="agrupar" style="max-width:200px;display:inline-block"><option value="unidade">Unidade</option><option value="setor">Setor responsável</option></select></label>
-      <div class="acoes"><button class="btn btn-principal" onclick="gerarRelatorio()"><i class="ti ti-download"></i> Baixar o relatório (HTML)</button></div>
+    <div class="tiles" id="rx-tiles"></div>
+    <div class="bloco"><h2><i class="ti ti-grid-dots"></i> Achados por setor e órgão de controle <small>clique num número para ver os achados</small></h2><div class="rolagem" id="rx-matriz"></div></div>
+    <div class="bloco"><h2><i class="ti ti-chart-bar"></i> Achados por unidade</h2><div id="rx-barras"></div></div>
+    <div class="bloco"><h2><i class="ti ti-table"></i> Contratos com achados</h2><div class="rolagem" id="rx-contratos"></div></div>
+    <div class="bloco"><h2><i class="ti ti-printer"></i> Imprimir ou baixar o relatório</h2>
+      <div class="dica">Escolha o que entra. O relatório usa o filtro acima. Imprimir abre a janela de impressão do navegador (dá para salvar como PDF).</div>
+      <div class="rot" style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--mudo);margin-top:10px;">Seções</div>
+      <div class="rx-opcoes">
+        <label><input type="checkbox" id="op-resumo" checked> Números do resumo</label>
+        <label><input type="checkbox" id="op-matriz" checked> Matriz setor x órgão</label>
+        <label><input type="checkbox" id="op-barras" checked> Barras por unidade</label>
+        <label><input type="checkbox" id="op-contratos"> Contratos com achados</label>
+        <label><input type="checkbox" id="op-tabela" checked> Tabela de achados (colunas à escolha)</label>
+        <label><input type="checkbox" id="op-detalhe"> Achados detalhados, um por cartão</label>
+      </div>
+      <div class="rot" style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--mudo);margin-top:10px;">Colunas da tabela de achados</div>
+      <div class="rx-opcoes">${Object.keys(COLUNAS).map(c => `<label><input type="checkbox" class="op-col" value="${c}" ${COLUNAS_PADRAO.indexOf(c) > -1 ? 'checked' : ''}> ${esc(COLUNAS[c][0])}</label>`).join('')}</div>
+      <div class="filtros" style="margin-top:10px;">
+        <div><label>Organizar os cartões detalhados por</label><select id="op-agrupar"><option value="unidade">Unidade</option><option value="setor">Setor responsável</option><option value="orgao">Órgão de controle</option></select></div>
+        <div><label>Folha</label><select id="op-folha"><option value="landscape">Paisagem (melhor para tabelas)</option><option value="portrait">Retrato</option></select></div>
+      </div>
+      <div class="acoes"><button class="btn btn-principal" onclick="imprimirRx()"><i class="ti ti-printer"></i> Imprimir</button>
+        <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button></div>
       <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
     </div>`;
+  pintarRx();
 }
-function gerarRelatorio() {
-  const soConf = $('so-conf').checked;
-  let lista = achados.filter(a => a.conferido !== 'nao' && !a.oculto_passado && (!soConf || a.conferido === 'sim'));
-  lista.sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
-  const porSetorMapa = {}; lista.forEach(a => { const s = a.setor || 'Sem setor'; (porSetorMapa[s] = porSetorMapa[s] || []).push(a); });
-  const agruparSetor = ($('agrupar') || {}).value === 'setor';
-  const por = {}; lista.forEach(a => { const u = agruparSetor ? (a.setor || 'Sem setor') : (a.unidade || '(sem unidade)'); (por[u] = por[u] || []).push(a); });
-  const porUn = {}; lista.forEach(a => { const u = a.unidade || '(sem unidade)'; (porUn[u] = porUn[u] || []).push(a); });
-  const unidadesOrd = Object.keys(porUn).sort((a, b) => porUn[b].length - porUn[a].length || a.localeCompare(b, 'pt-BR'));
-  const unidades = Object.keys(por).sort((a, b) => por[b].length - por[a].length || a.localeCompare(b, 'pt-BR'));
-  const tipos = {}; lista.forEach(a => { tipos[a.tipo] = (tipos[a.tipo] || 0) + 1; });
-  const hoje = new Date().toLocaleDateString('pt-BR');
-  const css = `body{font-family:Segoe UI,system-ui,sans-serif;color:#1f2a30;margin:0;background:#f4f2ee}main{max-width:980px;margin:0 auto;padding:28px 20px}
-    h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.15rem;margin:30px 0 10px;border-bottom:2px solid #b45309;padding-bottom:4px}.sub{color:#66757d;font-size:.9rem}
-    .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:18px 0}.tile{background:#fff;border:1px solid #ddd6ca;border-radius:8px;padding:12px 14px}
-    .tile b{display:block;font-size:1.8rem}.tile span{font-size:.8rem;color:#66757d}table{border-collapse:collapse;width:100%;background:#fff;font-size:.86rem}
-    th,td{padding:7px 9px;border-bottom:1px solid #e7e2d8;text-align:left}th{background:#efebe3}td.n,th.n{text-align:right}
-    .a{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #d97706;border-radius:8px;padding:12px 16px;margin:10px 0;page-break-inside:avoid}.a.alta{border-left-color:#8e1628}.a.baixa{border-left-color:#9fb2bb}
-    .a h3{font-size:.95rem;margin:4px 0}.r{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#66757d;margin-top:8px}.a p{margin:2px 0;font-size:.86rem;line-height:1.5}
-    blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.82rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
+
+function montarRelatorio() {
+  const l = listaRx(), op = id => !!($(id) && $(id).checked), cols = [...document.querySelectorAll('.op-col:checked')].map(x => x.value);
+  const hoje = new Date().toLocaleDateString('pt-BR'), v = id => ($(id) || {}).value || '';
+  const filtros = [v('rx-setor') && 'setor ' + v('rx-setor'), v('rx-orgao') && 'órgão ' + v('rx-orgao'), v('rx-grav') && 'gravidade ' + v('rx-grav'), v('rx-conf') === 'sim' && 'só conferidos', v('rx-conf') === 'pend' && 'só a conferir'].filter(Boolean);
+  const alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
+  const css = `body{font-family:Segoe UI,system-ui,sans-serif;color:#1f2a30;margin:0;background:#f4f2ee}main{max-width:1100px;margin:0 auto;padding:24px 20px}
+    h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.1rem;margin:26px 0 10px;border-bottom:2px solid #b45309;padding-bottom:4px;page-break-after:avoid}.sub{color:#66757d;font-size:.88rem}
+    .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.tile{background:#fff;border:1px solid #ddd6ca;border-radius:8px;padding:10px 14px}
+    .tile b{display:block;font-size:1.7rem}.tile span{font-size:.8rem;color:#66757d}
+    .a{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #d97706;border-radius:8px;padding:10px 14px;margin:8px 0;page-break-inside:avoid}.a.alta{border-left-color:#8e1628}.a.baixa{border-left-color:#9fb2bb}
+    .a h3{font-size:.93rem;margin:4px 0}.r{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#66757d;margin-top:7px}.a p{margin:2px 0;font-size:.84rem;line-height:1.5}
+    blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.8rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
     .s.alta{background:#f8d7da;color:#8e1628}.s.media{background:#fff4d6;color:#664d03}.s.baixa{background:#e6ecef;color:#455a64}.e{background:#e6ecef;color:#455a64}.c{background:#d9f1e3;color:#0f5132}.p{background:#fff4d6;color:#664d03}
-    .aviso{background:#fff4d6;border-radius:6px;padding:10px 14px;font-size:.84rem;margin:14px 0}@media print{body{background:#fff}.a{border-color:#bbb}}`;
-  const tabUn = unidadesOrd.map(u => { const l = porUn[u]; return `<tr><td>${esc(u)}</td><td class="n">${l.length}</td><td class="n">${l.filter(a => a.gravidade === 'alta').length}</td><td class="n">${l.filter(a => a.conferido === 'sim').length}</td></tr>`; }).join('');
-  const tabSetor = Object.keys(porSetorMapa).sort((a, b) => porSetorMapa[b].length - porSetorMapa[a].length).map(s => { const l = porSetorMapa[s]; return `<tr><td>${esc(s)}</td><td class="n">${l.length}</td><td class="n">${l.filter(a => a.gravidade === 'alta').length}</td><td class="n">${l.filter(a => a.conferido === 'sim').length}</td></tr>`; }).join('');
-  const tabTipo = Object.keys(tipos).sort((a, b) => tipos[b] - tipos[a]).map(t => `<tr><td>${esc(t)}</td><td class="n">${tipos[t]}</td></tr>`).join('');
-  const corpo = unidades.map(u => `<h2>${esc(u)} <small style="font-weight:400;color:#66757d">(${por[u].length})</small></h2>` + por[u].map(a => `
-    <div class="a ${esc(a.gravidade)}"><span class="s ${esc(a.gravidade)}">${esc(a.gravidade)}</span><span class="s e">${esc(a.tipo)}</span><span class="s ${a.conferido === 'sim' ? 'c' : 'p'}">${a.conferido === 'sim' ? 'conferido: procede' : 'a conferir'}</span>
-    <span style="font-size:.78rem;color:#66757d">${a.contrato ? 'contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</span>
-    <h3>${esc(a.titulo)}</h3>${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
-    ${a.documentos ? `<div class="r">Documento</div><p>${esc(a.documentos)}</p>` : ''}${a.trecho ? `<div class="r">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
-    ${a.impacto ? `<div class="r">Impacto</div><p>${esc(a.impacto)}</p>` : ''}${a.risco_controle ? `<div class="r">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
-    ${a.liga_passado === 'sim' && a.ligacao ? `<div class="r">Ligação com o passado</div><p>${esc(a.ligacao)}</p>` : ''}${a.sei_contrato ? `<div class="r">Processo SEI</div><p>Contrato: ${esc(a.sei_contrato)}${a.sei_instrumento ? ' · ' + esc(a.instrumento_citado) + ': ' + esc(a.sei_instrumento) : ''}</p>` : ''}
-    ${a.sugestao && a.setor !== 'CCGP' ? `<div class="r">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}</div>`).join('')).join('');
-  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${css}</style></head><body><main>
-    <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.</div>
-    <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa.
+    .aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
+    @page{size:A4 ${v('op-folha') || 'landscape'};margin:12mm}@media print{body{background:#fff}main{max-width:none;padding:0}.a{border-color:#bbb}tr{page-break-inside:avoid}thead{display:table-header-group}}`;
+  const sec = [];
+  if (op('op-resumo')) sec.push(`<div class="tiles"><div class="tile"><b>${l.length}</b><span>achados</span></div><div class="tile"><b>${alta}</b><span>de gravidade alta</span></div><div class="tile"><b>${conf}</b><span>já conferidos (procedem)</span></div><div class="tile"><b>${new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size}</b><span>contratos com achados</span></div></div>`);
+  if (op('op-matriz')) sec.push(`<h2>Achados por setor e órgão de controle</h2>${htmlMatriz(l, false)}`);
+  if (op('op-barras')) sec.push(`<h2>Achados por unidade</h2>${htmlBarras(l, false)}`);
+  if (op('op-contratos')) sec.push(`<h2>Contratos com achados</h2>${htmlTabContratos(l)}`);
+  if (op('op-tabela')) sec.push(`<h2>Tabela de achados <small style="font-weight:400;color:#66757d">(${l.length})</small></h2>${htmlTabelaAchados(l, cols)}`);
+  if (op('op-detalhe')) sec.push(htmlDetalhe(l, v('op-agrupar') || 'unidade'));
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><main>
+    <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
+    <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa. Nos contratos anteriores e nos estendidos (prazo vencido), só entram os achados que ligam ao passado.
     Não se afirma que a inconsistência tenha causado dano ou tenha passado sem correção posterior: o relatório mostra o que consta nos documentos.</div>
-    <div class="tiles"><div class="tile"><b>${lista.length}</b><span>achados</span></div><div class="tile"><b>${lista.filter(a => a.gravidade === 'alta').length}</b><span>de gravidade alta</span></div>
-      <div class="tile"><b>${lista.filter(a => a.conferido === 'sim').length}</b><span>já conferidos (procedem)</span></div><div class="tile"><b>${unidadesOrd.length}</b><span>unidades com achados</span></div></div>
-    <h2>Por setor responsável</h2><table><thead><tr><th>Setor</th><th class="n">Achados</th><th class="n">Alta</th><th class="n">Conferidos</th></tr></thead><tbody>${tabSetor}</tbody></table>
-    <h2>Por unidade</h2><table><thead><tr><th>Unidade</th><th class="n">Achados</th><th class="n">Alta</th><th class="n">Conferidos</th></tr></thead><tbody>${tabUn}</tbody></table>
-    <h2>Por tipo</h2><table><thead><tr><th>Tipo</th><th class="n">Achados</th></tr></thead><tbody>${tabTipo}</tbody></table>
-    ${corpo}<p class="sub" style="margin-top:30px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' }), a = document.createElement('a');
+    ${sec.join('')}<p class="sub" style="margin-top:26px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
+}
+function imprimirRx() {
+  const html = montarRelatorio(), f = document.createElement('iframe');
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
+  f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { baixarRx(); } setTimeout(() => f.remove(), 120000); };
+  document.body.appendChild(f); f.srcdoc = html;
+}
+function baixarRx() {
+  const blob = new Blob([montarRelatorio()], { type: 'text/html;charset=utf-8' }), a = document.createElement('a');
   a.href = URL.createObjectURL(blob); a.download = 'Raio-X_documental_' + new Date().toISOString().slice(0, 10) + '.html'; document.body.appendChild(a); a.click(); a.remove();
 }
 
