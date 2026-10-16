@@ -152,8 +152,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.7';
-const VERSAO_RAIOX_DATA = '16/10/2026 09:00';
+const VERSAO_RAIOX = 'v0.9';
+const VERSAO_RAIOX_DATA = '16/10/2026 15:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -656,7 +656,7 @@ const COLUNAS = {
   impacto: ['Impacto', a => a.impacto],
   sugestao: ['Sugestão', a => a.setor === 'CCGP' ? '' : a.sugestao]
 };
-const COLUNAS_PADRAO = ['gravidade', 'unidade', 'contrato', 'sei', 'titulo', 'setor', 'orgaos'];
+const COLUNAS_PADRAO = ['gravidade', 'unidade', 'contrato', 'sei', 'titulo', 'tipo', 'setor', 'orgaos', 'documentos', 'impacto', 'sugestao'];
 
 function htmlMatriz(lista, clicavel) {
   if (!lista.length) return '<div class="vazio">Sem achados neste filtro.</div>';
@@ -695,6 +695,31 @@ function htmlTabelaAchados(lista, cols) {
   const cab = cols.map(c => `<th>${esc(COLUNAS[c][0])}</th>`).join('');
   const ord = lista.slice().sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
   return `<table class="rx-tab"><thead><tr>${cab}</tr></thead><tbody>${ord.map(a => `<tr>${cols.map(c => `<td>${COLUNAS[c][2] ? COLUNAS[c][2](a) : esc(COLUNAS[c][1](a))}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
+}
+
+// Tabela de achados com filtros (funciona dentro do relatório, no link e no arquivo baixado)
+const SCRIPT_FILTRO_REL = '(function(){var t=document.getElementById("tab-ach");if(!t)return;var rows=[].slice.call(t.tBodies[0].rows);var ids=["f-g","f-u","f-s","f-o","f-t"];' +
+  'function v(i){var e=document.getElementById(i);return e?e.value:"";}' +
+  'function aplicar(){var q=v("f-q").toLowerCase(),n=0;rows.forEach(function(r){var d=r.dataset;var ok=(!v("f-g")||d.g===v("f-g"))&&(!v("f-u")||d.u===v("f-u"))&&(!v("f-s")||d.s===v("f-s"))&&(!v("f-t")||d.t===v("f-t"))&&(!v("f-o")||(d.o||"").split("|").indexOf(v("f-o"))>-1)&&(!q||d.x.indexOf(q)>-1);r.style.display=ok?"":"none";if(ok)n++;});document.getElementById("f-n").textContent=n;}' +
+  'ids.forEach(function(i){var e=document.getElementById(i);if(e)e.addEventListener("change",aplicar);});document.getElementById("f-q").addEventListener("input",aplicar);' +
+  'document.getElementById("f-limpar").addEventListener("click",function(){ids.concat("f-q").forEach(function(i){var e=document.getElementById(i);if(e)e.value="";});aplicar();});' +
+  'var rk={alta:0,media:1,baixa:2},dir={};[].slice.call(t.tHead.rows[0].cells).forEach(function(th,c){th.title="Clique para ordenar";th.addEventListener("click",function(){dir[c]=!dir[c];var s=dir[c]?1:-1;rows.sort(function(a,b){var x=a.cells[c].textContent.trim().toLowerCase(),y=b.cells[c].textContent.trim().toLowerCase();if(x in rk&&y in rk)return(rk[x]-rk[y])*s;return x.localeCompare(y,"pt-BR")*s;});rows.forEach(function(r){t.tBodies[0].appendChild(r);});});});})();';
+function htmlTabelaAchadosFiltravel(lista, cols) {
+  if (!cols.length) return '<div class="vazio">Escolha ao menos uma coluna.</div>';
+  const ord = lista.slice().sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
+  const uniq = f => [...new Set(ord.map(f).filter(Boolean))].sort((p, q) => String(p).localeCompare(String(q), 'pt-BR'));
+  const orgsDe = a => { const o = lerOrgaos(a); return o.length ? o : [SEM_ORGAO]; };
+  const sel = (id, rot, vals) => `<div><label for="${id}">${rot}</label><select id="${id}"><option value="">Todos</option>${vals.map(x => `<option>${esc(x)}</option>`).join('')}</select></div>`;
+  const barra = `<div class="filtros-rel">${sel('f-g', 'Gravidade', uniq(a => a.gravidade))}${sel('f-u', 'Unidade', uniq(a => a.unidade))}${sel('f-s', 'Setor', uniq(a => a.setor || 'Sem setor'))}${sel('f-o', 'Órgão', [...new Set(ord.flatMap(orgsDe))].sort((p, q) => p.localeCompare(q, 'pt-BR')))}${sel('f-t', 'Tipo', uniq(a => a.tipo))}
+    <div><label for="f-q">Buscar no texto</label><input id="f-q" type="search" placeholder="palavra ou número"></div>
+    <div><label>&nbsp;</label><button type="button" id="f-limpar" class="btn-limpar">Limpar filtros</button></div></div>
+    <div class="sub no-print">Mostrando <b id="f-n">${ord.length}</b> de ${ord.length} achados. Clique no título de uma coluna para ordenar. O que ficar na tela é o que sai na impressão.</div>`;
+  const cab = cols.map(c => `<th>${esc(COLUNAS[c][0])}</th>`).join('');
+  const linhas = ord.map(a => {
+    const x = [a.titulo, a.unidade, a.contrato, a.processo, a.sei_contrato, a.sei_instrumento, a.documentos, a.impacto, a.sugestao, a.setor, a.orgaos, a.tipo].join(' ').toLowerCase();
+    return `<tr data-g="${esc(a.gravidade)}" data-u="${esc(a.unidade)}" data-s="${esc(a.setor || 'Sem setor')}" data-t="${esc(a.tipo)}" data-o="${esc(orgsDe(a).join('|'))}" data-x="${esc(x)}">${cols.map(c => `<td>${COLUNAS[c][2] ? COLUNAS[c][2](a) : esc(COLUNAS[c][1](a))}</td>`).join('')}</tr>`;
+  }).join('');
+  return `${barra}<table class="rx-tab" id="tab-ach"><thead><tr>${cab}</tr></thead><tbody>${linhas}</tbody></table><script>${SCRIPT_FILTRO_REL}<\/script>`;
 }
 
 function htmlDetalhe(lista, agrupar) {
@@ -793,7 +818,8 @@ function montarRelatorio() {
     .a h3{font-size:.93rem;margin:4px 0}.r{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#66757d;margin-top:7px}.a p{margin:2px 0;font-size:.84rem;line-height:1.5}
     blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.8rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
     .s.alta{background:#f8d7da;color:#8e1628}.s.media{background:#fff4d6;color:#664d03}.s.baixa{background:#e6ecef;color:#455a64}.e{background:#e6ecef;color:#455a64}.c{background:#d9f1e3;color:#0f5132}.p{background:#fff4d6;color:#664d03}
-    .aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
+    .intro{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #b45309;border-radius:8px;padding:6px 18px 10px;margin:14px 0}.intro p{margin:7px 0;font-size:.86rem;line-height:1.55}.aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
+    .filtros-rel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}.filtros-rel label{display:block;font-size:.68rem;font-weight:700;text-transform:uppercase;color:#66757d;margin-bottom:2px}.filtros-rel select,.filtros-rel input{width:100%;padding:7px;font-size:.85rem;border:1px solid #c9c2b6;border-radius:6px;background:#fff;box-sizing:border-box}.btn-limpar{padding:7px 12px;border:1px solid #c9c2b6;border-radius:6px;background:#f4f2ee;cursor:pointer;font-size:.85rem}#tab-ach th{cursor:pointer}@media print{.filtros-rel,.no-print{display:none}}
     @media screen and (max-width:700px){main{padding:14px 10px}table{display:block;overflow-x:auto;max-width:100%}}.barra{position:sticky;top:0;background:#212529;padding:8px 14px;text-align:right;z-index:5}.barra button{background:#d97706;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:700;font-size:.9rem}@media print{.barra{display:none}}
     @page{size:A4 ${v('op-folha') || 'landscape'};margin:12mm}@media print{body{background:#fff}main{max-width:none;padding:0}.a{border-color:#bbb}tr{page-break-inside:avoid}thead{display:table-header-group}}`;
   const sec = [];
@@ -801,12 +827,22 @@ function montarRelatorio() {
   if (op('op-matriz')) sec.push(`<h2>Achados por setor e órgão de controle</h2>${htmlMatriz(l, false)}`);
   if (op('op-barras')) sec.push(`<h2>Achados por unidade</h2>${htmlBarras(l, false)}`);
   if (op('op-contratos')) sec.push(`<h2>Contratos com achados</h2>${htmlTabContratos(l)}`);
-  if (op('op-tabela')) sec.push(`<h2>Tabela de achados <small style="font-weight:400;color:#66757d">(${l.length})</small></h2>${htmlTabelaAchados(l, cols)}`);
+  if (op('op-tabela')) sec.push(`<h2>Tabela de achados</h2>${htmlTabelaAchadosFiltravel(l, cols)}`);
   if (op('op-detalhe')) sec.push(htmlDetalhe(l, v('op-agrupar') || 'unidade'));
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><div class="barra"><button onclick="window.print()">Salvar em PDF / imprimir</button></div><main>
     <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
-    <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa. Nos contratos anteriores e nos estendidos (prazo vencido), só entram os achados que ligam ao passado.
-    Não se afirma que a inconsistência tenha causado dano ou tenha passado sem correção posterior: o relatório mostra o que consta nos documentos.</div>
+    <div class="intro"><h2 style="margin-top:6px">Como ler este relatório</h2>
+      <p><b>O que é.</b> O Raio-X é uma ferramenta da DGMCG/GGPCG que lê os contratos de gestão, os aditivos e os processos SEI da nossa base e aponta <b>achados</b>: pontos dos documentos que merecem atenção, porque um órgão de controle poderia questioná-los.</p>
+      <p><b>O que é um achado.</b> É um ponto em que os documentos se contradizem, estão incompletos ou fogem de uma regra. Por exemplo: datas que não batem, valores diferentes entre documentos, prorrogação sem o ato anterior, intervalo sem cobertura entre duas vigências. Cada achado traz o trecho do documento onde aparece, o impacto, o risco perante os órgãos de controle e uma sugestão de correção.</p>
+      <p><b>O que o relatório não é.</b> Não é auditoria nem conclusão. Ele <b>não afirma</b> que houve dano, irregularidade ou culpa, nem que o ponto deixou de ser corrigido depois: mostra apenas o que consta nos documentos lidos. Também não avalia pessoas; nomes só aparecem se estiverem no trecho citado.</p>
+      <p><b>Como foi feito.</b> A leitura combina verificações automáticas e inteligência artificial. Dados pessoais são mascarados antes do envio à IA. O trecho que cada achado cita é conferido contra o texto do documento.</p>
+      <p><b>Conferido ou a conferir.</b> A maior parte dos achados foi identificada automaticamente e <b>ainda não foi checada por uma pessoa</b> (etiqueta “a conferir”). Só os marcados “conferido: procede” foram validados pela equipe. Os que a equipe julgou improcedentes não aparecem aqui.</p>
+      <p><b>Gravidade.</b> <b>Alta</b>: o ponto pode afetar valor, vigência ou validade do contrato. <b>Média</b> ou <b>baixa</b>: questão de forma.</p>
+      <p><b>Setor e órgão.</b> O setor é a área da SES que pode resolver o ponto. O órgão é quem poderia questioná-lo. A matriz cruza os dois e só mostra os órgãos que aparecem nos achados.</p>
+      <p><b>Quais contratos entram.</b> Os que estão em vigor, incluindo os emergenciais, termos de compromisso, prorrogações excepcionais e TAC. Do contrato anterior e dos que seguem em operação com o prazo vencido, só entram os achados que ligam ao passado. Encerrados ficam de fora.</p>
+      <p><b>Limite importante.</b> A leitura depende dos documentos que estão na base. Contrato sem achado pode ser contrato cujos documentos ainda não foram lidos; a ausência de achado não prova que não há problema.</p>
+      <p><b>O que pedimos.</b> Confira os achados do seu setor, veja o trecho citado e informe se o ponto procede, se já foi resolvido ou se há explicação nos autos.</p>
+      <p class="sub">Uso interno.</p></div>
     ${sec.join('')}<p class="sub" style="margin-top:26px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
 }
 function imprimirRx() {
