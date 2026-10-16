@@ -152,8 +152,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.5';
-const VERSAO_RAIOX_DATA = '16/10/2026 00:10';
+const VERSAO_RAIOX = 'v0.7';
+const VERSAO_RAIOX_DATA = '16/10/2026 09:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -414,6 +414,7 @@ async function filaIniciar() {
   painelFila();
 }
 async function filaParar() { if (!confirm('Parar a leitura em segundo plano? O que já foi lido fica salvo.')) return; await api('raiox/fila-parar', {}); painelFila(); }
+async function filaReenviarAviso() { const r = await api('raiox/fila-estado', { reenviar_aviso: true }); if (r.ok === false) alert(r.erro); painelFila(); }
 async function filaRetomar() { const r = await api('raiox/fila-retomar', {}); if (r.ok === false) alert(r.erro); painelFila(); }
 const fmtMin = m => { m = Number(m) || 0; if (m < 1) return Math.round(m * 60) + ' s'; if (m < 90) return (Math.round(m * 10) / 10).toLocaleString('pt-BR') + ' min'; return (Math.floor(m / 60)) + ' h ' + Math.round(m % 60) + ' min'; };
 let _metTodas = false;
@@ -451,11 +452,13 @@ async function painelFila() {
       ${r.totais ? '<br>Decorrido: ' + fmtMin(r.totais.decorrido_min) + (r.totais.eta_min !== null ? ' · falta cerca de ' + fmtMin(r.totais.eta_min) + ' (estimativa)' : '') + ' · ritmo: ' + fmt(r.totais.chars_por_min) + ' caracteres/min' : ''}`;
     _timerFila = setTimeout(() => { if (abaAtual === 'rodar') painelFila(); }, 20000);
   } else if (j.pausado) {
-    el2.innerHTML = `<b style="color:var(--bordo)">Parada.</b> ${esc(j.pausado)}<br>${esc(barra)}.
+    el2.innerHTML = `<b style="color:var(--bordo)">Parada.</b> ${esc(j.pausado)}<br>${esc(barra)}.${j.aviso ? '<br>E-mail de aviso: ' + esc(j.aviso) : ''}
       ${r.pendentes + r.andando + r.erros ? '<button class="btn btn-sm btn-principal" onclick="filaRetomar()">Continuar</button>' : ''}`;
   } else {
     el2.innerHTML = `<b>Última rodada terminou</b> em ${esc(quando(j.concluido_em))}. ${esc(barra)}. Achados gravados: ${fmt(j.achados_gravados)}.
-      ${(r.com_erro || []).length ? '<br>Não lidos: ' + r.com_erro.map(e => esc(e.rotulo)).join('; ') : ''}`;
+      ${(r.com_erro || []).length ? '<br>Não lidos: ' + r.com_erro.map(e => esc(e.rotulo)).join('; ') : ''}
+      <br>E-mail de aviso: ${j.aviso ? (j.aviso.indexOf('NÃO') === 0 ? '<b style="color:var(--bordo)">' + esc(j.aviso) + '</b>' : esc(j.aviso)) : 'sem registro (rodada anterior a esta versão)'}
+      <button class="btn btn-sm btn-claro" onclick="filaReenviarAviso()">Enviar o aviso de novo</button>`;
   }
   painelMetricas();
 }
@@ -767,7 +770,11 @@ async function telaRx() {
         <div><label>Folha</label><select id="op-folha"><option value="landscape">Paisagem (melhor para tabelas)</option><option value="portrait">Retrato</option></select></div>
       </div>
       <div class="acoes"><button class="btn btn-principal" onclick="imprimirRx()"><i class="ti ti-printer"></i> Imprimir</button>
+        <button class="btn btn-claro" onclick="salvarPdfRx()"><i class="ti ti-file-type-pdf"></i> Salvar em PDF</button>
         <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button></div>
+      <div class="filtros" style="margin-top:12px;"><div><label>Link para abrir em qualquer aparelho vale por</label><select id="op-dias"><option value="1">1 dia</option><option value="7">7 dias</option><option value="15" selected>15 dias</option><option value="30">30 dias</option></select></div></div>
+      <div class="acoes"><button class="btn btn-principal" id="bt-link" onclick="criarLinkRx()"><i class="ti ti-link"></i> Criar link para compartilhar</button></div>
+      <div id="rx-link" style="margin-top:8px;"></div>
       <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
     </div>`;
   pintarRx();
@@ -787,6 +794,7 @@ function montarRelatorio() {
     blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.8rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
     .s.alta{background:#f8d7da;color:#8e1628}.s.media{background:#fff4d6;color:#664d03}.s.baixa{background:#e6ecef;color:#455a64}.e{background:#e6ecef;color:#455a64}.c{background:#d9f1e3;color:#0f5132}.p{background:#fff4d6;color:#664d03}
     .aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
+    @media screen and (max-width:700px){main{padding:14px 10px}table{display:block;overflow-x:auto;max-width:100%}}.barra{position:sticky;top:0;background:#212529;padding:8px 14px;text-align:right;z-index:5}.barra button{background:#d97706;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:700;font-size:.9rem}@media print{.barra{display:none}}
     @page{size:A4 ${v('op-folha') || 'landscape'};margin:12mm}@media print{body{background:#fff}main{max-width:none;padding:0}.a{border-color:#bbb}tr{page-break-inside:avoid}thead{display:table-header-group}}`;
   const sec = [];
   if (op('op-resumo')) sec.push(`<div class="tiles"><div class="tile"><b>${l.length}</b><span>achados</span></div><div class="tile"><b>${alta}</b><span>de gravidade alta</span></div><div class="tile"><b>${conf}</b><span>já conferidos (procedem)</span></div><div class="tile"><b>${new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size}</b><span>contratos com achados</span></div></div>`);
@@ -795,7 +803,7 @@ function montarRelatorio() {
   if (op('op-contratos')) sec.push(`<h2>Contratos com achados</h2>${htmlTabContratos(l)}`);
   if (op('op-tabela')) sec.push(`<h2>Tabela de achados <small style="font-weight:400;color:#66757d">(${l.length})</small></h2>${htmlTabelaAchados(l, cols)}`);
   if (op('op-detalhe')) sec.push(htmlDetalhe(l, v('op-agrupar') || 'unidade'));
-  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><main>
+  return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><div class="barra"><button onclick="window.print()">Salvar em PDF / imprimir</button></div><main>
     <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
     <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa. Nos contratos anteriores e nos estendidos (prazo vencido), só entram os achados que ligam ao passado.
     Não se afirma que a inconsistência tenha causado dano ou tenha passado sem correção posterior: o relatório mostra o que consta nos documentos.</div>
@@ -806,6 +814,22 @@ function imprimirRx() {
   f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
   f.onload = () => { try { f.contentWindow.focus(); f.contentWindow.print(); } catch (e) { baixarRx(); } setTimeout(() => f.remove(), 120000); };
   document.body.appendChild(f); f.srcdoc = html;
+}
+function salvarPdfRx() {
+  alert('Na janela que vai abrir, escolha "Salvar como PDF" no lugar da impressora. No celular: Imprimir > Salvar como PDF.');
+  imprimirRx();
+}
+async function criarLinkRx() {
+  const bt = $('bt-link'), box = $('rx-link'); bt.disabled = true; box.innerHTML = '<span class="dica">Criando o link…</span>';
+  const res = await api('raiox/relatorio-link', { html: montarRelatorio(), dias: Number(($('op-dias') || {}).value) || 15 }, 180000);
+  bt.disabled = false;
+  if (!res.ok) { box.innerHTML = '<div class="aviso">' + esc(res.erro || 'Não consegui criar o link.') + '</div>'; return; }
+  const url = API_URL + '?rel=' + res.codigo;
+  box.innerHTML = '<div class="aviso">Link criado. Vale até ' + esc(res.vence_em) + '. Quem tiver o link abre, sem login. Só envie para quem pode ver.<br><input id="rx-url" readonly value="' + esc(url) + '" style="width:100%;margin-top:6px" onclick="this.select()"><div class="acoes"><button class="btn btn-sm btn-principal" onclick="copiarLinkRx()">Copiar</button> <a class="btn btn-sm btn-claro" href="' + esc(url) + '" target="_blank" rel="noopener">Abrir</a></div></div>';
+}
+function copiarLinkRx() {
+  const i = $('rx-url'); i.select();
+  try { navigator.clipboard.writeText(i.value); } catch (e) { document.execCommand('copy'); }
 }
 function baixarRx() {
   const blob = new Blob([montarRelatorio()], { type: 'text/html;charset=utf-8' }), a = document.createElement('a');
