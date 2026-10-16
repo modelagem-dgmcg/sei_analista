@@ -152,8 +152,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.3';
-const VERSAO_RAIOX_DATA = '15/10/2026 12:40';
+const VERSAO_RAIOX = 'v0.4';
+const VERSAO_RAIOX_DATA = '15/10/2026 23:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -302,8 +302,18 @@ function docsMascarar_(texto, nomesExtra) {
 // Setores que podem receber um achado. Para incluir ou mudar um setor, edite esta lista (nome e quando ele é o responsável).
 const SETORES = [
   { nome: 'GGPCG', quando: 'instrumentos contratuais e aditivos, numeração, datas, vigência, cláusulas, partes e cadastro dos documentos' },
-  { nome: 'SFCG', quando: 'valores, repasses, somas, cálculos e demais questões financeiras' }
+  { nome: 'SFCG', quando: 'valores, repasses, somas, cálculos e demais questões financeiras' },
+  { nome: 'GMCG', quando: 'metas, indicadores, produção e desempenho da unidade' },
+  { nome: 'GJCG', quando: 'base legal, validade jurídica do instrumento, remissão a norma ou anexo que não existe' },
+  { nome: 'GGCCG', quando: 'custeio, rubricas, troca de rubrica, investimento, rateio e custos' },
+  { nome: 'GAOCG', quando: 'dotação orçamentária, empenho, provisão e execução orçamentária' },
+  { nome: 'GTTRCG', quando: 'termo de referência, objeto e escopo do serviço contratado' },
+  { nome: 'Transparência, Integridade e Risco', quando: 'transparência, programa de integridade e riscos do contrato' },
+  { nome: 'CTAI', quando: 'pontos que dizem respeito à CTAI' },
+  { nome: 'CCGP', quando: 'pontos que dizem respeito ao CCGP; só relate o ponto, sem sugerir correção' }
 ];
+// Órgãos de controle que a IA pode citar. Mantenha igual a RAIOX_ORGAOS de Raiox.gs. A matriz da diretoria só mostra os que aparecem.
+const ORGAOS = ['TCE-PE', 'MPCO', 'MPPE', 'TJPE', 'CGE-PE', 'ALEPE', 'Conselho Estadual de Saúde', 'Federal (TCU/CGU/DENASUS)'];
 const nomesSetores = () => SETORES.map(s => s.nome);
 const setorValido = s => { const t = String(s || '').trim().toUpperCase(); return nomesSetores().find(n => n.toUpperCase() === t) || ''; };
 
@@ -317,13 +327,16 @@ Regras:
 - "impacto" é a consequência concreta se a inconsistência for real (financeira, jurídica ou operacional), em 1 ou 2 frases.
 - "risco_controle" diz como um órgão de controle (TCE-PE, MPPE, CGE-PE) poderia ver o ponto, em 1 frase. Não cite artigo de lei nem acórdão.
 - "sugestao" é o que a equipe pode fazer para sanar, em 1 frase.
+- "liga_passado": "sim" só se o ponto envolve contrato ou vigência anterior, período já encerrado ou ajuste anterior que o material cita (por exemplo lacuna entre vigências, prorrogação sem o ato anterior, valor ou cláusula herdados de contrato anterior). Caso contrário, deixe vazio. "ligacao" diz em 1 frase qual é essa ligação.
+- "orgaos": lista dos órgãos que provavelmente se interessariam pelo ponto, escolhidos entre: ${ORGAOS.join(', ')}. Use só os que realmente se aplicam; pode ser lista vazia.
+- Se o setor for CCGP, deixe "sugestao" vazia: apenas relate o ponto.
 - "gravidade": alta (afeta valor, vigência ou validade), media ou baixa (formal).
 - "tipo": valor, data, vigencia, parte, clausula, numero, unidade, objeto, formalizacao, processo ou outro.
 - "setor": o setor que deve resolver o ponto, escolhido entre: ${SETORES.map(s => s.nome + ' (' + s.quando + ')').join('; ')}. Se nenhum servir, deixe vazio.
 - Português do Brasil, linguagem simples e direta.
 
 Responda só com JSON neste formato:
-{"achados":[{"titulo":"","descricao":"","documento":"nome do documento onde está","trecho":"","gravidade":"","tipo":"","setor":"","impacto":"","risco_controle":"","sugestao":""}]}
+{"achados":[{"titulo":"","descricao":"","documento":"nome do documento onde está","trecho":"","gravidade":"","tipo":"","setor":"","impacto":"","risco_controle":"","sugestao":"","liga_passado":"","ligacao":"","orgaos":[]}]}
 
 MATERIAL:
 ${texto}`;
@@ -331,22 +344,35 @@ ${texto}`;
 const normT = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
 // ==================== TELA: RODAR ====================
-async function telaRodar() {
-  $('conteudo').innerHTML = carregando('Buscando os contratos e processos da base...');
-  const r = await api('raiox/escopos', {});
-  if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
-  escopos = r.escopos;
+let incluirEnc = false, infoAtivos = {}, msgLista = '';
+async function telaRodar(atualizar) {
+  $('conteudo').innerHTML = carregando(atualizar ? 'Atualizando a lista de contratos a partir da planilha...' : 'Buscando os contratos e processos da base...');
+  const r = await api('raiox/escopos', { incluir_encerrados: incluirEnc, atualizar_lista: atualizar === true });
+  if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
+  escopos = r.escopos; infoAtivos = r.ativos || {};
+  msgLista = r.atualizacao ? `Lista atualizada: ${r.atualizacao.ativos} dentro do prazo, ${r.atualizacao.estendidos} estendidos, ${r.atualizacao.anteriores} contrato(s) anterior(es), ${r.atualizacao.instrumentos} instrumentos.` : '';
   desenharRodar(r.total_documentos);
 }
+function alternarEncerrados(v) { incluirEnc = v; telaRodar(false); }
 function desenharRodar(totalDocs) {
   const c = escopos.filter(e => e.tipo === 'contrato'), p = escopos.filter(e => e.tipo === 'processo');
   const feitos = escopos.filter(e => e.estado === 'concluido').length;
   const linhas = escopos.map(e => `<tr>
-      <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
+      <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)} ${e.papel === 'anterior' ? '<span class="etq azul">anterior</span>' : e.papel === 'estendido' ? '<span class="etq amarelo">estendido</span>' : e.papel === 'ativo' ? '' : '<span class="etq">encerrado</span>'}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
       <td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td>
       <td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
       <td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${rodando ? 'disabled' : ''}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
+  const ia = infoAtivos || {};
   $('conteudo').innerHTML = `
+    <div class="bloco"><h2><i class="ti ti-file-certificate"></i> Contratos ativos <small>${ia.lista_vazia ? 'lista ainda não carregada' : (ia.ativos + ' dentro do prazo · ' + ia.estendidos + ' estendidos (prazo vencido) · ' + ia.anteriores + ' anterior(es)')}</small></h2>
+      <div class="dica">Por padrão o Raio-X lê só os contratos que não estão encerrados (vigentes, prorrogação excepcional, TAC, emergenciais e termos de compromisso) e, nos emergenciais e termos de compromisso, o contrato anterior da mesma unidade. Dos contratos anteriores e dos estendidos (com o prazo já vencido), os achados só aparecem quando ligam ao passado. A lista vem da planilha de contratos e fica guardada na base. ${ia.atualizado_em ? 'Atualizada em ' + new Date(ia.atualizado_em).toLocaleString('pt-BR') + '.' : ''}</div>
+      ${ia.lista_vazia ? '<div class="aviso">Sem a lista, o Raio-X mostra tudo o que existe na base. Clique em "Atualizar lista de contratos".</div>' : ''}
+      ${msgLista ? `<div class="dica"><b>${esc(msgLista)}</b></div>` : ''}
+      <div class="acoes" style="align-items:center;">
+        <button class="btn btn-claro" onclick="telaRodar(true)" ${rodando ? 'disabled' : ''}><i class="ti ti-refresh"></i> Atualizar lista de contratos</button>
+        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" ${incluirEnc ? 'checked' : ''} onchange="alternarEncerrados(this.checked)"> Incluir encerrados${!ia.lista_vazia && !incluirEnc && ia.ocultos ? ' (' + ia.ocultos + ' fora da lista)' : ''}</label>
+      </div>
+    </div>
     <div class="bloco"><h2><i class="ti ti-code"></i> 1. Conferências por código <small>(rápidas, sem IA)</small></h2>
       <div class="dica">Datas fora de ordem, vigência, sequência de aditivos, contrato ou unidade citados no texto, documento de outro contrato dentro de um processo. Substitui os achados por código anteriores.</div>
       <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar conferências por código</button></div>
@@ -382,7 +408,7 @@ async function filaIniciar() {
   const tipos = ['contrato', 'processo'].filter(t => $('bg-' + t).checked);
   if (!tipos.length) { alert('Marque contratos, processos ou os dois.'); return; }
   $('bg-iniciar').disabled = true;
-  const r = await api('raiox/fila-iniciar', { tipos, incluir_parciais: $('bg-parciais').checked, avisar_em: $('bg-email').value.trim() });
+  const r = await api('raiox/fila-iniciar', { tipos, incluir_encerrados: incluirEnc, incluir_parciais: $('bg-parciais').checked, avisar_em: $('bg-email').value.trim() });
   $('bg-iniciar').disabled = false;
   if (r.ok === false) { $('fila-estado').innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
   painelFila();
@@ -513,6 +539,7 @@ async function telaAchados() {
         <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
         <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
         <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
+        <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
       </div></div>
     <div id="lista-ach"></div>`;
   pintarAchados();
@@ -521,28 +548,33 @@ const ordemGrav = { alta: 0, media: 1, baixa: 2 };
 function filtrados() {
   const v = id => ($(id) || {}).value || '';
   const q = normT(v('f-q'));
-  return achados.filter(a => (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
+  const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
+  return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
     (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
 function pintarAchados() {
-  const lista = filtrados(); $('cont-ach').textContent = `${lista.length} de ${achados.length}`;
+  const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
   $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, true)).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
 }
 function cartao(a, comBotoes) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">trecho não encontrado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
-    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${a.origem === 'ia' ? 'IA' : 'código'}</span> <span class="etq azul">${esc(a.tipo)}</span> ${conf}${trechoAviso}
+    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${a.origem === 'ia' ? 'IA' : 'código'}</span> <span class="etq azul">${esc(a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">estendido (prazo vencido)</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">liga ao passado</span>' : ''}
       <span class="dica" style="margin-left:6px;">${esc(a.unidade)}${a.contrato ? ' · contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</span></div>
     <h3>${esc(a.titulo)}</h3>
     ${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
+    ${a.liga_passado === 'sim' && a.ligacao ? `<div class="rot">Ligação com o passado</div><p>${esc(a.ligacao)}</p>` : ''}
+    ${a.sei_contrato || a.sei_instrumento ? `<div class="rot">Processo SEI</div><p>${a.sei_contrato ? 'Contrato: ' + esc(a.sei_contrato) : ''}${a.sei_instrumento ? (a.sei_contrato ? ' · ' : '') + esc(a.instrumento_citado) + ': ' + esc(a.sei_instrumento) : ''}</p>` : (a.contrato || a.processo ? `<div class="rot">Processo SEI</div><p>SEI não informado na planilha de contratos</p>` : '')}
+    ${a.instrumentos ? `<details class="dica"><summary>Todos os processos SEI deste contrato</summary><p>${esc(a.instrumentos)}</p></details>` : ''}
+    ${a.orgaos ? `<div class="rot">Órgãos que podem se interessar</div><p>${a.orgaos.split(';').map(o => '<span class="etq">' + esc(o.trim()) + '</span>').join(' ')}</p>` : ''}
     ${a.documentos ? `<div class="rot">Documento</div><p>${esc(a.documentos)}</p>` : ''}
     ${a.trecho ? `<div class="rot">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
     ${a.impacto ? `<div class="rot">Impacto</div><p>${esc(a.impacto)}</p>` : ''}
     ${a.risco_controle ? `<div class="rot">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
-    ${a.sugestao ? `<div class="rot">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}
+    ${a.sugestao && a.setor !== 'CCGP' ? `<div class="rot">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}
     ${comBotoes ? `<div class="rot">Setor responsável</div><select style="max-width:220px" onchange="mudarSetor('${esc(a.id)}', this.value)"><option value="">Sem setor</option>${nomesSetores().map(n => `<option ${a.setor === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : (a.setor ? `<div class="r">Setor responsável</div><p>${esc(a.setor)}</p>` : '')}
     ${comBotoes ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','sim')"><i class="ti ti-check"></i> Procede</button>
       <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','nao')"><i class="ti ti-x"></i> Não procede</button>
@@ -567,7 +599,7 @@ async function telaRx() {
   $('conteudo').innerHTML = carregando('Montando o resumo...');
   const r = await api('raiox/achados', {});
   achados = r.achados || [];
-  const ativos = achados.filter(a => a.conferido !== 'nao');
+  const ativos = achados.filter(a => a.conferido !== 'nao' && !a.oculto_passado);
   const cont = (lista, campo) => { const m = {}; lista.forEach(a => { const k = a[campo] || '(sem)'; m[k] = (m[k] || 0) + 1; }); return m; };
   const porGrav = cont(ativos, 'gravidade'), conferidos = ativos.filter(a => a.conferido === 'sim').length;
   $('conteudo').innerHTML = `
@@ -587,7 +619,7 @@ async function telaRx() {
 }
 function gerarRelatorio() {
   const soConf = $('so-conf').checked;
-  let lista = achados.filter(a => a.conferido !== 'nao' && (!soConf || a.conferido === 'sim'));
+  let lista = achados.filter(a => a.conferido !== 'nao' && !a.oculto_passado && (!soConf || a.conferido === 'sim'));
   lista.sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
   const porSetorMapa = {}; lista.forEach(a => { const s = a.setor || 'Sem setor'; (porSetorMapa[s] = porSetorMapa[s] || []).push(a); });
   const agruparSetor = ($('agrupar') || {}).value === 'setor';
@@ -616,7 +648,8 @@ function gerarRelatorio() {
     <h3>${esc(a.titulo)}</h3>${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
     ${a.documentos ? `<div class="r">Documento</div><p>${esc(a.documentos)}</p>` : ''}${a.trecho ? `<div class="r">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
     ${a.impacto ? `<div class="r">Impacto</div><p>${esc(a.impacto)}</p>` : ''}${a.risco_controle ? `<div class="r">Risco perante os órgãos de controle</div><p>${esc(a.risco_controle)}</p>` : ''}
-    ${a.sugestao ? `<div class="r">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}</div>`).join('')).join('');
+    ${a.liga_passado === 'sim' && a.ligacao ? `<div class="r">Ligação com o passado</div><p>${esc(a.ligacao)}</p>` : ''}${a.sei_contrato ? `<div class="r">Processo SEI</div><p>Contrato: ${esc(a.sei_contrato)}${a.sei_instrumento ? ' · ' + esc(a.instrumento_citado) + ': ' + esc(a.sei_instrumento) : ''}</p>` : ''}
+    ${a.sugestao && a.setor !== 'CCGP' ? `<div class="r">Sugestão</div><p>${esc(a.sugestao)}</p>` : ''}</div>`).join('')).join('');
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${css}</style></head><body><main>
     <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.</div>
     <div class="aviso">Uso interno. Os achados apontam inconsistências nos documentos e processos, não em pessoas. Itens "a conferir" foram identificados por código ou por IA e ainda não foram checados por uma pessoa.
