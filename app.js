@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.6';
-const VERSAO_APP_DATA = '14/10/2026 16:00';
+const VERSAO_APP = 'v26.11';
+const VERSAO_APP_DATA = '19/10/2026 13:50';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -647,6 +647,7 @@ async function renderDashboard(caixa = 'entrada') {
   await atualizarContagensSidebar();
   const abasHtml = `
     <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; border-bottom:1px solid #dee2e6; padding-bottom:12px;">
+      <button class="btn btn-sm btn-secondary" onclick="showView('novo')"><i class="ti ti-file-import"></i> Importar Processo</button>
       <button class="btn btn-sm ${caixa === 'panorama' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','panorama')"><i class="ti ti-layout-dashboard"></i> Painel Geral</button>
       <button class="btn btn-sm ${caixa === 'entrada' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','entrada')"><i class="ti ti-inbox"></i> Caixa de Entrada</button>
       <button class="btn btn-sm ${caixa === 'andamento' ? 'btn-primary' : 'btn-secondary'}" onclick="showView('dashboard','andamento')"><i class="ti ti-loader"></i> Em Andamento</button>
@@ -925,8 +926,8 @@ async function assumirProcesso(e, id) {
   e.stopPropagation();
   const res = await api('processos/atualizar-status', { id, status: 'Em Análise' });
   if (!res.ok) { alert('Não foi possível assumir: ' + (res.erro || 'erro desconhecido')); return; }
-  mostrarToast('Processo assumido. Ele está agora em Andamento.');
-  showView('dashboard', 'andamento');
+  mostrarToast('Processo assumido. Ele passou para Em Andamento.');
+  showView('dashboard', 'entrada');   // continua na caixa em que você estava; só atualiza a lista
 }
 
 // ==================== BOTÕES DE FLUXO DE STATUS (dentro do processo) ====================
@@ -1311,6 +1312,10 @@ async function salvarNovoProcesso() {
     if (btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-device-floppy"></i> Criar Processo na Bancada'; }
     return;
   }
+  // Quem importa o processo já está com ele: ele nasce em Andamento. A Caixa de Entrada fica
+  // para o que chega de outro usuário.
+  try { await api('processos/atualizar-status', { id: res.processo.id, status: 'Em Análise' }); res.processo.status = 'Em Análise'; }
+  catch (e) { /* se falhar, o processo continua na Entrada e dá para iniciar a análise por lá */ }
   if (_arquivoPrePreenchido && _arquivoPrePreenchido.length) {
     processoAtual = res.processo;
     for (let i = 0; i < _arquivoPrePreenchido.length; i++) {
@@ -1514,45 +1519,29 @@ async function abrirProcesso(identificador) {
     <!-- 1. PAINEL DE CHECAGEM -->
     <div style="background:#fff;border:1px solid #dee2e6;padding:20px;border-radius:8px;margin-bottom:16px;">
       <h3 style="font-size:1.1rem; color:var(--text-dark); margin-bottom:15px;"><i class="ti ti-microscope"></i> 1. Verificar Processo</h3>
-      <div class="fontes">
-        <div class="fonte ligada" id="card-docs">
-          <span class="fonte-num" id="fn-docs">1</span>
-          <div class="fonte-corpo">
-            <div class="fonte-tit">Documentos anexados agora <span class="fonte-chip">Sempre ativo</span></div>
-            <div class="fonte-desc">Lê tudo o que está neste processo, refaz as contas e aponta inconsistências.</div>
-            <div class="fonte-estado" id="fe-docs"></div>
-          </div>
-          <div class="fonte-barra"></div>
-        </div>
-        <div class="fonte ligada" id="card-drive" role="switch" aria-checked="true" tabindex="0" onclick="toggleFonte('drive')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleFonte('drive');}">
-          <span class="fonte-num" id="fn-drive">2</span>
-          <input type="checkbox" id="chk-historico-unidade" checked style="display:none;">
-          <div class="fonte-corpo">
-            <div class="fonte-tit">Todos os documentos da unidade</div>
-            <div class="fonte-desc">Compara este processo com os documentos anteriores da unidade e aponta o que diverge. Confirme se os arquivos encontrados são da unidade certa.</div>
-            <div class="fonte-estado" id="fe-drive"></div>
-          </div>
-          <span class="fonte-sw" aria-hidden="true"></span>
-          <div class="fonte-barra"></div>
-        </div>
-        <div class="fonte" id="card-web" role="switch" aria-checked="false" tabindex="0" onclick="toggleFonte('web')" onkeydown="if(event.key===' '||event.key==='Enter'){event.preventDefault();toggleFonte('web');}">
-          <span class="fonte-num" id="fn-web">3</span>
-          <input type="checkbox" id="chk-legislacao-jurisprudencia" style="display:none;">
-          <div class="fonte-corpo">
-            <div class="fonte-tit">Busca em fontes abertas <span class="fonte-chip fonte-chip-exp">Experimental · mais lento</span></div>
-            <div class="fonte-desc">Pesquisa normas e decisões na internet: Diário Oficial, legislação federal e estadual, TCU, TCE-PE, TCM-PE, STJ, STF e AGU. A fonte pode estar desatualizada ou não ser oficial: confira antes de citar em parecer.</div>
-            <div class="fonte-estado" id="fe-web"></div>
-          </div>
-          <span class="fonte-sw" aria-hidden="true"></span>
-          <div class="fonte-barra"></div>
-        </div>
-      </div>
+      <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">Ao executar, o sistema confere os documentos deste processo e compara com os documentos anteriores da unidade. Cada fonte consultada aparece abaixo, com o resultado.</div>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-        <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-bolt"></i> Executar Checagem</button>
+        <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-search"></i> Executar Checagem</button>
+        <label class="opt-fonte-web" title="Pesquisa normas e decisões na internet (Diário Oficial, legislação, TCU, TCE-PE, STJ, STF, AGU). Mais lenta; a fonte pode estar desatualizada ou não ser oficial."><input type="checkbox" id="chk-legislacao-jurisprudencia" onchange="document.getElementById('card-web').style.display = this.checked ? '' : 'none'"> Incluir busca em fontes abertas <small>(mais lenta · confira antes de citar)</small></label>
         <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
         <button class="btn-aux" style="margin-left:auto;" onclick="abrirPainelEvidencias()" title="Abre os achados e as evidências numa segunda janela, para ler lado a lado com o processo"><i class="ti ti-columns"></i> Abrir em tela dupla</button>
       </div>
       <div id="progresso-checagem" class="hidden"></div>
+      <div class="fontes fontes-linhas" id="fontes-linhas" style="display:none;">
+        <div class="fonte" id="card-docs">
+          <span class="fonte-num" id="fn-docs">1</span>
+          <div class="fonte-corpo"><div class="fonte-tit">Documentos deste processo</div><div class="fonte-estado" id="fe-docs"></div></div>
+        </div>
+        <div class="fonte" id="card-drive">
+          <span class="fonte-num" id="fn-drive">2</span>
+          <input type="checkbox" id="chk-historico-unidade" checked style="display:none;">
+          <div class="fonte-corpo"><div class="fonte-tit">Documentos anteriores da unidade</div><div class="fonte-estado" id="fe-drive"></div></div>
+        </div>
+        <div class="fonte" id="card-web" style="display:none;">
+          <span class="fonte-num" id="fn-web">3</span>
+          <div class="fonte-corpo"><div class="fonte-tit">Fontes abertas <span class="fonte-chip fonte-chip-exp">Experimental</span></div><div class="fonte-estado" id="fe-web"></div></div>
+        </div>
+      </div>
       <div id="ia-status" style="margin-top:15px;"></div>
       <div id="painel-cards" style="margin-top:20px;"></div>
     </div>
@@ -1586,7 +1575,8 @@ async function abrirProcesso(identificador) {
       </div>
 
       <div id="aba-redigir" role="tabpanel" class="hidden">
-        <p class="assist-ajuda">Escolha o tipo de texto e diga sobre o que ele trata. O sistema monta um rascunho com o que leu nos documentos, e você revisa e edita aqui mesmo. <a href="#" onclick="usarExemploPedido(); return false;">Ver um exemplo</a></p>
+        <div class="assist-passo"><b>1</b> Peça um rascunho <span>ou, se já tem um texto pronto, pule para o passo 2 e cole nele.</span></div>
+        <p class="assist-ajuda">Escolha o tipo de texto e diga sobre o que ele trata. O sistema monta o rascunho com o que leu nos documentos. <a href="#" onclick="usarExemploPedido(); return false;">Ver um exemplo</a></p>
         <div class="assist-tipos" id="assist-tipos">
           ${['nota técnica', 'parecer técnico', 'despacho', 'ofício', 'resposta', 'relatório', 'e-mail', 'documento'].map(t => `<button type="button" class="assist-chip" data-tipo="${t}" onclick="selecionarTipoRedacao('${t}')">${t.charAt(0).toUpperCase() + t.slice(1)}</button>`).join('')}
         </div>
@@ -1597,11 +1587,12 @@ async function abrirProcesso(identificador) {
         </div>
         <div id="redacao-confirma-area"></div>
         <div id="redacao-notas"></div>
-        <label for="editor-final" class="assist-rotulo">Seu texto <span>Use o rascunho montado, escreva ou cole um texto seu. A revisão cruza o texto com o processo e aponta melhorias de mérito e consistência. A palavra final e a aprovação são sempre suas.</span></label>
+        <div class="assist-passo"><b>2</b> Revise e finalize</div>
+        <label for="editor-final" class="assist-rotulo">Seu texto <span>Edite o rascunho ou cole aqui um texto que você mesmo escreveu. A revisão compara o texto com o processo e com os achados da checagem. A decisão final é sempre sua.</span></label>
         <textarea id="editor-final" class="assist-editor" placeholder="O rascunho aparece aqui. Ou escreva/cole um texto seu, para ser revisado..."></textarea>
         <div class="assist-acoes">
-          <button class="btn btn-secondary" onclick="abrirCriarDocumento()"><i class="ti ti-file-plus"></i> Criar documento</button>
-          <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-search"></i> Executar Análise Completa</button>
+          <button class="btn btn-warning" onclick="rodarRevisaoFinal()"><i class="ti ti-checks"></i> Revisar texto</button>
+          <button class="btn btn-secondary" onclick="copiarTextoRedigido()"><i class="ti ti-copy"></i> Copiar texto</button>
           <span id="contador-revisao" style="font-weight: bold; font-size: 0.95rem;"></span>
         </div>
         <div id="progresso-revisao" class="hidden"></div>
@@ -3073,6 +3064,8 @@ function _fonteEstado(id, estado, texto) {
 }
 function _fontesIniciar() {
   const d = document.getElementById('chk-historico-unidade')?.checked, w = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
+  const linhas = document.getElementById('fontes-linhas'); if (linhas) linhas.style.display = 'flex';
+  const cw = document.getElementById('card-web'); if (cw) cw.style.display = w ? '' : 'none';
   _fonteEstado('docs', 'trabalhando', 'Refazendo as contas');
   _fonteEstado('drive', d ? 'espera' : 'off', d ? 'Na fila' : 'Não usado nesta checagem');
   _fonteEstado('web', w ? 'espera' : 'off', w ? 'Na fila' : 'Não usado nesta checagem');
@@ -3833,9 +3826,13 @@ function _garantirEstiloProgresso() {
   const st = document.createElement('style');
   st.id = 'estilo-progresso';
   st.textContent = `
-    @keyframes progPulso { 0%,100% { transform:scale(1); } 50% { transform:scale(1.12); } }
     @keyframes progGira { to { transform:rotate(360deg); } }
-    .prog-mascote { animation:progPulso 1.4s ease-in-out infinite; }
+    @keyframes progBrilho { to { transform:translateX(100%); } }
+    .prog-trilho { height:8px; background:#e9ecef; border-radius:6px; overflow:hidden; margin:8px 0 6px; }
+    .prog-enche { position:relative; height:100%; width:0; background:#d97706; border-radius:6px; transition:width .6s ease, background .3s; overflow:hidden; }
+    .prog-enche::after { content:''; position:absolute; inset:0; background:linear-gradient(90deg, transparent, rgba(255,255,255,.55), transparent); transform:translateX(-100%); animation:progBrilho 1.4s ease-in-out infinite; }
+    .prog-enche.fim::after { display:none; }
+    @media (prefers-reduced-motion: reduce) { .prog-enche::after, .prog-etapa.atual i { animation:none; } }
     .prog-etapa { font-size:0.72rem; padding:2px 9px; border-radius:10px; background:#e9ecef; color:#6c757d; display:inline-flex; gap:4px; align-items:center; }
     .prog-etapa.feita { background:#d1e7dd; color:#0f5132; }
     .prog-etapa.atual { background:#fff3cd; color:#664d03; font-weight:600; }
@@ -3849,22 +3846,20 @@ function _progressoIniciar(idContainer, titulo, etapas) {
   if (!el) return { etapa() {}, detalhe() {}, titulo() {}, fechar() {} };
   el.classList.remove('hidden');
   el.style.cssText = 'display:flex; gap:14px; align-items:center; background:#f8f9fa; border:1px solid #dee2e6; border-radius:8px; padding:12px 16px; margin:12px 0;';
-  el.innerHTML = `<div style="position:relative; width:52px; height:52px; flex-shrink:0;">
-      <svg viewBox="0 0 52 52" width="52" height="52" aria-hidden="true">
-        <circle cx="26" cy="26" r="20" fill="none" stroke="#e9ecef" stroke-width="4"/>
-        <circle data-anel cx="26" cy="26" r="20" fill="none" stroke="#d97706" stroke-width="4" stroke-linecap="round" stroke-dasharray="${_PROG_C.toFixed(1)}" stroke-dashoffset="${_PROG_C.toFixed(1)}" transform="rotate(-90 26 26)" style="transition:stroke-dashoffset .6s ease, stroke .3s;"/>
-      </svg>
-      <img class="prog-mascote" src="icons/mascote-analista.png" alt="" style="position:absolute; left:10px; top:10px; width:32px; height:32px; border-radius:50%; object-fit:cover;" onerror="this.remove()">
-    </div>
-    <div style="flex:1; min-width:0;">
-      <div data-titulo style="font-size:0.92rem; font-weight:600;">${escHtml(titulo)}</div>
+  el.innerHTML = `<div style="flex:1; min-width:0;">
+      <div style="display:flex; justify-content:space-between; gap:10px; align-items:baseline;">
+        <div data-titulo style="font-size:0.92rem; font-weight:600;">${escHtml(titulo)}</div>
+        <div data-pct style="font-size:0.78rem; color:var(--text-muted); font-variant-numeric:tabular-nums;"></div>
+      </div>
+      <div class="prog-trilho"><div class="prog-enche" data-anel></div></div>
       <div data-detalhe style="font-size:0.78rem; color:var(--text-muted); min-height:1.1em;"></div>
       <div data-etapas style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;"></div>
     </div>`;
   const anel = el.querySelector('[data-anel]'), tit = el.querySelector('[data-titulo]'), det = el.querySelector('[data-detalhe]'), box = el.querySelector('[data-etapas]');
   let atual = 0;
   const desenhar = () => { box.innerHTML = etapas.map((e, i) => `<span class="prog-etapa ${i < atual ? 'feita' : i === atual ? 'atual' : ''}"><i class="ti ${i < atual ? 'ti-check' : i === atual ? 'ti-loader-2' : 'ti-circle'}"></i>${escHtml(e)}</span>`).join(''); };
-  const fracao = f => { anel.style.strokeDashoffset = (_PROG_C * (1 - Math.max(0, Math.min(1, f)))).toFixed(1); };
+  const pct = el.querySelector('[data-pct]');
+  const fracao = f => { const v = Math.max(0, Math.min(1, f)); anel.style.width = Math.round(v * 100) + '%'; pct.textContent = Math.round(v * 100) + '%'; };
   desenhar();
   return {
     etapa(i, detalhe, f) { atual = i; desenhar(); if (detalhe !== undefined) det.textContent = detalhe; if (f !== undefined) fracao(f); },
@@ -3872,7 +3867,7 @@ function _progressoIniciar(idContainer, titulo, etapas) {
     titulo(t) { tit.textContent = t; },
     fechar(ok = true) {
       atual = etapas.length; desenhar(); fracao(ok ? 1 : 0);
-      anel.style.stroke = ok ? '#198754' : '#c92a2a';
+      anel.classList.add('fim'); anel.style.background = ok ? '#198754' : '#c92a2a';
       tit.textContent = ok ? 'Pronto' : 'Não foi possível concluir';
       el.querySelector('.prog-mascote')?.classList.remove('prog-mascote');
       setTimeout(() => { el.classList.add('hidden'); el.style.display = ''; }, ok ? 1800 : 3500);
@@ -3889,6 +3884,11 @@ function _fonteDoAchado(c) {
   if (f === 'unidade' || f === 'drive') return 'drive';
   const d = document.getElementById('chk-historico-unidade')?.checked, w = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
   return w && !d ? 'web' : 'drive';
+}
+function _chipOrigem(c) {
+  const f = _fonteDoAchado(c);
+  const m = { docs: ['Origem: documentos do processo', '#e9ecef', '#495057', ''], drive: ['Origem: histórico da unidade', '#e7f5ff', '#1864ab', ''], web: ['Origem: fonte aberta · confira antes de citar', '#fef3c7', '#92400e', 'Pesquisa na internet: pode estar desatualizada ou não ser oficial'] }[f];
+  return `<span title="${escAttr(m[3])}" style="font-size:0.68rem;background:${m[1]};color:${m[2]};padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">${m[0]}</span>`;
 }
 const _GRUPOS_ACHADOS = [
   { id: 'docs',  num: 1, nome: 'Documentos anexados agora' },
@@ -3948,6 +3948,7 @@ function renderizarCards(cards) {
     const nomeDoc = nomeDocBruto.replace(/\.(pdf|docx?|xlsx?)$/i, '');
     const tagVerificar = (c.verificar === false ? '' : `<span style="font-size:0.68rem;background:#fef9c3;color:#854d0e;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">⚠ VERIFICAR</span>`)
       + (trechoNaoAchado ? `<span title="A IA citou um trecho que não aparece no texto dos documentos. Confira antes de aceitar o achado." style="font-size:0.68rem;background:#ffe3e3;color:#a61e4d;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">TRECHO NÃO LOCALIZADO</span>` : '')
+      + _chipOrigem(c)
       + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
     _grupos[_fonteDoAchado(c)].push(`<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
@@ -4564,87 +4565,148 @@ ${contextoDocs}`;
   if (ultimo) history.scrollTop = Math.max(0, ultimo.offsetTop - 8);
 }
 
+// ---- Revisão do texto ----
+// Usa o que a checagem já guardou (achados em memória) em vez de reler o processo inteiro:
+// 1) por código, confere valores, datas e números de documento citados no texto;
+// 2) a IA recebe o texto, a lista de achados e só os trechos relevantes, e diz quais achados
+//    o texto não trata, se há algo novo e o que melhorar na escrita.
+const LIMITE_CHARS_REVISAO = 60000;
+function _normDataBR(d) {
+  const [a, b, c] = String(d).split('/');
+  return a.padStart(2, '0') + '/' + b.padStart(2, '0') + '/' + (c.length === 2 ? '20' + c : c);
+}
+function _conferirCitacoesDoTexto(texto) {
+  const proc = textoIntegralAtual || '';
+  const procSemEsp = proc.replace(/\s+/g, '');
+  const out = [];
+  [...new Set(texto.match(/R\$\s?[\d.]+,\d{2}/g) || [])].forEach(v => {
+    if (!procSemEsp.includes(v.replace(/\s+/g, ''))) out.push(`O texto cita ${v}, que não aparece em nenhum documento do processo. Se for uma conta sua, confira o cálculo.`);
+  });
+  const datasProc = new Set((proc.match(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g) || []).map(_normDataBR));
+  const hoje = _normDataBR(new Date().toLocaleDateString('pt-BR'));
+  [...new Set(texto.match(/\b\d{1,2}\/\d{1,2}\/\d{4}\b/g) || [])].forEach(d => {
+    const n = _normDataBR(d);
+    if (n !== hoje && !datasProc.has(n)) out.push(`O texto cita a data ${d}, que não aparece nos documentos do processo.`);
+  });
+  const vistos = new Set();
+  let m; const re = /(?:SEI|documento|doc\.?)[^\d\n]{0,15}(\d{6,9})/gi;
+  while ((m = re.exec(texto))) {
+    if (vistos.has(m[1])) continue; vistos.add(m[1]);
+    if (!proc.includes(m[1])) out.push(`O texto cita o documento ${m[1]}, que não está entre os documentos do processo. Confira o número.`);
+  }
+  return out;
+}
+function _blocoRevisao(cor, titulo, itensHtml) {
+  const c = { verm: ['#f8d7da', '#842029'], amar: ['#fff3cd', '#664d03'], azul: ['#e7f5ff', '#1864ab'] }[cor];
+  return `<div style="background:${c[0]}; color:${c[1]}; padding:12px 16px; border-radius:8px; margin-bottom:12px;"><strong>${titulo}</strong><ul style="margin:8px 0 0 20px;">${itensHtml}</ul></div>`;
+}
+async function copiarTextoRedigido() {
+  const t = document.getElementById('editor-final')?.value || '';
+  if (!t.trim()) return mostrarToast('Não há texto para copiar.');
+  try { await navigator.clipboard.writeText(t); }
+  catch (e) { const ed = document.getElementById('editor-final'); ed.select(); document.execCommand('copy'); }
+  mostrarToast('Texto copiado. Cole no SEI.');
+}
+
 async function rodarRevisaoFinal() {
   const st = document.getElementById('status-revisao');
   const contadorEl = document.getElementById('contador-revisao');
   contadorEl.innerHTML = '';
   const txtAnalista = document.getElementById('editor-final').value.trim();
-  // Processo grande demais para ir inteiro: valores de todos os documentos + trechos ligados ao texto.
-  let contextoRevisao = textoIntegralAtual;
-  let revisaoResumida = false;
-  if (textoIntegralAtual.length > LIMITE_CHARS_LOTE) {
-    revisaoResumida = true;
-    contextoRevisao = ('(Processo grande demais para ir inteiro. Abaixo: valores extraídos por código de TODOS os documentos, '
-      + 'seguidos dos trechos mais ligados ao texto do analista.)\n\nVALORES EXTRAÍDOS:\n'
-      + _dadosExtraidosCompactos(textoIntegralAtual) + '\n\nTRECHOS RELEVANTES:\n'
-      + extrairTrechosRelevantes(textoIntegralAtual, txtAnalista.substring(0, 4000))).substring(0, LIMITE_CHARS_LOTE);
-  }
-  if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Cole o seu parecer na caixa de texto primeiro.</div>';
+  if (!txtAnalista) return st.innerHTML = '<div class="alert alert-danger">Escreva ou cole o texto na caixa primeiro.</div>';
+  if (!textoIntegralAtual || textoIntegralAtual.trim().length < 50) return st.innerHTML = '<div class="alert alert-danger">Importe os documentos do processo primeiro.</div>';
   const p = processoAtual;
-  st.innerHTML = `<span class="spinner"></span> Revisando cruzamento entre parecer e documentos...`;
-
+  st.innerHTML = '';
   _garantirEstiloPulso();
-  const prog = _progressoIniciar('progresso-revisao', 'Revisando o texto', ['Leitura', 'IA revisando', 'Resultado']);
-  prog.etapa(1, `${Math.round(txtAnalista.length / 1000)} mil caracteres no texto, cruzados com o processo`, 0.35);
+  const prog = _progressoIniciar('progresso-revisao', 'Revisando o texto', ['Checagem', 'Citações', 'IA revisando', 'Resultado']);
   let houveErro = false;
+  try {
+    // 1) Sem checagem do processo ainda: ela roda antes, para a revisão ter os achados.
+    if (!(window.achadosAtuais || []).length && !window._ultimaChecagemSalva) {
+      prog.etapa(0, 'O processo ainda não foi checado. Fazendo a checagem antes', 0.1);
+      await rodarRaioX(true);
+    }
+    const achadosBase = _visiveis(window.achadosAtuais);
+    const lista = achadosBase.slice(0, 80).map((c, i) => ({ id: 'A' + (i + 1), c }));
 
-  const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano — você NUNCA aprova ou reprova,
-apenas aponta pontos de atenção para o analista decidir. Avalie o texto (parecer, nota técnica ou ofício)
-elaborado pelo analista seguindo três frentes obrigatórias:
+    // 2) Conferência por código (instantânea)
+    prog.etapa(1, 'Conferindo valores, datas e números de documentos citados', 0.3);
+    const citacoes = _conferirCitacoesDoTexto(txtAnalista);
 
-1. REVISÃO DE MÉRITO: verifique se o analista avaliou corretamente as regras (Unidade: ${p.unidade} | OSS: ${p.oss}).
-   Para cada crítica de mérito, cite a cláusula/trecho exato do texto e do documento original a que ela se refere.
-2. REVISÃO GRAMATICAL: aponte falhas ortográficas específicas (não generalidades).
-3. ADEQUAÇÃO À LINGUAGEM SIMPLES: verifique se há excesso de juridiquês.
+    // 3) IA com texto + achados + trechos relevantes (o resultado fica nesta área; não entra na lista de achados do processo)
+    prog.etapa(2, `${achadosBase.length} achado(s) da checagem cruzados com o texto`, 0.5);
+    let contexto, resumida = false;
+    if (textoIntegralAtual.length <= LIMITE_CHARS_REVISAO) contexto = textoIntegralAtual;
+    else {
+      resumida = true;
+      contexto = ('VALORES EXTRAÍDOS DE TODOS OS DOCUMENTOS:\n' + _dadosExtraidosCompactos(textoIntegralAtual).substring(0, 25000)
+        + '\n\nTRECHOS MAIS LIGADOS AO TEXTO:\n' + extrairTrechosRelevantes(textoIntegralAtual, txtAnalista.substring(0, 4000))).substring(0, LIMITE_CHARS_REVISAO);
+    }
+    const achadosTxt = lista.length
+      ? lista.map(({ id, c }) => `${id} | ${c.tag || ''} | ${c.titulo || ''} | ${String(c.explicacao || '').replace(/\s+/g, ' ').slice(0, 260)}${c.doc_origem && c.doc_origem !== 'undefined' ? ' | doc: ' + _nomeAmigavelDoc(c.doc_origem).nome : ''}`).join('\n')
+      : '(a checagem não encontrou achados)';
+    const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano. Você NUNCA aprova ou reprova: só aponta pontos de atenção para o analista decidir.
+Unidade: ${p.unidade} | OSS: ${p.oss}
 
-Se não houver nenhuma crítica real em determinada frente, não invente uma só para preencher a resposta.
+Você recebe: (a) o TEXTO do analista (parecer, nota técnica, ofício etc.); (b) os ACHADOS que a checagem do processo já encontrou; (c) o processo (inteiro ou só os trechos relevantes).
+Faça quatro coisas:
+1. Para cada achado da lista, diga se o texto o TRATA, NÃO TRATA ou CONTRADIZ. Devolva apenas os que NÃO são tratados ou que são contraditos, e somente se forem relevantes para o tipo de texto. Use o id (A1, A2...).
+2. Aponte INCONSISTÊNCIAS NOVAS: coisas que o texto afirma e que o processo desmente, ou que o processo mostra e a checagem não listou. Cite o trecho do texto e o trecho do processo. Não repita achados já listados.
+3. Aponte falhas de mérito (regras mal aplicadas), ortografia específica e excesso de juridiquês, citando o trecho.
+4. Se houver necessidade, sugira em um parágrafo como reescrever com linguagem simples.
+Se nada houver em alguma frente, devolva lista vazia. Não invente.
 
-Retorne EXCLUSIVAMENTE um objeto JSON válido, com esta estrutura exata (NÃO inclua campo de aprovação/veredito):
+Retorne EXCLUSIVAMENTE um JSON válido (sem campo de aprovação):
 {
-  "criticas": ["Crítica específica, citando o trecho exato do texto e/ou do documento original: ..."],
-  "sugestao_linguagem_simples": "Uma versão em parágrafo único sugerindo como reescrever com clareza, ou string vazia se não houver necessidade."
+  "achados": [{"id":"A1","situacao":"nao_tratado|contradiz","observacao":"uma frase"}],
+  "novas_inconsistencias": [{"titulo":"curto","explicacao":"o que não bate","trecho_do_texto":"...","trecho_do_processo":"...","documento":"nome do documento ou vazio"}],
+  "criticas": ["crítica específica, citando o trecho"],
+  "sugestao_linguagem_simples": ""
 }
 
-DOCUMENTOS ORIGINAIS:
-${contextoRevisao}
+ACHADOS DA CHECAGEM:
+${achadosTxt}
+------------------------------------------------
+PROCESSO:
+${contexto}
 ------------------------------------------------
 TEXTO DO ANALISTA:
 ${txtAnalista}`;
-
-  try {
     const jsonStr = await invocarIAComFallback(prompt, false, st);
     let rev;
     try { rev = JSON.parse(jsonStr); }
     catch (e) { rev = JSON.parse(String(jsonStr).replace(/[\x00-\x1F\x7F]/g, ' ').replace(/,\s*}/g, '}').replace(/,\s*]/g, ']')); }
-    const qtdCriticas = (rev.criticas || []).length;
+    prog.etapa(3, 'Montando o resultado', 0.92);
 
-    contadorEl.innerHTML = qtdCriticas > 0
-      ? `<span style="background: #f8d7da; color: #842029; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-alert-triangle"></i> ${qtdCriticas} ponto(s) de atenção</span>`
-      : `<span style="background: #d1e7dd; color: #0f5132; padding: 6px 12px; border-radius: 20px;"><i class="ti ti-check"></i> Sem críticas nesta revisão.</span>`;
+    const mapa = Object.fromEntries(lista.map(x => [x.id, x.c]));
+    const naoTratados = (rev.achados || []).filter(a => mapa[a.id] && (a.situacao === 'nao_tratado' || a.situacao === 'contradiz'));
+    const novas = (rev.novas_inconsistencias || []).filter(n => n && n.titulo && n.explicacao);
+    const criticas = rev.criticas || [];
 
-    let htmlResultado = '';
-    if (qtdCriticas > 0) {
-      const criticasHtml = rev.criticas.map(c => `<li style="margin-bottom:6px;">${escHtml(c)}</li>`).join('');
-      htmlResultado += `<div class="alert alert-danger" style="background:#f8d7da; color:#842029; margin-bottom:15px;"><strong>Pontos de atenção (a decisão final é sua):</strong><ul style="margin-top:8px; margin-left:20px;">${criticasHtml}</ul></div>`;
-    } else {
-      htmlResultado += `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; margin-bottom:15px;"><strong>✓ Nenhum ponto de atenção identificado nesta revisão.</strong></div>`;
-    }
-    if (rev.sugestao_linguagem_simples) {
-      htmlResultado += `<div style="background:#fff; border:1px solid #ced4da; padding:15px; border-radius:6px;">
-        <h4 style="color:#d97706; font-size:0.95rem; margin-bottom:8px;"><i class="ti ti-bulb"></i> Sugestão de Linguagem Simples:</h4>
-        <p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p>
-      </div>`;
-    }
-    if (revisaoResumida) htmlResultado = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> Processo muito grande: a revisão comparou seu texto com os valores de todos os documentos e com os trechos mais relacionados, não com o processo inteiro.</div>` + htmlResultado;
-    st.innerHTML = htmlResultado + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
+    const total = naoTratados.length + citacoes.length + novas.length + criticas.length;
+    contadorEl.innerHTML = total > 0
+      ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;"><i class="ti ti-alert-triangle"></i> ${total} ponto(s) de atenção</span>`
+      : `<span style="background:#d1e7dd; color:#0f5132; padding:6px 12px; border-radius:20px;"><i class="ti ti-check"></i> Sem pontos de atenção.</span>`;
 
-    // Registra no histórico — sem isso, a Revisão Final não deixava rastro nenhum.
-    const achadosRevisao = (rev.criticas || []).map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }));
-    await api('auditorias/salvar', {
-      processo_id: p.id, tipo_checkpoint: 'SAIDA',
-      achados_json: JSON.stringify(achadosRevisao), raw_ia: jsonStr, executado_por: usuarioAtual.email
-    });
+    let html = '';
+    if (naoTratados.length) html += _blocoRevisao('verm', `Achados do processo que o seu texto não trata ou contradiz (${naoTratados.length})`,
+      naoTratados.map(a => `<li style="margin-bottom:6px;"><strong>${escHtml(mapa[a.id].titulo || mapa[a.id].tag)}</strong> — ${a.situacao === 'contradiz' ? 'o texto contradiz este achado' : 'o texto não trata deste achado'}${a.observacao ? ': ' + escHtml(a.observacao) : ''}</li>`).join(''));
+    if (citacoes.length) html += _blocoRevisao('amar', `Citações que não batem com o processo (${citacoes.length})`, citacoes.map(t => `<li style="margin-bottom:6px;">${escHtml(t)}</li>`).join(''));
+    if (novas.length) html += _blocoRevisao('azul', `Outras divergências entre o texto e o processo (${novas.length})`, novas.map(n => `<li style="margin-bottom:6px;"><strong>${escHtml(n.titulo)}</strong>: ${escHtml(n.explicacao)}${n.trecho_do_texto ? `<br><span style="font-size:0.82rem;">No seu texto: “${escHtml(n.trecho_do_texto)}”</span>` : ''}${n.trecho_do_processo ? `<br><span style="font-size:0.82rem;">No processo${n.documento ? ' (' + escHtml(n.documento) + ')' : ''}: “${escHtml(n.trecho_do_processo)}”</span>` : ''}</li>`).join(''));
+    if (criticas.length) html += _blocoRevisao('verm', `Mérito e escrita (${criticas.length})`, criticas.map(t => `<li style="margin-bottom:6px;">${escHtml(t)}</li>`).join(''));
+    if (!total) html += '<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132;"><strong>✓ Nenhum ponto de atenção identificado nesta revisão.</strong></div>';
+    if (rev.sugestao_linguagem_simples) html += `<div style="background:#fff; border:1px solid #ced4da; padding:15px; border-radius:6px;"><h4 style="color:#d97706; font-size:0.95rem; margin-bottom:8px;"><i class="ti ti-bulb"></i> Sugestão de linguagem simples:</h4><p style="font-size:0.9rem; color:#495057; line-height:1.5;">${escHtml(rev.sugestao_linguagem_simples)}</p></div>`;
+    if (resumida) html = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.82rem;margin-bottom:10px;"><i class="ti ti-alert-triangle"></i> Processo grande: além dos achados da checagem, a revisão usou os valores de todos os documentos e os trechos mais ligados ao seu texto.</div>` + html;
+    st.innerHTML = html + renderPainelMascaramento(window._ultimoMascaramentoDetalhes);
 
+    // Registra no histórico
+    const registro = [
+      ...naoTratados.map(a => ({ tipo: 'REVISAO_FINAL', descricao: `Achado não tratado/contradito: ${mapa[a.id].titulo}${a.observacao ? ' — ' + a.observacao : ''}`, documentos: '', verificar: true })),
+      ...citacoes.map(t => ({ tipo: 'REVISAO_FINAL', descricao: t, documentos: '', verificar: true })),
+      ...novas.map(n => ({ tipo: 'REVISAO_FINAL', descricao: `Inconsistência nova: ${n.titulo} — ${n.explicacao}`, documentos: n.documento || '', verificar: true })),
+      ...criticas.map(c => ({ tipo: 'REVISAO_FINAL', descricao: c, documentos: '', verificar: true }))
+    ];
+    await api('auditorias/salvar', { processo_id: p.id, tipo_checkpoint: 'REVISAO', achados_json: JSON.stringify(registro), raw_ia: jsonStr, executado_por: usuarioAtual.email });
     _ultimoTextoRevisadoHash = await sha256(txtAnalista);
   } catch (e) {
     houveErro = true;
