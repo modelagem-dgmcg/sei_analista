@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.11';
-const VERSAO_APP_DATA = '19/10/2026 13:50';
+const VERSAO_APP = 'v26.12';
+const VERSAO_APP_DATA = '19/10/2026 14:20';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -248,7 +248,8 @@ const API_TIMEOUT_MS = 25000;
 async function api(action, body = null, opcoes = {}) {
   const url = API_URL + '?action=' + encodeURIComponent(action);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const limiteMs = opcoes.timeoutMs || API_TIMEOUT_MS;
+  const timer = setTimeout(() => controller.abort(), limiteMs);
   const corpo = Object.assign({}, body || {}, { token: SESSAO_TOKEN });
   if (opcoes.fundo) corpo._fundo = true;
   const opts = {
@@ -276,7 +277,7 @@ async function api(action, body = null, opcoes = {}) {
     }
     return res;
   } catch (e) {
-    if (e.name === 'AbortError') return { ok: false, erro: `Servidor não respondeu em ${API_TIMEOUT_MS / 1000}s. Tente novamente.` };
+    if (e.name === 'AbortError') return { ok: false, erro: `Servidor não respondeu em ${limiteMs / 1000}s. Tente novamente.` };
     return { ok: false, erro: e.message };
   } finally {
     clearTimeout(timer);
@@ -1268,6 +1269,9 @@ ${amostra}`;
       const jsonStr = await invocarIAComFallback(prompt, false, null);
       const sugestao = JSON.parse(jsonStr);
       if (sugestao.titulo)  { const el = document.getElementById('np-titulo');  el.value = sugestao.titulo;  _marcarComoSugerido(el); }
+      const _valida = v => { v = String(v || '').trim(); return v.length >= 3 && !/^[\d\s.\-\/]+$/.test(v); };
+      if (!_valida(sugestao.unidade)) sugestao.unidade = '';
+      if (!_valida(sugestao.oss)) sugestao.oss = '';
       if (sugestao.unidade) { const el = document.getElementById('np-unidade'); el.value = sugestao.unidade; _marcarComoSugerido(el); }
       if (sugestao.oss)     { const el = document.getElementById('np-oss');     el.value = sugestao.oss;     _marcarComoSugerido(el); }
     } catch (e) {
@@ -3407,11 +3411,13 @@ async function rodarRaioX(automatica = false) {
       _fonteEstado('drive', 'off', 'Não usado nesta checagem');
     } else if (!p.unidade) {
       _fonteEstado('drive', 'aviso', 'O processo está sem unidade definida, não há como buscar');
+    } else if (String(p.unidade).trim().length < 3 || /^[\d\s.\-\/]+$/.test(String(p.unidade))) {
+      _fonteEstado('drive', 'aviso', `A unidade "${String(p.unidade).trim()}" parece incompleta ou errada. Corrija o nome da unidade para comparar com os documentos anteriores.`);
     } else {
       _fonteEstado('drive', 'trabalhando', 'Procurando os documentos da unidade');
       st.innerHTML = `<span class="spinner"></span> Comparando com contratos antigos de "${escHtml(p.unidade)}"...`;
       try {
-        const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade });
+        const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade }, { timeoutMs: 90000 });
         if (resHist.ok && resHist.encontrado) {
           const nomes = resHist.arquivos.map(a => a.nome).join(', ');
           _fonteEstado('drive', 'pronto', (resHist.arquivos.length === 1 ? '1 arquivo encontrado: ' : resHist.arquivos.length + ' arquivos encontrados: ') + nomes);
@@ -3428,7 +3434,7 @@ async function rodarRaioX(automatica = false) {
         } else if (resHist.ok && !resHist.encontrado) {
           _fonteEstado('drive', 'aviso', `Nenhum arquivo encontrado para "${p.unidade}"`);
         } else {
-          _fonteEstado('drive', 'erro', 'Falha ao consultar: ' + (resHist.erro || 'erro desconhecido'));
+          _fonteEstado('drive', 'erro', /não respondeu/i.test(resHist.erro || '') ? 'Demorou demais. A checagem seguiu sem esta fonte; tente de novo mais tarde.' : 'Falha ao consultar: ' + (resHist.erro || 'erro desconhecido'));
         }
       } catch (e) {
         _fonteEstado('drive', 'erro', 'Falha ao consultar: ' + e.message);
