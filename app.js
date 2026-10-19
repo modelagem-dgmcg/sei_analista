@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.14';
-const VERSAO_APP_DATA = '19/10/2026 14:55';
+const VERSAO_APP = 'v26.15';
+const VERSAO_APP_DATA = '19/10/2026 15:40';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -3420,6 +3420,7 @@ async function rodarRaioX(automatica = false) {
     // Checkbox 1 — histórico contratual da unidade (pasta Drive "LEIS E DECRETOS").
     // Ligado por padrão; roda ANTES de qualquer chamada à IA (é busca determinística).
     let historicoUnidadeBloco = '';
+    let historicoOk = false, webOk = false;   // a fonte só pode ser citada num achado se ela de fato rodou
     const historicoUnidadeAtivo = document.getElementById('chk-historico-unidade')?.checked;
     if (!historicoUnidadeAtivo) {
       _fonteEstado('drive', 'off', 'Não usado nesta checagem');
@@ -3434,6 +3435,7 @@ async function rodarRaioX(automatica = false) {
         const resHist = await api('normas/buscar-por-unidade', { unidade: p.unidade }, { timeoutMs: 90000 });
         if (resHist.ok && resHist.encontrado) {
           const nomes = resHist.arquivos.map(a => a.nome).join(', ');
+          historicoOk = true;
           _fonteEstado('drive', 'pronto', (resHist.arquivos.length === 1 ? '1 arquivo encontrado: ' : resHist.arquivos.length + ' arquivos encontrados: ') + nomes);
           historicoUnidadeBloco = '\n\nHISTÓRICO CONTRATUAL DA UNIDADE (contratos/aditivos anteriores dessa mesma unidade —\n' +
             'o casamento do arquivo é por nome, então pode confundir unidades parecidas; trate como forte\n' +
@@ -3473,6 +3475,7 @@ ${resNormas.texto}
 
 JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ mesmo aviso acima):
 ${resJuris.texto}`;
+        webOk = true;
         _fonteEstado('web', 'pronto', 'Pesquisa concluída');
       } catch (e) {
         if (e.message === 'SEM_GEMINI') _fonteEstado('web', 'aviso', 'Esta busca usa o Gemini, e o seu usuário não tem chave do Gemini liberada. Peça ao gestor. A checagem seguiu sem ela.');
@@ -3586,7 +3589,12 @@ ___TEXTO_DO_LOTE___`;
     const conferidosCorretos = cardsIA.filter(_eConferenciaSemProblema);
     const achadosIA = cardsIA.filter(c => !_eConferenciaSemProblema(c)).map(c => {
       // Trava reforçada: não confia só na IA marcar "verificar" certo pra achado de fonte externa.
-      if (c.baseado_em_fonte_externa) c.verificar = true;
+      if (c.baseado_em_fonte_externa) {
+        c.verificar = true;
+        const f = String(c.fonte_externa || '').toLowerCase();
+        // a IA às vezes diz que veio da internet ou do histórico sem que essa busca tenha rodado: vira achado dos documentos
+        if ((f === 'web' && !webOk) || ((f === 'unidade' || f === 'drive') && !historicoOk)) { c.baseado_em_fonte_externa = false; c.fonte_externa = ''; }
+      }
       return c;
     });
     window.achadosAtuais = [...achadosIntegridade, ...achadosCodigo, ...achadosIA];
@@ -4418,11 +4426,11 @@ async function montarRascunhoRedacao(temasDiretos) {
       : textoIntegralAtual;
     let valores = '';
     try { valores = _dadosExtraidosCompactos(textoIntegralAtual).substring(0, 40000); } catch (e) { valores = ''; }
-    const achados = (window.achadosAtuais || []).slice(0, 30).map(a => `- ${a.titulo}: ${a.explicacao}`).join('\n');
+    const achados = _achadosAgrupadosParaTexto(_visiveis(window.achadosAtuais || []));
     let historico = '';
-    if (p.unidade) {
+    if (p.unidade && String(p.unidade).trim().length >= 3 && !/^[\d\s.\-\/]+$/.test(String(p.unidade))) {
       try {
-        const r = await api('normas/buscar-por-unidade', { unidade: p.unidade });
+        const r = await api('normas/buscar-por-unidade', { unidade: p.unidade }, { timeoutMs: 90000 });
         if (r.ok && r.encontrado) historico = r.arquivos.map(a => `--- ${a.nome} ---\nVALORES: ${(a.valores || []).map(v => v.valor).join('; ')}\nDATAS: ${(a.datas || []).map(v => v.valor).join('; ')}`).join('\n');
       } catch (e) { historico = ''; }
     }
@@ -4442,6 +4450,7 @@ REGRAS OBRIGATÓRIAS:
 6. Texto em português claro, parágrafos curtos, linguagem simples e formal. Texto puro: SEM markdown, sem asteriscos e sem listas com hífen no início da linha. Títulos das seções em MAIÚSCULAS e numerados.
 7. Deixe [preencher] em número do documento, data, destinatário e assinatura.
 8. Os PONTOS APONTADOS PELA CHECAGEM são pontos a confirmar, nunca fatos provados.
+9. Se o pedido for para tratar as inconsistências encontradas, trate TODOS os grupos de pontos da lista PONTOS APONTADOS PELA CHECAGEM, agrupando por tema (documentação, cálculos, valores, técnico, contratual, jurídico, financeiro). Quando um grupo tiver várias ocorrências, diga quantas são e cite alguns documentos como exemplo. Não omita nenhum grupo.
 
 ESTRUTURA: ${ESTRUTURAS_RASCUNHO[pend.tipo] || ESTRUTURAS_RASCUNHO['relatório']}
 
@@ -4592,6 +4601,32 @@ ${contextoDocs}`;
 // 2) a IA recebe o texto, a lista de achados e só os trechos relevantes, e diz quais achados
 //    o texto não trata, se há algo novo e o que melhorar na escrita.
 const LIMITE_CHARS_REVISAO = 60000;
+// Documento de um achado, em forma legível: "Despacho 218 (SEI 92348109)".
+function _rotuloDocAchado(c) {
+  if (!c || !c.doc_origem || c.doc_origem === 'undefined') return '';
+  const d = _nomeAmigavelDoc(c.doc_origem);
+  return d.sei ? `${d.nome} (SEI ${d.sei})` : d.nome;
+}
+// Junta achados com o mesmo título (ex.: 29 "Soma da tabela não bate") em um bloco só, com a
+// contagem, os documentos e alguns exemplos. Serve ao rascunho, para ele tratar TODOS os pontos
+// sem estourar o tamanho do pedido.
+function _achadosAgrupadosParaTexto(lista, limiteChars = 45000) {
+  const grupos = new Map();
+  (lista || []).forEach(c => {
+    const k = String(c.titulo || c.tag || '').trim().toLowerCase();
+    if (!grupos.has(k)) grupos.set(k, { titulo: c.titulo || c.tag || '(sem título)', itens: [] });
+    grupos.get(k).itens.push(c);
+  });
+  const linhas = [];
+  grupos.forEach(g => {
+    const docs = [...new Set(g.itens.map(_rotuloDocAchado).filter(Boolean))];
+    const exemplos = g.itens.slice(0, 3).map(c => String(c.explicacao || '').replace(/\s+/g, ' ').slice(0, 260)).filter(Boolean);
+    linhas.push(`- ${g.titulo}${g.itens.length > 1 ? ` [${g.itens.length} ocorrências]` : ''}${docs.length ? ` | documentos: ${docs.slice(0, 12).join('; ')}${docs.length > 12 ? '; ...' : ''}` : ''}${exemplos.length ? '\n    ' + exemplos.join('\n    ') : ''}`);
+  });
+  let out = '', omitidos = 0;
+  for (const l of linhas) { if ((out + l).length > limiteChars) { omitidos++; continue; } out += l + '\n'; }
+  return out + (omitidos ? `(mais ${omitidos} grupo(s) de pontos não couberam aqui)\n` : '');
+}
 function _normDataBR(d) {
   const [a, b, c] = String(d).split('/');
   return a.padStart(2, '0') + '/' + b.padStart(2, '0') + '/' + (c.length === 2 ? '20' + c : c);
@@ -4648,7 +4683,7 @@ async function rodarRevisaoFinal() {
       await rodarRaioX(true);
     }
     const achadosBase = _visiveis(window.achadosAtuais);
-    const lista = achadosBase.slice(0, 80).map((c, i) => ({ id: 'A' + (i + 1), c }));
+    const lista = achadosBase.slice(0, 150).map((c, i) => ({ id: 'A' + (i + 1), c }));
 
     // 2) Conferência por código (instantânea)
     prog.etapa(1, 'Conferindo valores, datas e números de documentos citados', 0.3);
@@ -4664,7 +4699,7 @@ async function rodarRevisaoFinal() {
         + '\n\nTRECHOS MAIS LIGADOS AO TEXTO:\n' + extrairTrechosRelevantes(textoIntegralAtual, txtAnalista.substring(0, 4000))).substring(0, LIMITE_CHARS_REVISAO);
     }
     const achadosTxt = lista.length
-      ? lista.map(({ id, c }) => `${id} | ${c.tag || ''} | ${c.titulo || ''} | ${String(c.explicacao || '').replace(/\s+/g, ' ').slice(0, 260)}${c.doc_origem && c.doc_origem !== 'undefined' ? ' | doc: ' + _nomeAmigavelDoc(c.doc_origem).nome : ''}`).join('\n')
+      ? lista.map(({ id, c }) => `${id} | ${c.tag || ''} | ${c.titulo || ''} | ${String(c.explicacao || '').replace(/\s+/g, ' ').slice(0, 200)}${_rotuloDocAchado(c) ? ' | doc: ' + _rotuloDocAchado(c) : ''}`).join('\n')
       : '(a checagem não encontrou achados)';
     const prompt = `Você é um Revisor Técnico (SES-PE) auxiliando um analista humano. Você NUNCA aprova ou reprova: só aponta pontos de atenção para o analista decidir.
 Unidade: ${p.unidade} | OSS: ${p.oss}
@@ -4675,6 +4710,10 @@ Faça quatro coisas:
 2. Aponte INCONSISTÊNCIAS NOVAS: coisas que o texto afirma e que o processo desmente, ou que o processo mostra e a checagem não listou. Cite o trecho do texto e o trecho do processo. Não repita achados já listados.
 3. Aponte falhas de mérito (regras mal aplicadas), ortografia específica e excesso de juridiquês, citando o trecho.
 4. Se houver necessidade, sugira em um parágrafo como reescrever com linguagem simples.
+Cuidados para não gerar alarme falso:
+- "SEI nº 12345678" é o número do documento no SEI e identifica o arquivo corretamente. NÃO aponte como erro o uso desse número, nem a diferença entre o número do despacho e o número SEI.
+- Se a checagem apontou "documento sem texto lido" e o texto diz que o documento não pôde ser lido, o texto está CORRETO; não aponte isso.
+- Só aponte divergência nova quando o processo desmentir claramente o texto. Não aponte preferências de estilo de citação.
 Se nada houver em alguma frente, devolva lista vazia. Não invente.
 
 Retorne EXCLUSIVAMENTE um JSON válido (sem campo de aprovação):
@@ -4710,8 +4749,20 @@ ${txtAnalista}`;
       : `<span style="background:#d1e7dd; color:#0f5132; padding:6px 12px; border-radius:20px;"><i class="ti ti-check"></i> Sem pontos de atenção.</span>`;
 
     let html = '';
-    if (naoTratados.length) html += _blocoRevisao('verm', `Achados do processo que o seu texto não trata ou contradiz (${naoTratados.length})`,
-      naoTratados.map(a => `<li style="margin-bottom:6px;"><strong>${escHtml(mapa[a.id].titulo || mapa[a.id].tag)}</strong> — ${a.situacao === 'contradiz' ? 'o texto contradiz este achado' : 'o texto não trata deste achado'}${a.observacao ? ': ' + escHtml(a.observacao) : ''}</li>`).join(''));
+    if (naoTratados.length) {
+      // mesmo título = um item só, com a contagem e os documentos
+      const grupos = new Map();
+      naoTratados.forEach(a => {
+        const c = mapa[a.id], k = String(c.titulo || c.tag || '').trim().toLowerCase();
+        if (!grupos.has(k)) grupos.set(k, { titulo: c.titulo || c.tag, itens: [], contradiz: false, obs: a.observacao || '' });
+        const g = grupos.get(k); g.itens.push(c); if (a.situacao === 'contradiz') g.contradiz = true;
+      });
+      html += _blocoRevisao('verm', `Achados do processo que o seu texto não trata ou contradiz (${naoTratados.length}, em ${grupos.size} tipo(s))`,
+        [...grupos.values()].map(g => {
+          const docs = [...new Set(g.itens.map(_rotuloDocAchado).filter(Boolean))];
+          return `<li style="margin-bottom:6px;"><strong>${escHtml(g.titulo)}</strong>${g.itens.length > 1 ? ` (${g.itens.length} ocorrências)` : ''} — ${g.contradiz ? 'o texto contradiz' : 'o texto não trata'}${docs.length ? `<br><span style="font-size:0.82rem;">Documentos: ${escHtml(docs.slice(0, 8).join('; '))}${docs.length > 8 ? '; ...' : ''}</span>` : ''}${g.itens.length === 1 && g.obs ? `<br><span style="font-size:0.82rem;">${escHtml(g.obs)}</span>` : ''}</li>`;
+        }).join(''));
+    }
     if (citacoes.length) html += _blocoRevisao('amar', `Citações que não batem com o processo (${citacoes.length})`, citacoes.map(t => `<li style="margin-bottom:6px;">${escHtml(t)}</li>`).join(''));
     if (novas.length) html += _blocoRevisao('azul', `Outras divergências entre o texto e o processo (${novas.length})`, novas.map(n => `<li style="margin-bottom:6px;"><strong>${escHtml(n.titulo)}</strong>: ${escHtml(n.explicacao)}${n.trecho_do_texto ? `<br><span style="font-size:0.82rem;">No seu texto: “${escHtml(n.trecho_do_texto)}”</span>` : ''}${n.trecho_do_processo ? `<br><span style="font-size:0.82rem;">No processo${n.documento ? ' (' + escHtml(n.documento) + ')' : ''}: “${escHtml(n.trecho_do_processo)}”</span>` : ''}</li>`).join(''));
     if (criticas.length) html += _blocoRevisao('verm', `Mérito e escrita (${criticas.length})`, criticas.map(t => `<li style="margin-bottom:6px;">${escHtml(t)}</li>`).join(''));
