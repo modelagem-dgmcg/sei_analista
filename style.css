@@ -297,3 +297,22 @@ header h2 { font-size: 1.3rem; color: var(--text-dark); font-weight: 600; margin
 .prazo-seg span { flex:1; height:6px; border-radius:3px; background:rgba(0,0,0,0.12); }
 .prazo-seg span.feito { background:#2f9e44; }
 @media (max-width:640px) { .prazo-pill { font-size:0.72rem; padding:0 9px; } }
+
+
+/* v26.8 — fontes da checagem: linhas simples (sem botões), estado com anel girando, caixinha opcional da busca aberta */
+.fontes-linhas { margin:12px 0; }
+.fontes-linhas .fonte { padding:9px 14px; background:#f8f9fa; border-color:#dee2e6; align-items:center; }
+.fontes-linhas .fonte-barra { display:none; }
+.fontes-linhas .fonte-estado { margin-top:2px; }
+.fontes-linhas .fonte-num { position:relative; }
+.fontes-linhas .fonte[data-estado="trabalhando"] .fonte-num { background:#fff3cd; color:#664d03; }
+.fontes-linhas .fonte[data-estado="trabalhando"] .fonte-num::after { content:''; position:absolute; inset:-3px; border:2px solid transparent; border-top-color:#d97706; border-radius:50%; animation:spin .9s linear infinite; }
+.fontes-linhas .fonte[data-estado="trabalhando"] .fonte-estado { color:#664d03; }
+@media (prefers-reduced-motion: reduce) { .fontes-linhas .fonte[data-estado="trabalhando"] .fonte-num::after { animation:none; } }
+.opt-fonte-web { display:inline-flex; align-items:center; gap:6px; font-size:0.82rem; color:#495057; cursor:pointer; }
+.opt-fonte-web small { color:#92400e; }
+
+/* v26.9 — Redigir em dois passos */
+.assist-passo { display:flex; align-items:baseline; gap:10px; font-weight:600; font-size:1rem; margin:6px 0 8px; }
+.assist-passo b { flex-shrink:0; width:24px; height:24px; border-radius:50%; background:#d97706; color:#fff; font-size:0.82rem; display:inline-flex; align-items:center; justify-content:center; }
+.assist-passo span { font-weight:400; font-size:0.82rem; color:var(--text-muted); }
