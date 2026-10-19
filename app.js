@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.12';
-const VERSAO_APP_DATA = '19/10/2026 14:20';
+const VERSAO_APP = 'v26.14';
+const VERSAO_APP_DATA = '19/10/2026 14:55';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1526,7 +1526,7 @@ async function abrirProcesso(identificador) {
       <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:12px; line-height:1.5;">Ao executar, o sistema confere os documentos deste processo e compara com os documentos anteriores da unidade. Cada fonte consultada aparece abaixo, com o resultado.</div>
       <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <button class="btn btn-warning" onclick="rodarRaioX()"><i class="ti ti-search"></i> Executar Checagem</button>
-        <label class="opt-fonte-web" title="Pesquisa normas e decisões na internet (Diário Oficial, legislação, TCU, TCE-PE, STJ, STF, AGU). Mais lenta; a fonte pode estar desatualizada ou não ser oficial."><input type="checkbox" id="chk-legislacao-jurisprudencia" onchange="document.getElementById('card-web').style.display = this.checked ? '' : 'none'"> Incluir busca em fontes abertas <small>(mais lenta · confira antes de citar)</small></label>
+        <label class="opt-fonte-web" title="Pesquisa normas e decisões na internet (Diário Oficial, legislação, TCU, TCE-PE, STJ, STF, AGU). Mais lenta; a fonte pode estar desatualizada ou não ser oficial."><input type="checkbox" id="chk-legislacao-jurisprudencia" onchange="document.getElementById('card-web').style.display = this.checked ? '' : 'none'"> Incluir busca em fontes abertas <small>(mais lenta · confira antes de citar)</small><span id="opt-web-aviso" style="color:#a61e1e; font-size:0.75rem;"></span></label>
         <span id="contador-checagem" style="font-weight:bold; font-size:0.95rem;"></span>
         <button class="btn-aux" style="margin-left:auto;" onclick="abrirPainelEvidencias()" title="Abre os achados e as evidências numa segunda janela, para ler lado a lado com o processo"><i class="ti ti-columns"></i> Abrir em tela dupla</button>
       </div>
@@ -1615,6 +1615,7 @@ async function abrirProcesso(identificador) {
   content.innerHTML = html;
   _renderBotoesStatus(processoAtual.status);
   _montarCoberturaLeitura();
+  _ajustarOpcaoWeb();
   if (window._autoChecagemPendente) {
     window._autoChecagemPendente = false;
     setTimeout(() => rodarRaioX(true), 400);   // checagem automática depois de importar
@@ -2543,30 +2544,43 @@ async function invocarOllama(prompt, isChat, statusEl) {
   return isChat ? txt : txt.replace(/```json/g, '').replace(/```/g, '').trim();
 }
 
-async function buscarNormasExternas(p) {
-  if (!GEMINI_KEY) throw new Error("Chave não configurada.");
-  const prompt = `Pesquise normas de PE (SES-PE) para Contratos de Gestão com OSS, unidade "${p.unidade}", OSS "${p.oss}".`;
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_KEY}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] })
-  });
-  const json = await resp.json();
+// Busca na web: usa o Gemini com a pesquisa do Google ligada. Só funciona com chave do Gemini
+// liberada para o usuário. Antes, qualquer falha aparecia só como "a pesquisa falhou"; agora o
+// motivo real vai para a tela.
+async function _geminiComBusca(prompt) {
+  if (!GEMINI_KEY) throw new Error('SEM_GEMINI');
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 60000);
+  let resp;
+  try {
+    resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_KEY}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] })
+    });
+  } catch (e) {
+    throw new Error(e.name === 'AbortError' ? 'A busca demorou mais de 60 segundos.' : 'Sem conexão com o Google (' + e.message + ').');
+  } finally { clearTimeout(timer); }
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(`O Google recusou a busca (HTTP ${resp.status}): ${(json.error && json.error.message) || 'sem detalhe'}`);
   const texto = json.candidates?.[0]?.content?.parts?.map(pt => pt.text || '').join('') || '';
   const fontes = json.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean) || [];
   return { texto, fontes };
 }
-
+async function buscarNormasExternas(p) {
+  return _geminiComBusca(`Pesquise normas de PE (SES-PE) para Contratos de Gestão com OSS, unidade "${p.unidade}", OSS "${p.oss}".`);
+}
 async function buscarJurisprudencia(p) {
-  if (!GEMINI_KEY) throw new Error("Chave não configurada.");
-  const prompt = `Pesquise decisões do TCE-PE e TCU sobre Contratos de Gestão com OSS para unidade "${p.unidade}".`;
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_KEY}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], tools: [{ google_search: {} }] })
-  });
-  const json = await resp.json();
-  const texto = json.candidates?.[0]?.content?.parts?.map(pt => pt.text || '').join('') || '';
-  const fontes = json.candidates?.[0]?.groundingMetadata?.groundingChunks?.map(c => c.web ? { titulo: c.web.title, url: c.web.uri } : null).filter(Boolean) || [];
-  return { texto, fontes };
+  return _geminiComBusca(`Pesquise decisões do TCE-PE e TCU sobre Contratos de Gestão com OSS para unidade "${p.unidade}".`);
+}
+// Sem chave do Gemini a busca em fontes abertas não funciona: a caixinha fica desligada e explica por quê.
+function _ajustarOpcaoWeb() {
+  const chk = document.getElementById('chk-legislacao-jurisprudencia'), av = document.getElementById('opt-web-aviso');
+  if (!chk) return;
+  if (!GEMINI_KEY) {
+    chk.checked = false; chk.disabled = true;
+    const cw = document.getElementById('card-web'); if (cw) cw.style.display = 'none';
+    if (av) av.textContent = ' · indisponível: o seu usuário não tem chave do Gemini';
+  } else { chk.disabled = false; if (av) av.textContent = ''; }
 }
 
 // Acha, dentro do texto de um achado (título/explicação/evidência), qualquer coisa que
@@ -3461,7 +3475,8 @@ JURISPRUDÊNCIA ENCONTRADA NA BUSCA WEB (⚠️ mesmo aviso acima):
 ${resJuris.texto}`;
         _fonteEstado('web', 'pronto', 'Pesquisa concluída');
       } catch (e) {
-        _fonteEstado('web', 'erro', 'A pesquisa falhou; a checagem seguiu sem ela');
+        if (e.message === 'SEM_GEMINI') _fonteEstado('web', 'aviso', 'Esta busca usa o Gemini, e o seu usuário não tem chave do Gemini liberada. Peça ao gestor. A checagem seguiu sem ela.');
+        else _fonteEstado('web', 'erro', 'A pesquisa falhou: ' + String(e.message).slice(0, 220) + ' A checagem seguiu sem ela.');
         externasBloco = `\n\n(Busca de normas/jurisprudência falhou: ${e.message} — checagem segue só com os documentos do processo.)`;
       }
     }
