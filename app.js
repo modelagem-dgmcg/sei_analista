@@ -8,15 +8,15 @@
 // ==================== REGISTRO DE AUTORIA ====================
 // © 2026 Secretaria de Estado de Saúde de Pernambuco (SES-PE) — DGMCG/GGPCG.
 // Desenvolvido por Antonio Cleuton Eufrasio Vieira, Analista Administrativo - CTD,
-// matrícula 18515045.
+// matrícula 18515045. Colaboração na análise de fluxos: Yasmim Moraes.
 console.log("%cSES-PE — DGMCG/GGPCG", "color: #364fc7; font-size: 16px; font-weight: bold;");
-console.log("%cDesenvolvido por Cleuton Vieira.", "color: #495057; font-size: 13px;");
+console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", "color: #495057; font-size: 13px;");
 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.15';
-const VERSAO_APP_DATA = '19/10/2026 15:40';
+const VERSAO_APP = 'v26.16';
+const VERSAO_APP_DATA = '21/10/2026 16:10';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -146,7 +146,7 @@ window.onload = () => {
 
 function injetarMarcaDagua() {
   const rodape = document.createElement('div');
-  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.
+  rodape.innerHTML = `&copy; 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>. Colaboração: Yasmim Moraes.
     <div id="rodape-versao" style="margin-top:4px; font-size:0.68rem; color:#ced4da;">App ${VERSAO_APP} · ${VERSAO_APP_DATA}</div>`;
   rodape.style = "text-align: center; padding: 15px; font-size: 0.75rem; color: #adb5bd; margin-top: auto; border-top: 1px solid #dee2e6;";
   document.getElementById('content').parentElement.appendChild(rodape);
@@ -219,7 +219,8 @@ const TEXTO_SOBRE_FERRAMENTA = `
   <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.6;">
     Secretaria de Estado de Saúde de Pernambuco, por meio da DGMCG e da GGPCG. Ferramenta
     criada por Antonio Cleuton Eufrasio Vieira, Analista Administrativo, para uso exclusivo
-    da equipe da Gerência de Gestão de Processos dos Contratos de Gestão.
+    da equipe da Gerência de Gestão de Processos dos Contratos de Gestão. Colaboração na
+    análise dos fluxos de trabalho: Yasmim Moraes.
   </p>
 `;
 
@@ -1373,7 +1374,7 @@ function abrirPainelEvidencias() {
           <h2>📌 Painel de Evidências</h2>
           <p style="font-size: 0.85rem; color: #6c757d; margin-bottom: 20px;">As informações que você alfinetar no Monitor 1 aparecerão aqui. As anotações abaixo de cada card são salvas automaticamente no processo — pode fechar esta janela sem perder nada.</p>
           <div id="evidencias-container"></div>
-          <div class="watermark">&copy; 2026 SES-PE — DGMCG/GGPCG.<br>Desenvolvido por Cleuton Vieira.</div>
+          <div class="watermark">&copy; 2026 SES-PE — DGMCG/GGPCG.<br>Desenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.</div>
           <script>
               function removerEvidencia(id) { var el = document.getElementById(id); if(el) el.remove(); }
               function copiarDocID(texto) { navigator.clipboard.writeText(texto).then(() => alert('Documento Copiado: ' + texto + '\\n\\nCole na barra de pesquisa do SEI!')); }
