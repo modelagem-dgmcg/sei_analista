@@ -139,11 +139,7 @@
     <h1><span>Raio-X</span></h1>
     <div class="dir"><span id="quem"></span><button class="btn btn-sm" onclick="sair()"><i class="ti ti-logout"></i> Sair</button></div>
   </header>
-  <nav class="abas">
-    <a href="#" id="aba-rodar" onclick="abrirAba('rodar'); return false;">Rodar</a>
-    <a href="#" id="aba-achados" onclick="abrirAba('achados'); return false;">Achados</a>
-    <a href="#" id="aba-rx" onclick="abrirAba('rx'); return false;">Raio-X para a diretoria</a>
-  </nav>
+  <nav class="abas" id="nav"></nav>
   <main id="conteudo"></main>
   <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
 </div>
@@ -152,13 +148,13 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.9';
-const VERSAO_RAIOX_DATA = '16/10/2026 15:00';
+const VERSAO_RAIOX = 'v0.15';
+const VERSAO_RAIOX_DATA = '26/10/2026 11:40';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
 
-let TOKEN = null, usuario = null, abaAtual = 'rodar';
+let TOKEN = null, usuario = null, abaAtual = 'rodar', PAPEL = '';
 let escopos = [], achados = [], chaves = [], parar = false, rodando = false;
 
 function esc(s) { return String(s === null || s === undefined ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
@@ -201,17 +197,30 @@ async function entrar() {
   $('l-senha').value = ''; $('login').classList.add('hidden'); $('app').classList.remove('hidden');
   $('quem').textContent = usuario.nome;
   $('rodape-versao').textContent = `Raio-X ${VERSAO_RAIOX} · ${VERSAO_RAIOX_DATA} — Servidor ${res.versao_backend || 'sem versão'}`;
-  const r = await api('ia/minhas-chaves', {});
-  chaves = (r && r.ok && r.chaves) || [];
-  abrirAba('rodar');
+  const eu = await api('raiox/eu', {});
+  PAPEL = (eu && eu.ok && eu.papel) || '';
+  if (!PAPEL) { $('nav').innerHTML = ''; $('conteudo').innerHTML = `<div class="erro">${esc((eu && eu.erro) || 'Você ainda não tem um papel no Raio-X. Peça ao administrador que cadastre você na aba Equipe.')}</div>`; return; }
+  if (PAPEL === 'admin') { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; }
+  montarNav();
+  abrirAba(PAPEL === 'analista' ? 'minhas' : PAPEL === 'coordenacao' ? 'fatias' : 'rodar');
 }
 async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN = null; location.reload(); }
 
 // ==================== ABAS ====================
+const ABAS_POR_PAPEL = {
+  admin: [['rodar', 'Rodar'], ['achados', 'Achados'], ['rx', 'Raio-X para a diretoria'], ['fatias', 'Fatias e pareceres'], ['equipe', 'Equipe']],
+  coordenacao: [['achados', 'Achados'], ['fatias', 'Fatias e pareceres']],
+  analista: [['minhas', 'Minhas fatias']]
+};
+function montarNav() {
+  $('nav').innerHTML = (ABAS_POR_PAPEL[PAPEL] || []).map(x => `<a href="#" id="aba-${x[0]}" onclick="abrirAba('${x[0]}'); return false;">${esc(x[1])}</a>`).join('');
+}
 function abrirAba(a) {
+  if (!(ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === a)) return;
   abaAtual = a;
-  ['rodar', 'achados', 'rx'].forEach(x => $('aba-' + x).classList.toggle('ativa', x === a));
-  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else telaRx();
+  (ABAS_POR_PAPEL[PAPEL] || []).forEach(x => { const el = $('aba-' + x[0]); if (el) el.classList.toggle('ativa', x[0] === a); });
+  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx();
+  else if (a === 'fatias' || a === 'minhas') telaFatias(); else if (a === 'equipe') telaEquipe();
 }
 const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
 
@@ -545,6 +554,8 @@ async function telaAchados() {
         <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
         <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
       </div></div>
+    ${PAPEL === 'analista' ? '' : `<div class="bloco" id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar fatia com os achados filtrados</button><div id="form-fatia"></div></div>`}
+    <div class="bloco"><button class="btn btn-sm" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button> <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">Baixar CSV de todos os achados</button><div class="dica" style="margin-top:6px">Abre direto no Excel. Inclui o número do SEI, o setor, a gravidade e o contrato de cada achado.</div></div>
     <div id="lista-ach"></div>`;
   if (filtroInicial) {      // veio de um clique na matriz ou nas barras da aba da diretoria
     const f = filtroInicial; filtroInicial = null;
@@ -553,6 +564,20 @@ async function telaAchados() {
     if (f.unidade && $('f-unidade')) $('f-unidade').value = f.unidade;
   }
   pintarAchados();
+}
+// ---- exportar achados em CSV (UTF-8 com BOM, separador ponto e vírgula, abre direto no Excel em português) ----
+const CSV_COLS = ['id', 'unidade', 'contrato', 'processo', 'sei_contrato', 'sei_instrumento', 'instrumento_citado', 'instrumentos', 'gravidade', 'tipo', 'regra', 'origem', 'titulo', 'descricao', 'documentos', 'trecho', 'trecho_confere', 'impacto', 'risco_controle', 'sugestao', 'setor', 'orgaos', 'liga_passado', 'ligacao', 'papel', 'oculto_passado', 'conferido', 'obs', 'escopo', 'criado_por', 'criado_em'];
+function csvCel(v) { let s = String(v === null || v === undefined ? '' : v).replace(/\r?\n/g, ' ').trim(); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }
+function baixarCsvAchados(soFiltrados) {
+  const lista = soFiltrados ? filtrados() : achados;
+  if (!lista.length) { alert('Nenhum achado para baixar.'); return; }
+  const extras = [...new Set(lista.flatMap(a => Object.keys(a)))].filter(k => !CSV_COLS.includes(k) && !k.startsWith('_'));
+  const cols = CSV_COLS.concat(extras);
+  const linhas = [cols.map(csvCel).join(';')].concat(lista.map(a => cols.map(c => csvCel(a[c])).join(';')));
+  const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const nome = `raiox_achados_${soFiltrados ? 'filtrados' : 'todos'}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.csv`;
+  const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 const ordemGrav = { alta: 0, media: 1, baixa: 2 };
 function filtrados() {
@@ -566,7 +591,7 @@ function filtrados() {
 }
 function pintarAchados() {
   const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
-  $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, true)).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
+  $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, PAPEL === 'admin')).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
 }
 function cartao(a, comBotoes) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
@@ -602,6 +627,167 @@ async function conferir(id, valor) {
   if (r.ok === false) { alert(r.erro); return; }
   const a = achados.find(x => x.id === id); if (a) a.conferido = valor;
   pintarAchados();
+}
+
+// ==================== FATIAS, PARECERES, EQUIPE (v0.14, sem anexos) ====================
+const NOME_PAPEL = { admin: 'Administrador', coordenacao: 'Coordenação', analista: 'Analista' };
+const NOME_SIT = { atribuida: 'atribuída', em_analise: 'em análise', devolvida: 'devolvida' };
+const NOME_IMP = { sem: 'sem impacto', com: 'há impacto', nao_avalio: 'precisa pesquisar mais' };
+const ALVOS_IMP = [['imp_setor', 'Setor (GGPCG/DGMCG)'], ['imp_diretoria', 'Diretoria'], ['imp_secexec', 'Secretaria Executiva'], ['imp_ses', 'SES']];
+const fmtData = t => { try { return t ? new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''; } catch (e) { return ''; } };
+
+// ---- criar fatia a partir dos achados filtrados (aba Achados) ----
+async function abrirFormFatia() {
+  const lista = filtrados();
+  if (!lista.length) { alert('Nenhum achado no filtro atual.'); return; }
+  const r = await api('raiox/equipe', {});
+  if (!r.ok) { alert(r.erro); return; }
+  if (!r.pessoas.length) { alert('Cadastre pessoas na aba Equipe antes de criar fatias.'); return; }
+  $('form-fatia').innerHTML = `<div style="margin-top:10px">
+    <p class="dica">Esta fatia terá <strong>${lista.length}</strong> achado(s) (os que aparecem no filtro agora, inclusive além dos 300 mostrados).</p>
+    <label>Nome da fatia</label><input id="ft-nome" maxlength="120" placeholder="ex.: Prazos e vigência — contratos de OS">
+    <label>Quem vai analisar</label><select id="ft-para">${r.pessoas.map(p => `<option value="${esc(p.email)}">${esc(p.nome || p.email)} (${esc(NOME_PAPEL[p.papel] || p.papel)})</option>`).join('')}</select>
+    <label>Recado para quem vai analisar (opcional)</label><textarea id="ft-msg" rows="3" maxlength="800"></textarea>
+    <div class="acoes"><button class="btn btn-principal btn-sm" onclick="criarFatia()"><i class="ti ti-send"></i> Criar e enviar</button> <button class="btn btn-sm btn-claro" onclick="$('form-fatia').innerHTML=''">Cancelar</button></div></div>`;
+}
+async function criarFatia() {
+  const lista = filtrados();
+  const f = id => (($(id) || {}).value || '');
+  const filtro = ['f-unidade', 'f-grav', 'f-orig', 'f-setor', 'f-orgao', 'f-tipo', 'f-conf', 'f-q'].map(i => f(i) ? i.slice(2) + '=' + f(i) : '').filter(Boolean).join('; ');
+  const r = await api('raiox/fatia-criar', { nome: f('ft-nome'), atribuida_a: f('ft-para'), mensagem: f('ft-msg'), ids: lista.map(a => a.id), filtro });
+  if (!r.ok) { alert(r.erro); return; }
+  alert('Fatia criada com ' + r.n + ' achado(s).' + (r.ja_em_outra_fatia ? '\n' + r.ja_em_outra_fatia + ' deles já estão em outra fatia aberta.' : '') + (r.ignorados ? '\n' + r.ignorados + ' não foram encontrados.' : ''));
+  $('form-fatia').innerHTML = '';
+  abrirAba('fatias');
+}
+
+// ---- lista de fatias ----
+async function telaFatias() {
+  $('conteudo').innerHTML = carregando('Carregando as fatias...');
+  const r = await api('raiox/fatias-listar', {});
+  if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
+  const gestor = PAPEL !== 'analista';
+  const linhas = r.fatias.map(f => `<div class="bloco"><div><strong>${esc(f.nome)}</strong> <span class="etq ${f.situacao === 'devolvida' ? 'verde' : f.situacao === 'em_analise' ? 'amarelo' : 'azul'}">${esc(NOME_SIT[f.situacao] || f.situacao)}</span></div>
+    <p class="dica">${gestor ? 'Para: ' + esc(f.atribuida_nome) + ' · ' : ''}criada ${esc(fmtData(f.criada_em))}${f.devolvida_em ? ' · devolvida ' + esc(fmtData(f.devolvida_em)) : ''} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer · ${f.n_pareceres} parecer(es)</p>
+    ${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
+    <div class="acoes"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>
+    ${gestor && f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`).join('');
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-cut"></i> ${gestor ? 'Fatias e pareceres' : 'Minhas fatias'}</h2>
+    ${gestor ? '<p class="dica">Para criar uma fatia, vá em Achados, filtre o que quer enviar e use "Criar fatia com os achados filtrados".</p>' : '<p class="dica">Estas são as fatias de achados que foram enviadas para você analisar.</p>'}</div>
+    ${linhas || '<div class="vazio">Nenhuma fatia ainda.</div>'}
+    ${gestor ? '<div id="visao-par"></div>' : ''}`;
+  if (gestor) visaoPareceres();
+}
+async function reabrirFatia(id) { const r = await api('raiox/fatia-reabrir', { id }); if (!r.ok) { alert(r.erro); return; } telaFatias(); }
+
+// visão geral de pareceres (administrador e coordenação)
+async function visaoPareceres() {
+  const r = await api('raiox/pareceres-resumo', {});
+  if (!r.ok || !$('visao-par')) return;
+  const cnt = campo => { const c = { sem: 0, com: 0, nao_avalio: 0 }; r.pareceres.forEach(x => { c[x[campo]] = (c[x[campo]] || 0) + 1; }); return c; };
+  const linha = ALVOS_IMP.map(([c, n]) => { const k = cnt(c); return `<tr><td>${esc(n)}</td><td>${k.com}</td><td>${k.sem}</td><td>${k.nao_avalio}</td></tr>`; }).join('');
+  $('visao-par').innerHTML = `<div class="bloco"><h2><i class="ti ti-gavel"></i> Visão geral dos pareceres</h2>
+    <p class="dica">${r.n_achados_com_parecer} de ${r.n_achados_em_fatias} achados em fatias já têm parecer. Cada parecer conta uma vez (última versão).</p>
+    ${r.pareceres.length ? `<table class="tab"><thead><tr><th>Alvo</th><th>Há impacto</th><th>Sem impacto</th><th>Não consigo avaliar</th></tr></thead><tbody>${linha}</tbody></table>` : '<p class="dica">Nenhum parecer registrado ainda.</p>'}
+    ${r.pareceres.map(x => `<details style="margin-top:8px"><summary><strong>${esc(x.fatia_nome)}</strong> · ${x.n_achados} achado(s) · ${esc(x.autor_nome)} · v${x.versao}</summary>
+      <p class="dica">${ALVOS_IMP.map(([c, n]) => esc(n) + ': ' + esc(NOME_IMP[x[c]] || x[c])).join(' · ')}</p>
+      <p style="white-space:pre-wrap">${esc(x.justificativa)}</p></details>`).join('')}
+    </div>`;
+}
+
+// ---- uma fatia aberta ----
+let FATIA = null, SEL = new Set(), PAR_EDIT = null, FILTRO_FATIA = { q: '', cob: '' };
+async function abrirFatia(id) {
+  $('conteudo').innerHTML = carregando('Abrindo a fatia...');
+  const r = await api('raiox/fatia-obter', { id }, 180000);
+  if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
+  FATIA = r; FATIA.achados = prepararAchados(FATIA.achados || []); SEL = new Set(); PAR_EDIT = null; FILTRO_FATIA = { q: '', cob: '' };
+  pintarFatia();
+}
+function coberturaFatia() { const c = {}; FATIA.pareceres.forEach(p => p.ids_achados.forEach(i => { (c[i] = c[i] || []).push(p.parecer_id); })); return c; }
+function pintarFatia() {
+  const f = FATIA.fatia, aberta = f.situacao !== 'devolvida' || PAPEL !== 'analista';
+  const cob = coberturaFatia();
+  const q = normT(FILTRO_FATIA.q);
+  const lista = FATIA.achados.filter(a => (!FILTRO_FATIA.cob || (FILTRO_FATIA.cob === 'sem' ? !cob[a.id] : !!cob[a.id])) && (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato].join(' ')).includes(q)));
+  FATIA._lista = lista;
+  const par = FATIA.pareceres.map((p, n) => `<div class="card-ach"><div><strong>Parecer ${n + 1}</strong> · v${p.versao} · ${esc(p.autor_nome)} · ${esc(fmtData(p.criado_em))} · ${p.ids_achados.length} achado(s)</div>
+    <p class="dica">${ALVOS_IMP.map(([c, nm]) => esc(nm) + ': ' + esc(NOME_IMP[p[c]] || p[c])).join(' · ')}</p>
+    <p style="white-space:pre-wrap">${esc(p.justificativa)}</p>
+    <div class="acoes">${aberta ? `<button class="btn btn-sm" onclick="editarParecer('${esc(p.parecer_id)}')">Editar (gera nova versão)</button>` : ''}${p.n_versoes > 1 ? `<button class="btn btn-sm btn-claro" onclick="verVersoes('${esc(p.parecer_id)}')">Ver ${p.n_versoes} versões</button>` : ''}</div><div id="vers-${esc(p.parecer_id)}"></div></div>`).join('');
+  $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="abrirAba(abaAtual)"><i class="ti ti-arrow-left"></i> Voltar</button>
+    <h2>${esc(f.nome)} <small>${esc(NOME_SIT[f.situacao] || f.situacao)}</small></h2>
+    <p class="dica">Para: ${esc(f.atribuida_nome)} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer</p>${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
+    ${f.situacao !== 'devolvida' ? `<div class="acoes"><button class="btn btn-principal btn-sm" onclick="devolverFatia()"><i class="ti ti-arrow-back-up"></i> Devolver fatia pronta</button></div>` : '<p class="dica">Fatia devolvida.</p>'}</div>
+    <div class="bloco"><h2>Pareceres</h2>${par || '<p class="dica">Nenhum parecer ainda. Marque os achados abaixo e preencha o formulário.</p>'}</div>
+    ${aberta ? `<div class="bloco" id="form-par"></div>` : ''}
+    <div class="bloco"><h2>Achados da fatia <small>${lista.length} de ${FATIA.achados.length}</small></h2>
+      <div class="filtros"><div><label>Parecer</label><select onchange="FILTRO_FATIA.cob=this.value;pintarFatia()"><option value="">Todos</option><option value="sem" ${FILTRO_FATIA.cob === 'sem' ? 'selected' : ''}>Sem parecer</option><option value="com" ${FILTRO_FATIA.cob === 'com' ? 'selected' : ''}>Com parecer</option></select></div>
+      <div><label>Busca</label><input value="${esc(FILTRO_FATIA.q)}" onchange="FILTRO_FATIA.q=this.value;pintarFatia()" placeholder="palavra"></div></div>
+      ${aberta ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="selTodosFatia(true)">Marcar todos os listados</button> <button class="btn btn-sm btn-claro" onclick="selTodosFatia(false)">Desmarcar</button> <span class="dica" id="cont-sel"></span></div>` : ''}</div>
+    ${lista.slice(0, 200).map(a => `<div style="display:flex;gap:8px;align-items:flex-start">${aberta ? `<input type="checkbox" style="margin-top:14px" ${SEL.has(a.id) ? 'checked' : ''} onchange="selUm('${esc(a.id)}',this.checked)">` : ''}<div style="flex:1">${cartao(a, false)}${cob[a.id] ? '<span class="etq verde">com parecer</span>' : '<span class="etq amarelo">sem parecer</span>'}</div></div>`).join('')}
+    ${lista.length > 200 ? '<div class="dica">Mostrando os 200 primeiros. Use a busca ou "Marcar todos os listados" (marca todos os da lista, não só os 200).</div>' : ''}`;
+  if (aberta) pintarFormParecer();
+  contarSel();
+}
+function selUm(id, on) { if (on) SEL.add(id); else SEL.delete(id); contarSel(); }
+function selTodosFatia(on) { (FATIA._lista || []).forEach(a => { if (on) SEL.add(a.id); else SEL.delete(a.id); }); pintarFatia(); }
+function contarSel() { const e = $('cont-sel'); if (e) e.textContent = SEL.size + ' marcado(s)'; const f = $('par-n'); if (f) f.textContent = SEL.size; }
+
+function pintarFormParecer() {
+  const p = PAR_EDIT ? FATIA.pareceres.find(x => x.parecer_id === PAR_EDIT) : null;
+  const selImp = (c) => `<select id="pf-${c}"><option value="">— escolha —</option>${['com', 'sem', 'nao_avalio'].map(v => `<option value="${v}" ${p && p[c] === v ? 'selected' : ''}>${esc(NOME_IMP[v])}</option>`).join('')}</select>`;
+  $('form-par').innerHTML = `<h2>${p ? 'Editar parecer (nova versão)' : 'Novo parecer'}</h2>
+    <p class="dica">Este parecer cobre <strong id="par-n">${SEL.size}</strong> achado(s) marcado(s). Para cada alvo diga se há impacto, se não há, ou se precisa pesquisar mais. Você pode fazer vários pareceres na mesma fatia (um para o que tem impacto, outro para o que não tem, outro para o que precisa pesquisar). Todo achado precisa ficar coberto por algum parecer antes de devolver.</p>
+    <div class="filtros">${ALVOS_IMP.map(([c, n]) => `<div><label>${esc(n)}</label>${selImp(c)}</div>`).join('')}</div>
+    <label>Justificativa (obrigatória, inclusive quando não há impacto)</label><textarea id="pf-just" rows="6" maxlength="4000">${esc(p ? p.justificativa : '')}</textarea>
+    <div class="acoes"><button class="btn btn-principal btn-sm" onclick="salvarParecer()"><i class="ti ti-device-floppy"></i> Salvar parecer</button>${p ? ' <button class="btn btn-sm btn-claro" onclick="PAR_EDIT=null;pintarFormParecer()">Cancelar edição</button>' : ''}</div><div id="pf-msg" class="dica"></div>`;
+}
+function editarParecer(id) {
+  const p = FATIA.pareceres.find(x => x.parecer_id === id); if (!p) return;
+  PAR_EDIT = id; SEL = new Set(p.ids_achados); pintarFatia(); $('form-par').scrollIntoView({ behavior: 'smooth' });
+}
+async function salvarParecer() {
+  const v = id => (($(id) || {}).value || '');
+  const corpo = { fatia_id: FATIA.fatia.id, parecer_id: PAR_EDIT || '', ids_achados: Array.from(SEL), justificativa: v('pf-just') };
+  ALVOS_IMP.forEach(([c]) => { corpo[c] = v('pf-' + c); });
+  const r = await api('raiox/parecer-salvar', corpo);
+  if (!r.ok) { $('pf-msg').textContent = r.erro; return; }
+  abrirFatia(FATIA.fatia.id);
+}
+async function verVersoes(pid) {
+  const r = await api('raiox/parecer-versoes', { fatia_id: FATIA.fatia.id, parecer_id: pid });
+  const el = $('vers-' + pid); if (!r.ok) { el.textContent = r.erro; return; }
+  el.innerHTML = r.versoes.map(x => `<div class="dica" style="margin-top:6px"><strong>v${x.versao}</strong> · ${esc(x.autor_nome)} · ${esc(fmtData(x.criado_em))} · ${x.n_achados} achado(s)<br>${ALVOS_IMP.map(([c, n]) => esc(n) + ': ' + esc(NOME_IMP[x[c]] || x[c])).join(' · ')}<br><span style="white-space:pre-wrap">${esc(x.justificativa)}</span></div>`).join('');
+}
+async function devolverFatia() {
+  if (!confirm('Devolver esta fatia? Depois disso você não poderá editar, a menos que a coordenação reabra.')) return;
+  const r = await api('raiox/fatia-devolver', { id: FATIA.fatia.id });
+  if (!r.ok) { alert(r.erro); return; }
+  abrirAba(abaAtual);
+}
+
+// ---- equipe (administrador) ----
+async function telaEquipe() {
+  $('conteudo').innerHTML = carregando('Carregando a equipe...');
+  const r = await api('raiox/perfis-listar', {});
+  if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
+  const papelDe = {}; r.perfis.forEach(p => { if (p.ativo !== 'nao') papelDe[p.email.toLowerCase()] = p.papel; });
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-users"></i> Equipe do Raio-X</h2>
+    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador</strong> vê tudo e roda o Raio-X. <strong>Coordenação</strong> vê todos os achados, cria fatias e vê os pareceres. <strong>Analista</strong> vê só as fatias que receber. Quem não tem papel não entra. A pessoa precisa ter login cadastrado (o mesmo da Gestão/Analista).</p>
+    <label>Buscar pessoa</label><input id="eq-q" oninput="pintarEquipe()" placeholder="nome ou e-mail"></div><div id="eq-lista"></div>`;
+  window._EQ = { usuarios: r.usuarios, papelDe }; pintarEquipe();
+}
+function pintarEquipe() {
+  const q = normT(($('eq-q') || {}).value || '');
+  const us = window._EQ.usuarios.filter(u => !q || normT(u.nome + ' ' + u.email).includes(q)).sort((a, b) => (window._EQ.papelDe[b.email] ? 1 : 0) - (window._EQ.papelDe[a.email] ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  $('eq-lista').innerHTML = us.slice(0, 80).map(u => `<div class="bloco" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><strong>${esc(u.nome)}</strong><div class="dica">${esc(u.email)}${u.gerencia ? ' · ' + esc(u.gerencia) : ''}</div></div>
+    <select onchange="salvarPapel('${esc(u.email)}',this.value)"><option value="">Sem papel</option>${['admin', 'coordenacao', 'analista'].map(p => `<option value="${p}" ${window._EQ.papelDe[u.email] === p ? 'selected' : ''}>${esc(NOME_PAPEL[p])}</option>`).join('')}</select></div>`).join('') + (us.length > 80 ? '<div class="dica">Mostrando 80. Use a busca.</div>' : '');
+}
+async function salvarPapel(email, papel) {
+  const r = await api('raiox/perfis-salvar', { email, papel });
+  if (!r.ok) { alert(r.erro); telaEquipe(); return; }
+  window._EQ.papelDe[email] = papel;
 }
 
 // ==================== TELA: RAIO-X PARA A DIRETORIA ====================
@@ -700,7 +886,7 @@ function htmlTabelaAchados(lista, cols) {
 // Tabela de achados com filtros (funciona dentro do relatório, no link e no arquivo baixado)
 const SCRIPT_FILTRO_REL = '(function(){var t=document.getElementById("tab-ach");if(!t)return;var rows=[].slice.call(t.tBodies[0].rows);var ids=["f-g","f-u","f-s","f-o","f-t"];' +
   'function v(i){var e=document.getElementById(i);return e?e.value:"";}' +
-  'function aplicar(){var q=v("f-q").toLowerCase(),n=0;rows.forEach(function(r){var d=r.dataset;var ok=(!v("f-g")||d.g===v("f-g"))&&(!v("f-u")||d.u===v("f-u"))&&(!v("f-s")||d.s===v("f-s"))&&(!v("f-t")||d.t===v("f-t"))&&(!v("f-o")||(d.o||"").split("|").indexOf(v("f-o"))>-1)&&(!q||d.x.indexOf(q)>-1);r.style.display=ok?"":"none";if(ok)n++;});document.getElementById("f-n").textContent=n;}' +
+  'function aplicar(){var q=v("f-q").toLowerCase(),n=0;rows.forEach(function(r){var d=r.dataset;var ok=(!v("f-g")||d.g===v("f-g"))&&(!v("f-u")||d.u===v("f-u"))&&(!v("f-s")||d.s===v("f-s"))&&(!v("f-t")||d.t===v("f-t"))&&(!v("f-o")||(d.o||"").split("|").indexOf(v("f-o"))>-1)&&(!q||(r._x||(r._x=r.textContent.toLowerCase())).indexOf(q)>-1);r.style.display=ok?"":"none";if(ok)n++;});document.getElementById("f-n").textContent=n;}' +
   'ids.forEach(function(i){var e=document.getElementById(i);if(e)e.addEventListener("change",aplicar);});document.getElementById("f-q").addEventListener("input",aplicar);' +
   'document.getElementById("f-limpar").addEventListener("click",function(){ids.concat("f-q").forEach(function(i){var e=document.getElementById(i);if(e)e.value="";});aplicar();});' +
   'var rk={alta:0,media:1,baixa:2},dir={};[].slice.call(t.tHead.rows[0].cells).forEach(function(th,c){th.title="Clique para ordenar";th.addEventListener("click",function(){dir[c]=!dir[c];var s=dir[c]?1:-1;rows.sort(function(a,b){var x=a.cells[c].textContent.trim().toLowerCase(),y=b.cells[c].textContent.trim().toLowerCase();if(x in rk&&y in rk)return(rk[x]-rk[y])*s;return x.localeCompare(y,"pt-BR")*s;});rows.forEach(function(r){t.tBodies[0].appendChild(r);});});});})();';
@@ -711,13 +897,12 @@ function htmlTabelaAchadosFiltravel(lista, cols) {
   const orgsDe = a => { const o = lerOrgaos(a); return o.length ? o : [SEM_ORGAO]; };
   const sel = (id, rot, vals) => `<div><label for="${id}">${rot}</label><select id="${id}"><option value="">Todos</option>${vals.map(x => `<option>${esc(x)}</option>`).join('')}</select></div>`;
   const barra = `<div class="filtros-rel">${sel('f-g', 'Gravidade', uniq(a => a.gravidade))}${sel('f-u', 'Unidade', uniq(a => a.unidade))}${sel('f-s', 'Setor', uniq(a => a.setor || 'Sem setor'))}${sel('f-o', 'Órgão', [...new Set(ord.flatMap(orgsDe))].sort((p, q) => p.localeCompare(q, 'pt-BR')))}${sel('f-t', 'Tipo', uniq(a => a.tipo))}
-    <div><label for="f-q">Buscar no texto</label><input id="f-q" type="search" placeholder="palavra ou número"></div>
+    <div><label for="f-q">Buscar nas colunas da tabela</label><input id="f-q" type="search" placeholder="palavra ou número"></div>
     <div><label>&nbsp;</label><button type="button" id="f-limpar" class="btn-limpar">Limpar filtros</button></div></div>
     <div class="sub no-print">Mostrando <b id="f-n">${ord.length}</b> de ${ord.length} achados. Clique no título de uma coluna para ordenar. O que ficar na tela é o que sai na impressão.</div>`;
   const cab = cols.map(c => `<th>${esc(COLUNAS[c][0])}</th>`).join('');
   const linhas = ord.map(a => {
-    const x = [a.titulo, a.unidade, a.contrato, a.processo, a.sei_contrato, a.sei_instrumento, a.documentos, a.impacto, a.sugestao, a.setor, a.orgaos, a.tipo].join(' ').toLowerCase();
-    return `<tr data-g="${esc(a.gravidade)}" data-u="${esc(a.unidade)}" data-s="${esc(a.setor || 'Sem setor')}" data-t="${esc(a.tipo)}" data-o="${esc(orgsDe(a).join('|'))}" data-x="${esc(x)}">${cols.map(c => `<td>${COLUNAS[c][2] ? COLUNAS[c][2](a) : esc(COLUNAS[c][1](a))}</td>`).join('')}</tr>`;
+    return `<tr data-g="${esc(a.gravidade)}" data-u="${esc(a.unidade)}" data-s="${esc(a.setor || 'Sem setor')}" data-t="${esc(a.tipo)}" data-o="${esc(orgsDe(a).join('|'))}">${cols.map(c => `<td>${COLUNAS[c][2] ? COLUNAS[c][2](a) : esc(COLUNAS[c][1](a))}</td>`).join('')}</tr>`;
   }).join('');
   return `${barra}<table class="rx-tab" id="tab-ach"><thead><tr>${cab}</tr></thead><tbody>${linhas}</tbody></table><script>${SCRIPT_FILTRO_REL}<\/script>`;
 }
@@ -797,14 +982,37 @@ async function telaRx() {
       <div class="acoes"><button class="btn btn-principal" onclick="imprimirRx()"><i class="ti ti-printer"></i> Imprimir</button>
         <button class="btn btn-claro" onclick="salvarPdfRx()"><i class="ti ti-file-type-pdf"></i> Salvar em PDF</button>
         <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button></div>
-      <div class="filtros" style="margin-top:12px;"><div><label>Link para abrir em qualquer aparelho vale por</label><select id="op-dias"><option value="1">1 dia</option><option value="7">7 dias</option><option value="15" selected>15 dias</option><option value="30">30 dias</option></select></div></div>
+      <div style="margin-top:12px;"><label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:#66757d;">Mensagem de abertura (opcional) — aparece no topo do relatório</label>
+        <textarea id="op-msg-texto" rows="7" style="width:100%;box-sizing:border-box;padding:8px;font-size:.88rem;border:1px solid #c9c2b6;border-radius:6px;" placeholder="Texto de quem encaminha o relatório. Deixe em branco para não mostrar."></textarea>
+        <div class="filtros" style="margin-top:6px;"><div><label>Título do bloco</label><input id="op-msg-titulo" value="Solicitação de análise jurídica"></div><div><label>Assinatura (nome e cargo)</label><input id="op-msg-autor" placeholder="Nome, cargo"></div></div>
+        <div class="acoes"><button class="btn btn-sm btn-claro" onclick="rascunhoMsgRx()">Inserir rascunho para revisão</button> <button class="btn btn-sm btn-claro" onclick="$('op-msg-texto').value=''">Limpar</button></div></div>
+      <div class="filtros" style="margin-top:12px;"><div><label>Link para abrir em qualquer aparelho vale por</label><select id="op-dias"><option value="1">1 dia</option><option value="7">7 dias</option><option value="15" selected>15 dias</option><option value="30">30 dias</option><option value="0">Sem prazo (eu encerro quando quiser)</option></select></div></div>
       <div class="acoes"><button class="btn btn-principal" id="bt-link" onclick="criarLinkRx()"><i class="ti ti-link"></i> Criar link para compartilhar</button></div>
       <div id="rx-link" style="margin-top:8px;"></div>
+      <div class="acoes"><button class="btn btn-claro btn-sm" onclick="listarLinksRx()"><i class="ti ti-list"></i> Meus links criados</button></div>
+      <div id="rx-lista" style="margin-top:8px;"></div>
       <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
     </div>`;
   pintarRx();
 }
 
+function rascunhoMsgRx() {
+  if ($('op-msg-texto').value.trim() && !confirm('Substituir o texto que já está no campo pelo rascunho?')) return;
+  $('op-msg-texto').value = [
+    'À Coordenação Jurídica,',
+    '',
+    'Encaminho o Raio-X documental, relatório da DGMCG/GGPCG que lê, com inteligência artificial, os contratos de gestão, os aditivos e os processos SEI da nossa base. Os achados ainda não foram conferidos um a um e não constituem conclusão de auditoria.',
+    '',
+    'Solicito a análise jurídica desta coordenação sobre:',
+    '',
+    '1. Os achados e a sua recorrência: se, considerados em conjunto, trazem risco jurídico para a Administração e de que natureza.',
+    '2. A ciência da Administração: se, a partir do conhecimento desses achados, existe dever de verificar o histórico e de corrigir documentos que seguiram com erro nos atos posteriores, e quais as consequências de não fazê-lo.',
+    '3. Alcance e responsáveis: em quais atos e níveis (setor, diretoria, Secretaria Executiva e SES) essas ocorrências repercutem, que danos podem causar e a quem atingem, inclusive aos que assinaram os documentos.',
+    '4. Providências: se cabe comunicação a órgão de controle e como tratar os achados que já possam estar em apuração externa.',
+    '',
+    'Peço que a manifestação indique também o que deve ser conferido antes de qualquer encaminhamento.'
+  ].join('\n');
+}
 function montarRelatorio() {
   const l = listaRx(), op = id => !!($(id) && $(id).checked), cols = [...document.querySelectorAll('.op-col:checked')].map(x => x.value);
   const hoje = new Date().toLocaleDateString('pt-BR'), v = id => ($(id) || {}).value || '';
@@ -818,10 +1026,12 @@ function montarRelatorio() {
     .a h3{font-size:.93rem;margin:4px 0}.r{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:#66757d;margin-top:7px}.a p{margin:2px 0;font-size:.84rem;line-height:1.5}
     blockquote{margin:4px 0;background:#f7f5f1;border-left:3px solid #d8cfc0;padding:6px 10px;font-size:.8rem}.s{display:inline-block;padding:1px 8px;border-radius:10px;font-size:.7rem;font-weight:700;margin-right:4px}
     .s.alta{background:#f8d7da;color:#8e1628}.s.media{background:#fff4d6;color:#664d03}.s.baixa{background:#e6ecef;color:#455a64}.e{background:#e6ecef;color:#455a64}.c{background:#d9f1e3;color:#0f5132}.p{background:#fff4d6;color:#664d03}
-    .intro{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #b45309;border-radius:8px;padding:6px 18px 10px;margin:14px 0}.intro p{margin:7px 0;font-size:.86rem;line-height:1.55}.aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
+    .msg{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #1f4e79;border-radius:8px;padding:6px 18px 12px;margin:14px 0}.msg .t{white-space:pre-wrap;font-size:.9rem;line-height:1.6}.msg .as{margin-top:10px;font-size:.84rem;color:#455a64}.intro{background:#fff;border:1px solid #ddd6ca;border-left:4px solid #b45309;border-radius:8px;padding:6px 18px 10px;margin:14px 0}.intro p{margin:7px 0;font-size:.86rem;line-height:1.55}.aviso{background:#fff4d6;border-radius:6px;padding:9px 13px;font-size:.82rem;margin:12px 0}.vazio{color:#66757d;padding:10px}
     .filtros-rel{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin:10px 0}.filtros-rel label{display:block;font-size:.68rem;font-weight:700;text-transform:uppercase;color:#66757d;margin-bottom:2px}.filtros-rel select,.filtros-rel input{width:100%;padding:7px;font-size:.85rem;border:1px solid #c9c2b6;border-radius:6px;background:#fff;box-sizing:border-box}.btn-limpar{padding:7px 12px;border:1px solid #c9c2b6;border-radius:6px;background:#f4f2ee;cursor:pointer;font-size:.85rem}#tab-ach th{cursor:pointer}@media print{.filtros-rel,.no-print{display:none}}
     @media screen and (max-width:700px){main{padding:14px 10px}table{display:block;overflow-x:auto;max-width:100%}}.barra{position:sticky;top:0;background:#212529;padding:8px 14px;text-align:right;z-index:5}.barra button{background:#d97706;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:700;font-size:.9rem}@media print{.barra{display:none}}
     @page{size:A4 ${v('op-folha') || 'landscape'};margin:12mm}@media print{body{background:#fff}main{max-width:none;padding:0}.a{border-color:#bbb}tr{page-break-inside:avoid}thead{display:table-header-group}}`;
+  const msgTxt = v('op-msg-texto').trim();
+  const blocoMsg = msgTxt ? `<div class="msg"><h2 style="margin-top:6px">${esc(v('op-msg-titulo') || 'Mensagem')}</h2><div class="t">${esc(msgTxt)}</div><div class="as">${v('op-msg-autor') ? esc(v('op-msg-autor')) + ' — ' : ''}${hoje}</div></div>` : '';
   const sec = [];
   if (op('op-resumo')) sec.push(`<div class="tiles"><div class="tile"><b>${l.length}</b><span>achados</span></div><div class="tile"><b>${alta}</b><span>de gravidade alta</span></div><div class="tile"><b>${conf}</b><span>já conferidos (procedem)</span></div><div class="tile"><b>${new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size}</b><span>contratos com achados</span></div></div>`);
   if (op('op-matriz')) sec.push(`<h2>Achados por setor e órgão de controle</h2>${htmlMatriz(l, false)}`);
@@ -831,6 +1041,7 @@ function montarRelatorio() {
   if (op('op-detalhe')) sec.push(htmlDetalhe(l, v('op-agrupar') || 'unidade'));
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><div class="barra"><button onclick="window.print()">Salvar em PDF / imprimir</button></div><main>
     <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
+    ${blocoMsg}
     <div class="intro"><h2 style="margin-top:6px">Como ler este relatório</h2>
       <p><b>O que é.</b> O Raio-X é uma ferramenta da DGMCG/GGPCG que lê os contratos de gestão, os aditivos e os processos SEI da nossa base e aponta <b>achados</b>: pontos dos documentos que merecem atenção, porque um órgão de controle poderia questioná-los.</p>
       <p><b>O que é um achado.</b> É um ponto em que os documentos se contradizem, estão incompletos ou fogem de uma regra. Por exemplo: datas que não batem, valores diferentes entre documentos, prorrogação sem o ato anterior, intervalo sem cobertura entre duas vigências. Cada achado traz o trecho do documento onde aparece, o impacto, o risco perante os órgãos de controle e uma sugestão de correção.</p>
@@ -841,7 +1052,7 @@ function montarRelatorio() {
       <p><b>Setor e órgão.</b> O setor é a área da SES que pode resolver o ponto. O órgão é quem poderia questioná-lo. A matriz cruza os dois e só mostra os órgãos que aparecem nos achados.</p>
       <p><b>Quais contratos entram.</b> Os que estão em vigor, incluindo os emergenciais, termos de compromisso, prorrogações excepcionais e TAC. Do contrato anterior e dos que seguem em operação com o prazo vencido, só entram os achados que ligam ao passado. Encerrados ficam de fora.</p>
       <p><b>Limite importante.</b> A leitura depende dos documentos que estão na base. Contrato sem achado pode ser contrato cujos documentos ainda não foram lidos; a ausência de achado não prova que não há problema.</p>
-      <p><b>O que pedimos.</b> Confira os achados do seu setor, veja o trecho citado e informe se o ponto procede, se já foi resolvido ou se há explicação nos autos.</p>
+      ${msgTxt ? '' : '<p><b>O que pedimos.</b> Confira os achados do seu setor, veja o trecho citado e informe se o ponto procede, se já foi resolvido ou se há explicação nos autos.</p>'}
       <p class="sub">Uso interno.</p></div>
     ${sec.join('')}<p class="sub" style="margin-top:26px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
 }
@@ -857,11 +1068,35 @@ function salvarPdfRx() {
 }
 async function criarLinkRx() {
   const bt = $('bt-link'), box = $('rx-link'); bt.disabled = true; box.innerHTML = '<span class="dica">Criando o link…</span>';
-  const res = await api('raiox/relatorio-link', { html: montarRelatorio(), dias: Number(($('op-dias') || {}).value) || 15 }, 180000);
+  const res = await api('raiox/relatorio-link', { html: montarRelatorio(), base: API_URL, dias: ($('op-dias') || {}).value === '0' ? 0 : (Number(($('op-dias') || {}).value) || 15) }, 180000);
   bt.disabled = false;
   if (!res.ok) { box.innerHTML = '<div class="aviso">' + esc(res.erro || 'Não consegui criar o link.') + '</div>'; return; }
   const url = API_URL + '?rel=' + res.codigo;
-  box.innerHTML = '<div class="aviso">Link criado. Vale até ' + esc(res.vence_em) + '. Quem tiver o link abre, sem login. Só envie para quem pode ver.<br><input id="rx-url" readonly value="' + esc(url) + '" style="width:100%;margin-top:6px" onclick="this.select()"><div class="acoes"><button class="btn btn-sm btn-principal" onclick="copiarLinkRx()">Copiar</button> <a class="btn btn-sm btn-claro" href="' + esc(url) + '" target="_blank" rel="noopener">Abrir</a></div></div>';
+  box.innerHTML = '<div class="aviso">Link criado. ' + (res.sem_prazo ? 'Sem prazo: vale até você desativar em "Meus links criados".' : 'Vale até ' + esc(res.vence_em) + '.') + ' Quem tiver o link abre, sem login. Só envie para quem pode ver.<br><input id="rx-url" readonly value="' + esc(url) + '" style="width:100%;margin-top:6px" onclick="this.select()"><div class="acoes"><button class="btn btn-sm btn-principal" onclick="copiarLinkRx()">Copiar</button> <a class="btn btn-sm btn-claro" href="' + esc(url) + '" target="_blank" rel="noopener">Abrir</a></div></div>';
+}
+async function listarLinksRx() {
+  const box = $('rx-lista'); box.innerHTML = '<span class="dica">Buscando…</span>';
+  const res = await api('raiox/relatorio-lista', {});
+  if (!res.ok) { box.innerHTML = '<div class="aviso">' + esc(res.erro || 'Não consegui listar.') + '</div>'; return; }
+  if (!res.itens.length) { box.innerHTML = '<div class="dica">Nenhum link criado por você.</div>'; return; }
+  box.innerHTML = '<table class="tabela"><thead><tr><th>Criado</th><th>Situação</th><th>Ações</th></tr></thead><tbody>' + res.itens.map(i => {
+    const sit = i.desativado ? 'Desativado' : (i.vencido ? 'Vencido' : (i.sem_prazo ? 'Ativo, sem prazo' : 'Ativo até ' + i.vence_txt));
+    const url = API_URL + '?rel=' + i.codigo;
+    return '<tr><td>' + esc(i.criado_txt) + '<br><span class="dica">' + i.kb + ' KB</span></td><td>' + esc(sit) + '</td><td>' +
+      '<button class="btn btn-sm btn-claro" onclick="copiarTextoRx(\'' + url + '\')">Copiar link</button> ' +
+      (i.desativado ? '<button class="btn btn-sm btn-claro" onclick="acaoLinkRx(\'' + i.codigo + '\',\'reativar\')">Reativar</button> ' : '<button class="btn btn-sm btn-claro" onclick="acaoLinkRx(\'' + i.codigo + '\',\'desativar\')">Desativar</button> ') +
+      '<button class="btn btn-sm btn-claro" onclick="acaoLinkRx(\'' + i.codigo + '\',\'excluir\')">Excluir</button></td></tr>';
+  }).join('') + '</tbody></table>';
+}
+async function acaoLinkRx(codigo, acao) {
+  if (acao === 'excluir' && !confirm('Excluir este link? Quem o tiver não vai mais conseguir abrir, e não dá para desfazer.')) return;
+  if (acao === 'desativar' && !confirm('Desativar este link? Quem o tiver não vai conseguir abrir até você reativar.')) return;
+  const res = await api('raiox/relatorio-acao', { codigo: codigo, acao: acao });
+  if (!res.ok) { alert(res.erro || 'Não consegui.'); return; }
+  listarLinksRx();
+}
+function copiarTextoRx(t) {
+  try { navigator.clipboard.writeText(t); alert('Link copiado.'); } catch (e) { prompt('Copie o link:', t); }
 }
 function copiarLinkRx() {
   const i = $('rx-url'); i.select();
