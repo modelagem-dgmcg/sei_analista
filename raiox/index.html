@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.15';
-const VERSAO_RAIOX_DATA = '26/10/2026 11:40';
+const VERSAO_RAIOX = 'v0.16';
+const VERSAO_RAIOX_DATA = '26/10/2026 15:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -551,6 +551,7 @@ async function telaAchados() {
         <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
         <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
         <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
+        <div><label>Referência TCE-PE</label><select id="f-tce" onchange="pintarAchados()"><option value="">Todas</option><option value="25100813-7">Proc. 25100813-7 (UPAs)</option><option value="24100082-8">Proc. 24100082-8 (HPS)</option><option value="aud">Contrato auditado pelo TCE</option><option value="risco">Mesmo tipo de risco, outro contrato</option><option value="sem">Sem referência</option></select></div>
         <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
         <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
       </div></div>
@@ -566,7 +567,7 @@ async function telaAchados() {
   pintarAchados();
 }
 // ---- exportar achados em CSV (UTF-8 com BOM, separador ponto e vírgula, abre direto no Excel em português) ----
-const CSV_COLS = ['id', 'unidade', 'contrato', 'processo', 'sei_contrato', 'sei_instrumento', 'instrumento_citado', 'instrumentos', 'gravidade', 'tipo', 'regra', 'origem', 'titulo', 'descricao', 'documentos', 'trecho', 'trecho_confere', 'impacto', 'risco_controle', 'sugestao', 'setor', 'orgaos', 'liga_passado', 'ligacao', 'papel', 'oculto_passado', 'conferido', 'obs', 'escopo', 'criado_por', 'criado_em'];
+const CSV_COLS = ['id', 'unidade', 'contrato', 'processo', 'sei_contrato', 'sei_instrumento', 'instrumento_citado', 'instrumentos', 'gravidade', 'tipo', 'regra', 'origem', 'titulo', 'descricao', 'documentos', 'trecho', 'trecho_confere', 'impacto', 'risco_controle', 'sugestao', 'setor', 'orgaos', 'liga_passado', 'ligacao', 'papel', 'oculto_passado', 'conferido', 'obs', 'escopo', 'criado_por', 'criado_em', 'tce_processos', 'tce_temas', 'tce_relacao'];
 function csvCel(v) { let s = String(v === null || v === undefined ? '' : v).replace(/\r?\n/g, ' ').trim(); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }
 function baixarCsvAchados(soFiltrados) {
   const lista = soFiltrados ? filtrados() : achados;
@@ -586,6 +587,7 @@ function filtrados() {
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
   return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
     (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
+    (!v('f-tce') || (v('f-tce') === 'sem' ? !a.tce_ref : v('f-tce') === 'aud' ? a.tce_relacao === 'mesmo tema em contrato auditado' : v('f-tce') === 'risco' ? a.tce_relacao === 'mesmo tipo de risco em outro contrato' : (a.tce_processos || '').includes(v('f-tce')))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
@@ -604,6 +606,7 @@ function cartao(a, comBotoes) {
     ${a.liga_passado === 'sim' && a.ligacao ? `<div class="rot">Ligação com o passado</div><p>${esc(a.ligacao)}</p>` : ''}
     ${a.sei_contrato || a.sei_instrumento ? `<div class="rot">Processo SEI</div><p>${a.sei_contrato ? 'Contrato: ' + esc(a.sei_contrato) : ''}${a.sei_instrumento ? (a.sei_contrato ? ' · ' : '') + esc(a.instrumento_citado) + ': ' + esc(a.sei_instrumento) : ''}</p>` : (a.contrato || a.processo ? `<div class="rot">Processo SEI</div><p>SEI não informado na planilha de contratos</p>` : '')}
     ${a.instrumentos ? `<details class="dica"><summary>Todos os processos SEI deste contrato</summary><p>${esc(a.instrumentos)}</p></details>` : ''}
+    ${a.tce_ref ? `<div class="rot">Referência TCE-PE (indício, não confirmado)</div><p>${esc(a.tce_ref)}</p><p><span class="etq ${a.tce_relacao === 'mesmo tema em contrato auditado' ? 'amarelo' : 'azul'}">${esc(a.tce_relacao)}</span> <span class="dica">Indício ligado ao tema tratado no processo do TCE-PE. Não significa que o fato apontado pelo TCE se repete neste contrato.</span></p>` : ''}
     ${a.orgaos ? `<div class="rot">Órgãos que podem se interessar</div><p>${a.orgaos.split(';').map(o => '<span class="etq">' + esc(o.trim()) + '</span>').join(' ')}</p>` : ''}
     ${a.documentos ? `<div class="rot">Documento</div><p>${esc(a.documentos)}</p>` : ''}
     ${a.trecho ? `<div class="rot">Trecho no documento</div><blockquote>${esc(a.trecho)}</blockquote>` : ''}
@@ -795,12 +798,42 @@ const visivel = a => a.conferido !== 'nao' && !a.oculto_passado;
 const lerOrgaos = a => (a.orgaos ? String(a.orgaos).split(';').map(x => x.trim()).filter(Boolean) : []);
 const SEM_ORGAO = '(sem órgão indicado)';
 // Achados antigos não têm o campo de órgãos: deduz pelo texto do risco e do impacto (aproximado) e marca como deduzido.
+// ---- referência aos processos do TCE-PE (indício por tema, calculado no navegador; não grava nada) ----
+const TCE_PROC = { '25100813-7': 'Proc. TCE-PE 25100813-7 (UPA Olinda 001/2022 e UPAE Carpina 022/2022)', '24100082-8': 'Proc. TCE-PE 24100082-8 (Hospital Pelópidas Silveira 017/2022)' };
+const TCE_TEMAS = { T1: 'tema 1: desconto do art. 15-A não aplicado / encontro de contas', T2: 'tema 2: prorrogação com metas deficitárias sem repactuar', T3: 'tema 3: transparência (Res. TC 154/2021)', T4: 'tema 4: medidas corretivas e histórico', T5: 'tema 5: CTAI / CMA, pareceres e monitoramento' };
+const TCE_TEMA_PROC = { T1: ['25100813-7'], T2: ['25100813-7'], T3: ['25100813-7'], T4: ['25100813-7'], T5: ['25100813-7', '24100082-8'] };
+const TCE_CONTRATO_AUDITADO = { '001/2022': '25100813-7', '022/2022': '25100813-7', '017/2022': '24100082-8' };
+const TCE_RE = {
+  D1: /\bdescont[oa]s?\b|glosa|15-a|encontro de contas|abatiment|ressarcimento|producao excedente|compensa/, V1: /parcela variavel|parte variavel|remuneracao variavel|repasse variavel/,
+  R2: /repactua|renegocia|redimension/, T3: /transparenc|\bportal\b|\bcsv\b|extratos? bancari|dados abertos|154\/2021|publicacao de informac/,
+  C5: /\bctai\b|\bcma\b|comissao (tecnica|mista)|acompanhamento interno|\bparecer\b|\bpareceres\b/
+};
+function temasTce(a) {
+  const t = normT(a.titulo), d = normT(a.descricao), R = TCE_RE, out = {};
+  if (R.D1.test(t)) out.T1 = 'direto'; else if (R.D1.test(d) || R.V1.test(t + ' ' + d)) out.T1 = 'indireto';
+  if (R.R2.test(t) || (/prorrog/.test(t) && /\bmetas?\b/.test(t))) out.T2 = 'direto'; else if (R.R2.test(d)) out.T2 = 'indireto';
+  if (R.T3.test(t)) out.T3 = 'direto'; else if (/transparenc/.test(d) && /indicador/.test(d)) out.T3 = 'indireto';
+  if (a.liga_passado === 'sim') out.T4 = 'direto';
+  if (R.C5.test(t)) out.T5 = 'direto'; else if (R.C5.test(d)) out.T5 = 'indireto';
+  return out;
+}
+function marcarTce(lista) {
+  lista.forEach(a => {
+    const m = temasTce(a), ks = Object.keys(m), procs = [...new Set(ks.flatMap(k => TCE_TEMA_PROC[k]))];
+    const ca = TCE_CONTRATO_AUDITADO[String(a.contrato || '').trim()];
+    a.tce_temas = ks.map(k => k + ' (' + m[k] + ')').join('; ');
+    a.tce_processos = procs.join('; ');
+    a.tce_relacao = !ks.length ? '' : (ca && procs.includes(ca) ? 'mesmo tema em contrato auditado' : 'mesmo tipo de risco em outro contrato');
+    a.tce_ref = ks.length ? ks.map(k => TCE_TEMA_PROC[k].map(x => 'Proc. ' + x).join(' e ') + ' · ' + TCE_TEMAS[k] + ' (' + m[k] + ')').join(' | ') : '';
+  });
+  return lista;
+}
 function prepararAchados(lista) {
   const reg = [['TCE-PE', /\btce\b|tribunal de contas do estado/i], ['MPCO', /\bmpco\b|minist[eé]rio p[uú]blico de contas/i], ['MPPE', /\bmppe\b|minist[eé]rio p[uú]blico(?! de contas)/i],
     ['TJPE', /\btjpe\b|poder judici[aá]rio|a[cç][aã]o judicial/i], ['CGE-PE', /\bcge\b|\bscge\b|controladoria/i], ['ALEPE', /\balepe\b|assembleia legislativa/i],
     ['Conselho Estadual de Saúde', /conselho (estadual )?de sa[uú]de/i], ['Federal (TCU/CGU/DENASUS)', /\btcu\b|\bcgu\b|denasus|tribunal de contas da uni[aã]o/i]];
   lista.forEach(a => { if (a.orgaos) return; const t = [a.risco_controle, a.impacto].join(' '), f = reg.filter(r => r[1].test(t)).map(r => r[0]); if (f.length) { a.orgaos = f.join('; '); a.orgaos_deduzidos = true; } });
-  return lista;
+  return marcarTce(lista);
 }
 let filtroInicial = null;                       // usado quando se clica na matriz ou nas barras
 function irAchados(f) { filtroInicial = f; abrirAba('achados'); }
