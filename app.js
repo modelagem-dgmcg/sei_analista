@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.18';
-const VERSAO_APP_DATA = '28/10/2026 12:05';
+const VERSAO_APP = 'v26.19';
+const VERSAO_APP_DATA = '28/10/2026 12:40';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -418,6 +418,7 @@ async function logout() {
 }
 
 async function showView(v, subCaixa = 'entrada') {
+  if (window._achadosSel && window._achadosSel.size) { window._achadosSel.clear(); const b = document.getElementById('barra-sel-achados'); if (b) b.remove(); }
   document.querySelectorAll('#sidebar nav a, #caixa-flutuante-encaminhados a').forEach(a => a.classList.remove('active'));
   if (v === 'dashboard') {
     caixaAtualAtiva = subCaixa;
@@ -1436,6 +1437,7 @@ async function fixarEvidenciaDaMemoria(id) {
 
 // Abre pelo código interno (id). O número SEI só serve de plano B: na planilha ele pode virar número ou data.
 async function abrirProcesso(identificador) {
+  if (window._achadosSel && window._achadosSel.size) { window._achadosSel.clear(); const b = document.getElementById('barra-sel-achados'); if (b) b.remove(); }
   const content = document.getElementById('content');
   if (!content) return;
   content.innerHTML = '<span class="spinner"></span> Carregando processo...';
@@ -2797,6 +2799,9 @@ function _formatarBR(n) {
 // processo e CEP, que têm dígitos mas não entram em soma.
 function _numerosDaLinha(linha) {
   const limpa = linha
+    .replace(/^\s*\d+(?:\.\d+)*\s*[-–—.)]\s/, ' ')          // numeração de seção/item no começo: "3.1 - ", "3 – "
+    .replace(/\b[A-Za-zÀ-ÿ]{1,4}\d{1,2}\b/g, ' ')              // rótulos de coluna: M1, M6, T2, Q3
+    .replace(/\b\d{1,2}\s?[ºª°]/g, ' ')                          // ordinais: 1º, 2ª
     .replace(/\b\d{1,2}\/\d{1,2}\/\d{2,4}\b/g, ' ')
     .replace(/\d{4,}\s*\.\s*\d{5,6}\s*\/\s*\d{4}\s*-\s*\d{2}/g, ' ')
     .replace(/\b\d{2}\.?\d{3}-\d{3}\b/g, ' ');
@@ -3996,7 +4001,7 @@ function renderizarCards(cards) {
       + (c.conferido_por_codigo ? `<span title="Conta feita por regra fixa no código, não pela IA" style="font-size:0.68rem;background:#e7f5ff;color:#1864ab;padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">🔢 CONFERIDO POR CÓDIGO</span>` : '');
     _grupos[_fonteDoAchado(c)].push(`<div class="rx-card is-obice" id="${cardId}-div" data-referencia-achado="${escAttr(ref)}">
       <div class="rx-header" onclick="document.getElementById('${cardId}-div').classList.toggle('open')">
-        <div><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
+        <div><label class="rx-sel-lab" title="Marcar para perguntar sobre este achado" onclick="event.stopPropagation()" style="display:inline-flex; align-items:center; gap:3px; margin-right:8px; font-size:0.7rem; color:#364fc7; cursor:pointer;"><input type="checkbox" class="rx-sel" data-cid="${cardId}" ${window._achadosSel.has(_chaveAchado(c)) ? 'checked' : ''} onchange="alternarSelecaoAchado('${cardId}', this.checked)"> Perguntar</label><span class="rx-tag">${escHtml(c.tag)}</span> <span class="rx-title">${escHtml(c.titulo)}</span>${tagVerificar}</div>
       </div>
       <div class="rx-body">
         <p style="font-size:0.9rem; line-height:1.6; margin:0;">${escHtml(c.explicacao)}</p>
@@ -4014,6 +4019,7 @@ function renderizarCards(cards) {
         </div>` : ''}
         <div style="margin-top:10px; display:flex; gap:10px; flex-wrap:wrap;">
           ${c.evidencia ? `<button class="btn btn-sm btn-secondary" onclick="abrirTrechoDocumento('${cardId}')"><i class="ti ti-quote"></i> Ver trecho no documento</button>` : ''}
+          <button class="btn btn-sm" style="background:#fff; color:#364fc7; border:1px solid #364fc7;" title="Leva este achado para a caixa Perguntar" onclick="perguntarSobreAchado('${cardId}')"><i class="ti ti-message-circle"></i> Perguntar</button>
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           ${c.integridade ? '' : `<button class="btn btn-sm" style="background:#fff; color:#8e1628; border:1px solid #8e1628;" title="Analisei e este achado não cabe neste processo" onclick="abrirModalIncoerente('${cardId}')"><i class="ti ti-ban"></i> Incoerente</button>`}
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
@@ -4025,6 +4031,7 @@ function renderizarCards(cards) {
   });
   html += _htmlGruposDeAchados(_grupos, cards);
   painel.innerHTML = html;
+  _atualizarBarraSelecaoAchados();
   carregarStatusConsultasAchados();
 }
 
@@ -4521,6 +4528,68 @@ ${contexto}`;
     if (botao) botao.disabled = false;
     if (botaoAba) botaoAba.disabled = false;
   }
+}
+
+// ==================== PERGUNTAR SOBRE ACHADOS ====================
+// Cada achado tem o botão "Perguntar" e uma caixinha de seleção. Marque quantos quiser: aparece
+// uma barra "Perguntar sobre os selecionados". O achado vai para a caixa Perguntar e você só
+// completa a pergunta depois de "Minha pergunta:".
+window._achadosSel = window._achadosSel || new Map();   // chave do achado -> texto
+
+function _chaveAchado(c) {
+  return [c.tag, c.titulo, c.doc_origem || '', c.pagina || '', String(c.evidencia || '').slice(0, 60)].join('|');
+}
+function _textoAchadoParaPergunta(c) {
+  const doc = c.doc_origem && c.doc_origem !== 'undefined' ? String(c.doc_origem).replace(/\.(pdf|docx?|xlsx?)$/i, '') : '';
+  const onde = [doc, c.pagina ? 'página ' + c.pagina : ''].filter(Boolean).join(', ');
+  return `[${c.tag}] ${c.titulo}: ${c.explicacao}${onde ? ' (Onde: ' + onde + ')' : ''}`;
+}
+function _levarAchadosAoPerguntar(textos) {
+  if (typeof assistenteAba === 'function') assistenteAba('perguntar');
+  const input = document.getElementById('chat-input');
+  if (!input) { mostrarToast('A caixa Perguntar não está aberta nesta tela.'); return; }
+  const corpo = textos.length === 1
+    ? 'Sobre o achado: ' + textos[0]
+    : 'Sobre os achados: ' + textos.map((t, i) => `${i + 1}) ${t}`).join(' ');
+  input.value = corpo + ' — Minha pergunta: ';
+  const alvo = document.getElementById('assistente') || input;
+  alvo.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  input.focus();
+  try { input.setSelectionRange(input.value.length, input.value.length); } catch (e) { /* ignora */ }
+}
+function perguntarSobreAchado(cardId) {
+  const c = (window.memoriaCards || {})[cardId];
+  if (c) _levarAchadosAoPerguntar([_textoAchadoParaPergunta(c)]);
+}
+function alternarSelecaoAchado(cardId, marcado) {
+  const c = (window.memoriaCards || {})[cardId];
+  if (!c) return;
+  const chave = _chaveAchado(c);
+  if (marcado) window._achadosSel.set(chave, _textoAchadoParaPergunta(c)); else window._achadosSel.delete(chave);
+  _atualizarBarraSelecaoAchados();
+}
+function perguntarSobreSelecionados() {
+  const textos = [...window._achadosSel.values()];
+  if (textos.length) _levarAchadosAoPerguntar(textos);
+}
+function limparSelecaoAchados() {
+  window._achadosSel.clear();
+  document.querySelectorAll('.rx-sel').forEach(cb => { cb.checked = false; });
+  _atualizarBarraSelecaoAchados();
+}
+function _atualizarBarraSelecaoAchados() {
+  let barra = document.getElementById('barra-sel-achados');
+  const n = window._achadosSel.size;
+  if (!n || !document.getElementById('painel-cards')) { if (barra) barra.remove(); return; }
+  if (!barra) {
+    barra = document.createElement('div');
+    barra.id = 'barra-sel-achados';
+    barra.style.cssText = 'position:fixed; bottom:16px; left:50%; transform:translateX(-50%); z-index:1000; background:#364fc7; color:#fff; padding:10px 14px; border-radius:10px; display:flex; gap:10px; align-items:center; box-shadow:0 4px 16px rgba(0,0,0,0.25); font-size:0.85rem; max-width:calc(100vw - 24px); flex-wrap:wrap;';
+    document.body.appendChild(barra);
+  }
+  barra.innerHTML = `<span><i class="ti ti-checkbox"></i> ${n} achado(s) selecionado(s)</span>
+    <button class="btn btn-sm" style="background:#fff; color:#364fc7; font-weight:600;" onclick="perguntarSobreSelecionados()"><i class="ti ti-message-circle"></i> Perguntar sobre eles</button>
+    <button class="btn btn-sm" style="background:transparent; color:#fff; border:1px solid rgba(255,255,255,0.6);" onclick="limparSelecaoAchados()">Limpar</button>`;
 }
 
 async function fazerPerguntaAoProcesso(textoForcado = null) {
