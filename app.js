@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.17';
-const VERSAO_APP_DATA = '27/10/2026 22:10';
+const VERSAO_APP = 'v26.18';
+const VERSAO_APP_DATA = '28/10/2026 12:05';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1226,6 +1226,7 @@ async function prePreencherDeArquivo(file) {
       const buf = await file.arrayBuffer();
       const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
       if (!texto.trim().length) throw new Error('Nenhum texto foi extraído desse arquivo.');
+      if (_documentoSemEfeito(file.name, texto)) throw new Error('Documento marcado SEM EFEITO no SEI — não é lido.');
       arquivosLidos = [{ nome: file.name, texto, sensiveis: detectarSensiveisDoArquivo(texto, file.name) }];
     }
     _arquivoPrePreenchido = arquivosLidos;
@@ -2034,6 +2035,14 @@ function _decodeXmlEntities(s) {
   return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
 }
 
+// Documento marcado "(SEM EFEITO)" no SEI não entra na análise. Vale pelo nome do arquivo
+// (SEM EFEITO, SEM_EFEITO, sem-efeito...) ou por "(SEM EFEITO)" entre parênteses no cabeçalho do texto.
+function _documentoSemEfeito(nome, texto) {
+  const norm = v => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[_\-.]+/g, ' ').toUpperCase();
+  if (/\bSEM\s+EFEITO\b/.test(norm(nome))) return true;
+  return /\(\s*SEM\s+EFEITO\s*\)/.test(norm(String(texto || '').slice(0, 400)));
+}
+
 // Abre um .zip e extrai texto de cada arquivo suportado dentro dele — reutilizada tanto
 // no upload de arquivos dentro de um processo já criado quanto no pré-preenchimento da
 // tela "Importar Processo" (antes, só o primeiro sabia abrir ZIP; os dois divergiam e foi
@@ -2047,11 +2056,14 @@ async function abrirZipEExtrairArquivos(file, onProgresso) {
   const arquivosIgnorados = todosArquivos.filter(k => !arquivosSuportados.includes(k));
 
   for (const filename of arquivosSuportados) {
+    if (_documentoSemEfeito(filename, '')) { resultado.avisos.push(`${filename}: marcado SEM EFEITO — NÃO importado`); continue; }
     if (onProgresso) onProgresso(filename);
     try {
       const buf = await contents.files[filename].async('arraybuffer');
       const texto = await extrairTextoArquivo(filename, buf, (msg) => { if (onProgresso) onProgresso(`${filename} — ${msg}`); });
-      if (texto.trim().length > 20) {
+      if (_documentoSemEfeito(filename, texto)) {
+        resultado.avisos.push(`${filename}: marcado SEM EFEITO — NÃO importado`);
+      } else if (texto.trim().length > 20) {
         const sensiveis = detectarSensiveisDoArquivo(texto, filename);
         resultado.arquivos.push({ nome: filename, texto, sensiveis });
       } else {
@@ -2114,6 +2126,7 @@ async function processarUploadZIP(files) {
         const buf = await file.arrayBuffer();
         const texto = await extrairTextoArquivo(file.name, buf, (msg) => { status.innerHTML = `<span class="spinner"></span> ${escHtml(msg)}`; });
         if (!texto.trim().length) throw new Error('nenhum texto extraído');
+        if (_documentoSemEfeito(file.name, texto)) throw new Error('marcado SEM EFEITO — NÃO importado');
         const sensiveis = detectarSensiveisDoArquivo(texto, file.name);
         await salvarDocumentoNoBackend(file.name, texto, sensiveis);
         importados++;
