@@ -150,8 +150,8 @@
 // ============================================================
 // ACERVO — lógica da página
 // ============================================================
-const VERSAO_DOCS = 'v1.4';
-const VERSAO_DOCS_DATA = '14/10/2026 16:20';
+const VERSAO_DOCS = 'v1.5';
+const VERSAO_DOCS_DATA = '28/10/2026 15:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const MAX_ORIGINAL_BYTES = 8 * 1024 * 1024;     // acima disso só o texto vai para a base
 const EXT_LIDAS = ['pdf', 'docx', 'html', 'htm', 'txt', 'md', 'csv'];
@@ -489,6 +489,9 @@ function telaAlimentar() {
         <small>PDF, Word (.docx), HTML do SEI, texto, ou um .zip com vários arquivos de uma vez</small>
       </div>
       <input type="file" id="arq" multiple accept=".pdf,.docx,.html,.htm,.txt,.md,.csv,.zip" class="hidden" onchange="receberArquivos(this.files); this.value='';">
+      <label class="auto" style="display:flex; align-items:center; gap:8px;">Guardar no espaço:
+        <select id="sel-espaco" onchange="mudarEspaco(this.value)" style="width:auto;"><option value="DIRETORIA" ${_espacoAtual() === 'DIRETORIA' ? 'selected' : ''}>Diretoria</option><option value="CTAI" ${_espacoAtual() === 'CTAI' ? 'selected' : ''}>CTAI</option></select>
+        <span class="dica" style="margin:0;">É só uma etiqueta: todos consultam tudo.</span></label>
       <label class="auto"><input type="checkbox" id="chk-auto" ${autoSalvar ? 'checked' : ''} onchange="mudarAuto(this)"> Guardar sozinho o que o sistema reconhecer (só pergunta quando faltar algo)</label>
       <p class="dica">Os dados pessoais (CPF, RG, e-mail, telefone, dados bancários, matrícula e o bloco do representante) são trocados por marcas neste computador, <b>antes</b> de irem para a base. Nomes de pessoas não são apagados sozinhos. Desmarque a opção acima se quiser conferir o texto antes de guardar.</p>
       <div class="lote hidden" id="lote">
@@ -765,7 +768,7 @@ async function salvarItem(id) {
   i.estado = 'salvando'; pintarItem(id);
   const c = i.campos;
   const r = await api('docs/enviar', { tipo_doc: c.tipo_doc, numero_doc: c.numero_doc, contrato: c.contrato, unidade: c.unidade, data_doc: c.data_doc, vigencia_ini: c.vigencia_ini,
-    vigencia_fim: c.vigencia_fim, processo_sei: c.processo_sei, assunto: c.assunto, nome_arquivo: i.nome, hash: i.hash, texto: i.masc.texto, trocas_cliente: i.masc.trocas, original_b64: i.b64 }, 120000);
+    vigencia_fim: c.vigencia_fim, processo_sei: c.processo_sei, assunto: c.assunto, nome_arquivo: i.nome, hash: i.hash, texto: i.masc.texto, trocas_cliente: i.masc.trocas, original_b64: i.b64, espaco: _espacoAtual() }, 120000);
   if (r.ok) {
     i.estado = 'salvo'; i.texto = ''; i.b64 = ''; i.masc = { texto: '', trocas: 0, por_tipo: {} };
     i.resumoSalvo = `${r.trechos} trecho(s) · ${r.original_guardado ? 'original guardado no Drive' : 'só o texto (sem original no Drive)'}.`;
@@ -794,7 +797,11 @@ async function salvarTodos() {
 }
 
 // ==================== TELA: BASE ====================
-let _baseFiltro = { unidade: '', tipo_doc: '', q: '' };
+// Espaço onde os próximos arquivos serão guardados (lembrado neste navegador)
+function _espacoAtual() { try { return localStorage.getItem('acervo_espaco') === 'CTAI' ? 'CTAI' : 'DIRETORIA'; } catch (e) { return 'DIRETORIA'; } }
+function mudarEspaco(v) { try { localStorage.setItem('acervo_espaco', v === 'CTAI' ? 'CTAI' : 'DIRETORIA'); } catch (e) { /* sem armazenamento */ } }
+const _nomeEspaco = e => e === 'CTAI' ? 'CTAI' : 'Diretoria';
+let _baseFiltro = { unidade: '', tipo_doc: '', q: '', espaco: '' };
 async function telaBase() {
   const c = $('conteudo');
   if (!estado) await carregarEstado();
@@ -804,6 +811,7 @@ async function telaBase() {
       <h2><i class="ti ti-search"></i> Pesquisar na base <small id="base-total"></small></h2>
       <div class="filtros">
         <div style="flex:2; min-width:260px;"><label>O que você quer saber? (palavras)</label><input id="b-q" value="${esc(_baseFiltro.q)}" placeholder="Ex.: repasse mensal, reajuste, prazo de vigência" onkeydown="if(event.key==='Enter') pesquisarBase()"></div>
+        <div><label>Espaço</label><select id="b-espaco" onchange="pesquisarBase()"><option value="">Todos</option><option value="DIRETORIA" ${_baseFiltro.espaco === 'DIRETORIA' ? 'selected' : ''}>Diretoria</option><option value="CTAI" ${_baseFiltro.espaco === 'CTAI' ? 'selected' : ''}>CTAI</option></select></div>
         <div><label>Unidade</label><select id="b-unidade" onchange="pesquisarBase()"><option value="">Todas</option>${unid}</select></div>
         <div><label>Tipo</label><select id="b-tipo" onchange="pesquisarBase()"><option value="">Todos</option>${tipos}</select></div>
         <div><button class="btn btn-principal" onclick="pesquisarBase()"><i class="ti ti-search"></i> Pesquisar</button> <button class="btn btn-claro" onclick="limparBase()">Limpar</button></div>
@@ -812,7 +820,7 @@ async function telaBase() {
     </div><div id="base-res"></div>`;
   pesquisarBase();
 }
-function limparBase() { _baseFiltro = { unidade: '', tipo_doc: '', q: '' }; telaBase(); }
+function limparBase() { _baseFiltro = { unidade: '', tipo_doc: '', q: '', espaco: '' }; telaBase(); }
 
 function realcar(texto, palavras) {
   const plano = texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(), marcas = [];
@@ -824,7 +832,7 @@ function realcar(texto, palavras) {
   return saida + esc(texto.slice(pos));
 }
 async function pesquisarBase() {
-  _baseFiltro = { unidade: $('b-unidade').value, tipo_doc: $('b-tipo').value, q: $('b-q').value.trim() };
+  _baseFiltro = { unidade: $('b-unidade').value, tipo_doc: $('b-tipo').value, q: $('b-q').value.trim(), espaco: $('b-espaco').value };
   const out = $('base-res'); out.innerHTML = carregando(_baseFiltro.q ? 'Procurando nos documentos...' : 'Listando...');
   if (_baseFiltro.q) {
     const r = await api('docs/buscar', _baseFiltro);
@@ -833,7 +841,7 @@ async function pesquisarBase() {
     if (!r.resultados.length) { out.innerHTML = `<div class="bloco"><div class="vazio">Nenhum trecho encontrado com essas palavras.</div><div class="consultei">Consultei ${r.consultei.documentos} documento(s), ${r.consultei.trechos} trecho(s).</div></div>`; return; }
     out.innerHTML = `<div class="consultei">Consultei ${r.consultei.documentos} documento(s) e ${r.consultei.trechos} trecho(s). Mostrando os ${r.resultados.length} que mais combinam. Palavras usadas: ${r.palavras.map(esc).join(', ')}.</div>` +
       r.resultados.map(x => `<div class="res"><h3>${esc(x.titulo || x.nome_arquivo)}</h3>
-        <div class="meta">${esc(nomeTipo(x.tipo_doc))}${x.numero_doc ? ' ' + esc(x.numero_doc) : ''} · ${esc(x.unidade || 'sem unidade')}${x.contrato ? ' · contrato ' + esc(x.contrato) : ''} · ${fmtData(x.data_doc)} · arquivo: ${esc(x.nome_arquivo)}
+        <div class="meta"><span class="etq ${x.espaco === 'CTAI' ? 'azul' : ''}">${esc(_nomeEspaco(x.espaco))}</span> ${esc(nomeTipo(x.tipo_doc))}${x.numero_doc ? ' ' + esc(x.numero_doc) : ''} · ${esc(x.unidade || 'sem unidade')}${x.contrato ? ' · contrato ' + esc(x.contrato) : ''} · ${fmtData(x.data_doc)} · arquivo: ${esc(x.nome_arquivo)}
         · <a href="#" onclick="abrirDocumento('${esc(x.doc_id)}'); return false;">abrir o documento</a></div>
         <p>${realcar(x.trecho, r.palavras)}</p></div>`).join('');
     return;
@@ -842,8 +850,8 @@ async function pesquisarBase() {
   if (!r.ok) { out.innerHTML = `<div class="erro">${esc(r.erro || 'Não foi possível listar.')}</div>`; return; }
   $('base-total').textContent = r.total + ' documento(s)';
   if (!r.documentos.length) { out.innerHTML = `<div class="bloco"><div class="vazio">A base ainda não tem documentos${_baseFiltro.unidade || _baseFiltro.tipo_doc ? ' com esse filtro' : ''}. Use "Alimentar a base" para enviar os primeiros.</div></div>`; return; }
-  out.innerHTML = `<div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Nº</th><th>Unidade</th><th>Contrato</th><th>Data</th><th>Arquivo</th><th>Enviado</th><th></th></tr></thead><tbody>` +
-    r.documentos.map(d => `<tr class="clique" onclick="abrirDocumento('${esc(d.doc_id)}')"><td>${esc(nomeTipo(d.tipo_doc))}</td><td>${esc(d.numero_doc)}</td><td>${esc(d.unidade)}</td><td>${esc(d.contrato)}</td><td>${fmtData(d.data_doc)}</td>
+  out.innerHTML = `<div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Espaço</th><th>Tipo</th><th>Nº</th><th>Unidade</th><th>Contrato</th><th>Data</th><th>Arquivo</th><th>Enviado</th><th></th></tr></thead><tbody>` +
+    r.documentos.map(d => `<tr class="clique" onclick="abrirDocumento('${esc(d.doc_id)}')"><td><span class="etq ${d.espaco === 'CTAI' ? 'azul' : ''}">${esc(_nomeEspaco(d.espaco))}</span></td><td>${esc(nomeTipo(d.tipo_doc))}</td><td>${esc(d.numero_doc)}</td><td>${esc(d.unidade)}</td><td>${esc(d.contrato)}</td><td>${fmtData(d.data_doc)}</td>
       <td>${esc(d.nome_arquivo)}${d.situacao === 'sem_original' ? ' <span class="etq amarelo" title="Só o texto está na base; o arquivo original não foi guardado no Drive">sem original</span>' : ''}</td><td>${esc(d.enviado_por)}<br><span class="dica">${fmtDataHora(d.enviado_em)}</span></td>
       <td>${d.drive_url ? `<a href="${esc(d.drive_url)}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Abrir o arquivo original no Drive"><i class="ti ti-external-link"></i></a>` : ''}</td></tr>`).join('') +
     `</tbody></table></div>${r.total > r.documentos.length ? `<p class="dica">Mostrando ${r.documentos.length} de ${r.total}. Use os filtros para chegar nos outros.</p>` : ''}</div>`;
