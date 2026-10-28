@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.16';
-const VERSAO_APP_DATA = '21/10/2026 16:10';
+const VERSAO_APP = 'v26.17';
+const VERSAO_APP_DATA = '27/10/2026 22:10';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -712,7 +712,7 @@ async function renderDashboard(caixa = 'entrada') {
         : '';
       html += `
       <div class="process-card" style="position:relative;">
-        <div onclick="abrirProcesso('${escAttr(p.numero_sei || p.id)}')" style="cursor:pointer;">
+        <div onclick="abrirProcesso('${escAttr(p.id)}')" style="cursor:pointer;">
           <div style="display:flex;justify-content:space-between;margin-bottom:8px; align-items:center; padding-right: 25px; flex-wrap:wrap; gap:5px;">
             <span class="sei-num">${escHtml(p.numero_sei || '(sem nº SEI)')}</span>
             <div style="display:flex; gap:4px; flex-wrap:wrap;">${badgePerguntaPendente} ${badgeAlertas}</div>
@@ -857,7 +857,7 @@ async function renderPanorama(content, abasHtml) {
     </div>`;
   const blocoAlerta = a => {
     const cor = COR_ALERTA[a.cor] || '#868e96';
-    return `<div onclick="abrirProcesso('${escAttr(a.numero_sei || String(a.processo_id))}')" style="cursor:pointer; padding:8px 12px; border-radius:6px; background:#fff; border:1px solid ${cor}33; border-left:3px solid ${cor}; font-size:0.8rem; display:flex; gap:10px; align-items:flex-start;"
+    return `<div onclick="abrirProcesso('${escAttr(String(a.processo_id))}')" style="cursor:pointer; padding:8px 12px; border-radius:6px; background:#fff; border:1px solid ${cor}33; border-left:3px solid ${cor}; font-size:0.8rem; display:flex; gap:10px; align-items:flex-start;"
       onmouseenter="this.style.background='#f8f9fa'" onmouseleave="this.style.background='#fff'">
       <span style="color:${cor}; font-size:1rem; margin-top:1px;"><i class="ti ${ICONE_ALERTA[a.cor] || 'ti-bell'}"></i></span>
       <div><div style="font-weight:600; color:${cor};">${escHtml(a.mensagem)}</div>
@@ -889,7 +889,7 @@ async function renderPerguntasAchados() {
   if (!res.ok) { area.innerHTML = `<div class="alert alert-danger">Não foi possível carregar as perguntas: ${escHtml(res.erro || '')}</div>`; return; }
   const recebidas = (res.recebidas || []).sort((a, b) => (a.resposta ? 1 : 0) - (b.resposta ? 1 : 0));
   const enviadas = res.enviadas || [];
-  const linkProcesso = q => `<a href="#" onclick="abrirProcesso('${escAttr(q.numero_sei || q.processo_id)}'); return false;">${escHtml(q.numero_sei || 'processo ' + q.processo_id)}</a>${q.titulo_processo ? ' — ' + escHtml(q.titulo_processo) : ''}`;
+  const linkProcesso = q => `<a href="#" onclick="abrirProcesso('${escAttr(q.processo_id)}'); return false;">${escHtml(q.numero_sei || 'processo ' + q.processo_id)}</a>${q.titulo_processo ? ' — ' + escHtml(q.titulo_processo) : ''}`;
   const cartao = (q, tipo) => {
     const cor = !q.resposta ? (tipo === 'recebida' ? '#fff9db; border-left:3px solid #f5c518' : '#f8f9fa; border-left:3px solid #adb5bd') : '#e7f5ff; border-left:3px solid #339af0';
     const quem = tipo === 'recebida' ? `De <strong>${escHtml(q.de_usuario)}</strong>` : `Para <strong>${escHtml(q.para_usuario)}</strong>`;
@@ -1335,7 +1335,7 @@ async function salvarNovoProcesso() {
     _arquivoPrePreenchido = null;
     window._autoChecagemPendente = true;
   }
-  abrirProcesso(res.processo.numero_sei || String(res.processo.id));
+  abrirProcesso(String(res.processo.id));
 }
 
 async function salvarNotaEvidencia(referencia, nota) {
@@ -1433,6 +1433,7 @@ async function fixarEvidenciaDaMemoria(id) {
   }
 }
 
+// Abre pelo código interno (id). O número SEI só serve de plano B: na planilha ele pode virar número ou data.
 async function abrirProcesso(identificador) {
   const content = document.getElementById('content');
   if (!content) return;
@@ -1898,7 +1899,7 @@ async function processarVersaoAssinada(file) {
     setTimeout(() => {
       fecharModal();
       if (_origemVersaoAssinada === 'registro') abrirRegistroConcluido(processoAtual.id);
-      else abrirProcesso(processoAtual.numero_sei || String(processoAtual.id));
+      else abrirProcesso(String(processoAtual.id));
     }, 1500);
   } catch (e) {
     status.innerHTML = `<div class="alert alert-danger">Não foi possível importar: ${escHtml(e.message)}</div>`;
@@ -2130,7 +2131,7 @@ async function processarUploadZIP(files) {
     ? `<div class="alert alert-warning"><strong>${importados} novo(s) importado(s), ${avisos.length} aviso(s):</strong>${repetidosTxt}<br>${avisos.map(escHtml).join('<br>')}</div>`
     : `<div class="alert alert-success" style="background:#d1e7dd; color:#0f5132; padding:10px; border-radius:6px;">✓ ${importados} documento(s) novo(s) importado(s).${repetidosTxt}${importados ? ' A checagem vai rodar sozinha.' : ''}</div>`;
   if (importados > 0) window._autoChecagemPendente = true;
-  setTimeout(() => { fecharModal(); abrirProcesso(processoAtual.numero_sei || String(processoAtual.id)); }, (avisos.length || jaExistiam) ? 4500 : 1800);
+  setTimeout(() => { fecharModal(); abrirProcesso(String(processoAtual.id)); }, (avisos.length || jaExistiam) ? 4500 : 1800);
 }
 
 async function extrairTextoPDF(buf, onProgresso) {
