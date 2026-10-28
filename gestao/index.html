@@ -765,14 +765,36 @@ async function desbloquear(id) {
 // As chaves ficam guardadas no servidor; a tela nunca recebe a chave completa, só o final.
 let _chaves = [], _chavesUsuarios = [], _servicosIA = {};
 
+// Uma chave vale para: toda a diretoria ('*'), gerências inteiras (k.gerencias) e/ou pessoas (k.para).
+const _normG = g => String(g || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
+function _gerenciaDoLogin(login) {
+  const u = _chavesUsuarios.find(x => x.email === String(login).toLowerCase());
+  return u ? u.gerencia : '';
+}
+function _valeGerencia(k, login) {
+  const g = _normG(_gerenciaDoLogin(login));
+  return !!g && (k.gerencias || []).some(x => _normG(x) === g);
+}
 function _chaveValePara(k, login) {
   if (!k.ativa) return false;
-  if (k.para === '*') return !(k.exceto || []).includes(login);
-  return Array.isArray(k.para) && k.para.includes(login);
+  const fora = (k.exceto || []).includes(login);
+  if (k.para === '*') return !fora;
+  if (Array.isArray(k.para) && k.para.includes(login)) return true;
+  return !fora && _valeGerencia(k, login);
 }
-// Chave que a pessoa usa em cada serviço (se houver mais de uma, vale a de menor ordem)
+// Mais específica primeiro: pessoa (0), gerência (1), diretoria (2). Empate: menor ordem.
+function _escopoRank(k, login) {
+  if (Array.isArray(k.para) && k.para.includes(login)) return 0;
+  return _valeGerencia(k, login) ? 1 : 2;
+}
 function _chaveDe(login, servico) {
-  return _chaves.filter(k => k.servico === servico && _chaveValePara(k, login)).sort((a, b) => a.ordem - b.ordem)[0] || null;
+  return _chaves.filter(k => k.servico === servico && _chaveValePara(k, login))
+    .sort((a, b) => (_escopoRank(a, login) - _escopoRank(b, login)) || (a.ordem - b.ordem))[0] || null;
+}
+function _rotuloEscopo(k) {
+  if (k.para === '*') return ' (diretoria)';
+  if ((k.gerencias || []).length && !(k.para || []).length) return ' (gerência)';
+  return '';
 }
 function iaDaPessoaHtml(login) {
   const servicos = Object.keys(_servicosIA).filter(s => _chaveDe(login, s));
@@ -785,7 +807,7 @@ function iaDaPessoaHtml(login) {
 function secaoIAHtml(login) {
   const linhas = Object.entries(_servicosIA).map(([s, nome]) => {
     const atual = login ? _chaveDe(login, s) : (_chaves.filter(k => k.servico === s && k.ativa && k.para === '*').sort((a, b) => a.ordem - b.ordem)[0] || null);
-    const opcoes = _chaves.filter(k => k.servico === s).map(k => `<option value="${esc(k.id)}" ${atual && atual.id === k.id ? 'selected' : ''}>${esc(k.rotulo)} ••••${esc(k.final)}${k.para === '*' ? ' (geral)' : ''}${k.ativa ? '' : ' (suspensa)'}</option>`).join('');
+    const opcoes = _chaves.filter(k => k.servico === s).map(k => `<option value="${esc(k.id)}" ${atual && atual.id === k.id ? 'selected' : ''}>${esc(k.rotulo)} ••••${esc(k.final)}${_rotuloEscopo(k)}${k.ativa ? '' : ' (suspensa)'}</option>`).join('');
     return `<div style="display:grid; grid-template-columns:110px 1fr; gap:6px 10px; align-items:center; margin-bottom:8px;">
       <b style="font-size:.85rem;">${esc(nome)}</b>
       <select id="fia-${s}" onchange="$('fia-nova-${s}').style.display = this.value === '__nova' ? 'grid' : 'none'">
@@ -814,14 +836,18 @@ function escolhasIA() {
 // Quadro das chaves (tarefas que são da chave, não da pessoa)
 function painelChavesHtml() {
   const nomeDe = e => (_chavesUsuarios.find(u => u.email === e) || {}).nome || e;
-  const quem = k => k.para === '*'
-    ? 'Todos' + ((k.exceto || []).length ? ` <span style="color:var(--mudo);">(menos ${k.exceto.length})</span>` : '')
-    : (k.para.length ? k.para.map(e => esc(nomeDe(e))).join(', ') : '<span class="zero">ninguém</span>');
+  const quem = k => {
+    if (k.para === '*') return '<b>Toda a diretoria</b>' + ((k.exceto || []).length ? ` <span style="color:var(--mudo);">(menos ${k.exceto.length})</span>` : '');
+    const partes = [];
+    if ((k.gerencias || []).length) partes.push('<b>Gerência:</b> ' + k.gerencias.map(g => esc(g)).join(', ') + ((k.exceto || []).length ? ` <span style="color:var(--mudo);">(menos ${k.exceto.length})</span>` : ''));
+    if ((k.para || []).length) partes.push(k.para.map(e => esc(nomeDe(e))).join(', '));
+    return partes.length ? partes.join('<br>') : '<span class="zero">ninguém</span>';
+  };
   return `<div class="bloco">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
       <h2 style="margin:0;"><i class="ti ti-key"></i> Chaves de IA cadastradas <small>${_chaves.length}</small></h2>
-      <button class="btn" style="margin-left:auto;" onclick="formChave('')"><i class="ti ti-plus"></i> Chave geral (para todos)</button></div>
-    <div class="dica" style="margin:0 0 10px;">Chaves de uma pessoa só são cadastradas na janela dela. Aqui você troca uma chave vencida (vale para todos que a usam), suspende, apaga e define a ordem de tentativa.</div>
+      <button class="btn" style="margin-left:auto;" onclick="formChave('')"><i class="ti ti-plus"></i> Nova chave (diretoria ou gerência)</button></div>
+    <div class="dica" style="margin:0 0 10px;">Cada chave pode valer para toda a diretoria, para uma ou mais gerências, ou para pessoas (cadastradas na janela de cada uma). Quando mais de uma chave do mesmo serviço serve para a pessoa, vale a mais específica: pessoa, depois gerência, depois diretoria. Aqui você também troca uma chave vencida, suspende, apaga e define a ordem de tentativa.</div>
     ${_chaves.length ? `<div class="rolagem"><table class="tabela"><tr><th>Ordem</th><th>Serviço</th><th>Chave</th><th>Quem usa</th><th>Situação</th><th></th></tr>` +
       _chaves.map(k => `<tr style="${k.ativa ? '' : 'opacity:.55;'}"><td class="n"><b>${k.ordem}</b></td>
         <td><b>${esc(k.servico_nome)}</b><br><span style="color:var(--mudo); font-size:.75rem;">${esc(k.rotulo)}</span></td>
@@ -829,24 +855,33 @@ function painelChavesHtml() {
         <td>${k.ativa ? '<span class="etq azul">Ativa</span>' : '<span class="etq">Suspensa</span>'}</td>
         <td style="white-space:nowrap;"><button class="btn" title="Editar" onclick="formChave('${esc(k.id)}')"><i class="ti ti-pencil"></i></button>
           <button class="btn" title="Apagar" onclick="removerChave('${esc(k.id)}')"><i class="ti ti-trash"></i></button></td></tr>`).join('') + '</table></div>'
-      : '<div class="vazio">Nenhuma chave cadastrada ainda. Cadastre na janela de cada pessoa ou crie uma chave geral.</div>'}
+      : '<div class="vazio">Nenhuma chave cadastrada ainda. Crie uma chave para a diretoria ou para uma gerência, ou cadastre na janela de cada pessoa.</div>'}
   </div>`;
 }
 
 function formChave(id) {
   const k = id ? _chaves.find(x => x.id === id) : null;
-  const geral = !k || k.para === '*';
+  const modo = !k || k.para === '*' ? 'diretoria' : ((k.gerencias || []).length ? 'gerencias' : 'pessoas');
+  const vistas = {};   // "GGPCG" e "ggpcg " contam como a mesma gerência
+  [..._chavesUsuarios.map(u => u.gerencia), ...(k ? (k.gerencias || []) : [])].forEach(g => { g = String(g || '').replace(/\s+/g, ' ').trim(); if (g && !vistas[_normG(g)]) vistas[_normG(g)] = g; });
+  const todasGer = Object.values(vistas).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const marcada = g => k && (k.gerencias || []).some(x => _normG(x) === _normG(g));
   const fundo = document.createElement('div');
   fundo.className = 'janela-fundo'; fundo.id = 'janela-chave';
   fundo.innerHTML = `<div class="janela">
-    <h2>${k ? 'Editar chave' : 'Nova chave geral'}</h2>
+    <h2>${k ? 'Editar chave' : 'Nova chave de IA'}</h2>
     <label>Serviço</label><select id="fk-servico" ${k ? 'disabled' : ''}>${Object.entries(_servicosIA).map(([v, n]) => `<option value="${v}" ${k && k.servico === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
     <label>Nome para lembrar</label><input id="fk-rotulo" value="${esc(k ? k.rotulo : '')}" placeholder="ex.: DeepSeek da GGPCG">
     <label>${k ? 'Trocar a chave (opcional)' : 'Chave'}</label><input id="fk-chave" type="password" autocomplete="off" placeholder="${k ? 'Deixe em branco para manter a atual (final ' + esc(k.final) + ')' : 'Cole a chave do serviço'}">
     <div class="dica">Depois de salva, a chave não aparece mais aqui; só os 4 últimos caracteres.</div>
     <label>Ordem de tentativa</label><select id="fk-ordem">${[1, 2, 3, 4, 5, 6].map(n => `<option ${(k ? k.ordem : 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
-    ${k ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fk-geral" ${geral ? 'checked' : ''}> Vale para todos os usuários</label>
-      <div class="dica">Desmarcado, a chave vale só para as pessoas escolhidas no cadastro de cada uma.</div>` : '<div class="dica" style="margin-top:10px;">Uma chave geral vale para todos os usuários, menos quem você marcar como "Sem acesso" no cadastro.</div>'}
+    <label style="margin-top:12px;">Quem usa esta chave</label>
+    <label class="marcar"><input type="radio" name="fk-escopo" value="diretoria" ${modo === 'diretoria' ? 'checked' : ''} onchange="$('fk-gers').style.display='none'"> Toda a diretoria (todos os usuários)</label>
+    <label class="marcar"><input type="radio" name="fk-escopo" value="gerencias" ${modo === 'gerencias' ? 'checked' : ''} onchange="$('fk-gers').style.display='block'"> Só as gerências marcadas</label>
+    <div id="fk-gers" style="display:${modo === 'gerencias' ? 'block' : 'none'}; margin:4px 0 4px 24px; max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:6px; padding:6px 10px;">
+      ${todasGer.length ? todasGer.map(g => `<label class="marcar"><input type="checkbox" class="fk-ger" value="${esc(g)}" ${marcada(g) ? 'checked' : ''}> ${esc(g)}</label>`).join('') : '<span class="zero">Nenhuma gerência cadastrada nos usuários.</span>'}</div>
+    ${k && (k.para || []).length && k.para !== '*' ? `<label class="marcar"><input type="radio" name="fk-escopo" value="pessoas" ${modo === 'pessoas' ? 'checked' : ''} onchange="$('fk-gers').style.display='none'"> Só as pessoas já escolhidas no cadastro de cada uma</label>` : ''}
+    <div class="dica">Se uma pessoa tem chave própria, ela vale primeiro; depois a da gerência dela; depois a da diretoria. A gerência de cada pessoa é a do cadastro de usuários.</div>
     <label class="marcar" style="margin-top:10px;"><input type="checkbox" id="fk-ativa" ${!k || k.ativa ? 'checked' : ''}> Ativa (desmarque para suspender sem apagar)</label>
     <div id="fk-erro" class="erro hidden"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
@@ -859,11 +894,13 @@ function formChave(id) {
 async function salvarChave(id) {
   const erro = $('fk-erro'); erro.classList.add('hidden');
   const k = id ? _chaves.find(x => x.id === id) : null;
-  const geral = k ? $('fk-geral').checked : true;
-  const para = geral ? '*' : (k && Array.isArray(k.para) ? k.para : []);
+  const modo = (document.querySelector('input[name="fk-escopo"]:checked') || {}).value || 'diretoria';
+  const gerencias = modo === 'gerencias' ? [...document.querySelectorAll('.fk-ger:checked')].map(x => x.value) : [];
+  if (modo === 'gerencias' && !gerencias.length) { erro.textContent = 'Marque pelo menos uma gerência.'; erro.classList.remove('hidden'); return; }
+  const para = modo === 'diretoria' ? '*' : (k && Array.isArray(k.para) ? k.para : []);
   const botao = $('fk-salvar'); botao.disabled = true;
   const res = await api('adm/chaves-salvar', { id: id || '', servico: k ? k.servico : $('fk-servico').value, rotulo: $('fk-rotulo').value.trim(),
-    chave: $('fk-chave').value.trim(), ordem: Number($('fk-ordem').value), para, ativa: $('fk-ativa').checked });
+    chave: $('fk-chave').value.trim(), ordem: Number($('fk-ordem').value), para, gerencias, ativa: $('fk-ativa').checked });
   botao.disabled = false;
   if (!res.ok) { erro.textContent = res.erro || 'Não foi possível salvar.'; erro.classList.remove('hidden'); return; }
   $('janela-chave')?.remove();
