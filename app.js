@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.19';
-const VERSAO_APP_DATA = '28/10/2026 12:40';
+const VERSAO_APP = 'v26.20';
+const VERSAO_APP_DATA = '31/10/2026 01:30';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -435,7 +435,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_concluidos: 'Registro de Concluídos',
     dashboard_panorama: 'Painel Geral',
     dashboard_perguntas: 'Perguntas sobre achados',
-    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho'
+    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho', admin: 'Administração'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
@@ -466,6 +466,8 @@ async function showView(v, subCaixa = 'entrada') {
         <div class="form-group"><label>Gerência</label><input id="np-gerencia" placeholder="Ex: GGPCG" value="${usuarioAtual?.gerencia || ''}"></div>
         <button class="btn btn-primary" id="btn-criar-processo" onclick="salvarNovoProcesso()"><i class="ti ti-device-floppy"></i> Criar Processo na Bancada</button>
       </div>`;
+  } else if (v === 'admin') {
+    await renderAdministracao(content);
   } else if (v === 'relato') {
     await renderRelato(content);
   } else if (v === 'config') {
@@ -754,19 +756,27 @@ async function _carregarChavesDaGestao() {
 // mostrar um caminho que a pessoa não vai conseguir usar.
 function _mostrarBotaoGestao() {
   document.getElementById('nav-gestao')?.remove();        // link antigo da barra lateral, se existir
-  const existente = document.getElementById('btn-ir-gestao');
+  document.getElementById('btn-ir-gestao')?.remove();     // botão antigo do cabeçalho: agora é o menu Administração
   const apps = Array.isArray(usuarioAtual?.apps) ? usuarioAtual.apps : [];
-  const temAcesso = usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
-  if (!temAcesso) { existente?.remove(); return; }
-  if (existente) return;
-  const sair = document.querySelector('header button[onclick="logout()"]');
-  if (!sair) return;
-  const botao = document.createElement('button');
-  botao.id = 'btn-ir-gestao'; botao.className = 'btn btn-secondary btn-sm'; botao.style.marginRight = '8px';
-  botao.innerHTML = '<i class="ti ti-chart-dots"></i> Ir para o Gestão';
-  botao.title = 'Abre o SEI Gestão em outra aba, sem pedir a senha de novo';
-  botao.addEventListener('click', () => irParaOutroApp('gestao'));
-  sair.parentNode.insertBefore(botao, sair);
+  const temAcesso = !!usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
+  const item = document.getElementById('nav-admin');
+  if (item) item.style.display = temAcesso ? '' : 'none';
+}
+
+// ==================== MENU ADMINISTRAÇÃO (só perfil admin) ====================
+// Mostra o Gestão dentro do Analista, sem pedir a senha de novo: o servidor dá um passe de uso único
+// (o mesmo do botão antigo) e a página do Gestão, aberta num quadro aqui dentro, entra com ele.
+// O que o Gestão pode ou não mostrar continua sendo decidido pelo servidor, a cada chamada.
+async function renderAdministracao(content) {
+  content.innerHTML = '<div style="padding:30px; color:var(--text-muted);"><i class="ti ti-loader"></i> Abrindo a Administração...</div>';
+  const res = await api('auth/ponte-criar', { destino: 'gestao' });
+  if (!res || !res.ok) { content.innerHTML = `<div style="padding:20px; color:#8e1628;">Não foi possível abrir a Administração: ${escHtml((res && res.erro) || 'erro desconhecido')}</div>`; return; }
+  try { localStorage.setItem('sei_ponte', JSON.stringify({ codigo: res.codigo, destino: 'gestao', criado: Date.now() })); }
+  catch (e) { content.innerHTML = '<div style="padding:20px; color:#8e1628;">O navegador não deixou guardar o passe de entrada. Use "Abrir em outra aba".</div>'; }
+  const repo = '/' + (location.pathname.split('/').filter(Boolean)[0] || 'sei_analista') + '/';
+  content.innerHTML = `<div style="display:flex; justify-content:flex-end; margin-bottom:6px; font-size:.8rem;">
+      <a href="#" onclick="irParaOutroApp('gestao'); return false;" style="color:var(--text-muted);"><i class="ti ti-external-link"></i> Abrir em outra aba</a></div>
+    <iframe id="quadro-admin" src="${repo}gestao/?embutido=1" title="Administração" style="width:100%; height:calc(100vh - 130px); min-height:480px; border:1px solid #dee2e6; border-radius:8px; background:#fff;"></iframe>`;
 }
 
 // ==================== TROCA ENTRE OS APPS (passe de uso único) ====================
@@ -1969,13 +1979,88 @@ const EXTENSOES_SUPORTADAS = ['.pdf', '.docx', '.doc', '.xlsx', '.xls', '.txt', 
 // segundos por página), então só entra como PLANO B: pra imagem solta (.png/.jpg), é
 // o único jeito de ler; pra página de PDF, só roda quando a extração normal de texto
 // não encontrou quase nada (indício de página escaneada/foto, não texto real).
+// O Tesseract (biblioteca de OCR) só é baixado na primeira vez que uma página precisar dele, e o
+// "trabalhador" (worker) com o idioma português é criado UMA vez e reaproveitado em todas as páginas:
+// criar um por página gasta alguns segundos só para preparar. Ele se desliga sozinho depois de 2 minutos parado.
+const URLS_TESSERACT = ['https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js', 'https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.1/tesseract.min.js'];
+let _ocrWorkerPromise = null, _ocrWorkerFim = null, _ocrBiblioteca = null;
+function _carregarScriptExterno(url) {
+  return new Promise((ok, falha) => {
+    const el = document.createElement('script');
+    el.src = url; el.async = true; el.onload = ok; el.onerror = () => { el.remove(); falha(new Error('não foi possível baixar ' + url)); };
+    document.head.appendChild(el);
+  });
+}
+async function _garantirTesseract() {
+  if (typeof Tesseract !== 'undefined') return;
+  if (!_ocrBiblioteca) {
+    _ocrBiblioteca = (async () => {
+      let ultimo = null;
+      for (const url of URLS_TESSERACT) {
+        try { await _carregarScriptExterno(url); if (typeof Tesseract !== 'undefined') return; } catch (e) { ultimo = e; }
+      }
+      throw new Error('Biblioteca de OCR (Tesseract.js) indisponível: ' + (ultimo ? ultimo.message : 'sem rede'));
+    })().catch(e => { _ocrBiblioteca = null; throw e; });
+  }
+  return _ocrBiblioteca;
+}
+async function _obterWorkerOCR() {
+  await _garantirTesseract();
+  clearTimeout(_ocrWorkerFim);
+  if (!_ocrWorkerPromise) _ocrWorkerPromise = Tesseract.createWorker('por').catch(e => { _ocrWorkerPromise = null; throw e; });
+  return _ocrWorkerPromise;
+}
 async function ocrImagem(fonte) {
-  if (typeof Tesseract === 'undefined') throw new Error('Biblioteca de OCR (Tesseract.js) não carregada no index.html — necessária pra ler imagem ou PDF escaneado.');
-  const resultado = await Tesseract.recognize(fonte, 'por');
-  return (resultado?.data?.text) || '';
+  const worker = await _obterWorkerOCR();
+  try {
+    const resultado = await worker.recognize(fonte);
+    return (resultado?.data?.text) || '';
+  } finally {
+    clearTimeout(_ocrWorkerFim);
+    _ocrWorkerFim = setTimeout(() => {
+      const w = _ocrWorkerPromise; _ocrWorkerPromise = null;
+      if (w) w.then(x => x.terminate()).catch(() => { /* já caiu */ });
+    }, 120000);
+  }
 }
 
+// ==================== MEDIÇÃO DO TEMPO DE LEITURA ====================
+// Cada leitura de arquivo, mascaramento e chamada de IA é cronometrada e enviada em lotes ao servidor
+// (aparece no Gestão, aba "Leitura de documentos"). Só vão tempos, tipo, tamanho, nº de páginas e o nome
+// do arquivo; NUNCA o conteúdo. Se a medição falhar, o trabalho da pessoa não é afetado.
+const _filaMedidas = []; let _medidasTimer = null;
+function _medida(item) {
+  try {
+    if (!SESSAO_TOKEN) return;
+    _filaMedidas.push(item);
+    if (_filaMedidas.length >= 20) _enviarMedidas();
+    else if (!_medidasTimer) _medidasTimer = setTimeout(_enviarMedidas, 20000);
+  } catch (e) { /* medir nunca atrapalha */ }
+}
+async function _enviarMedidas() {
+  clearTimeout(_medidasTimer); _medidasTimer = null;
+  if (!_filaMedidas.length || !SESSAO_TOKEN) return;
+  const lote = _filaMedidas.splice(0, 50);
+  try { await api('leitura/registrar', { itens: lote }, { fundo: true }); } catch (e) { /* perde só esse lote */ }
+  if (_filaMedidas.length) _medidasTimer = setTimeout(_enviarMedidas, 2000);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') _enviarMedidas(); });
+
 async function extrairTextoArquivo(nomeArquivo, buf, onProgresso) {
+  const t0 = performance.now();
+  window._ultimaMedidaPDF = null;
+  let texto = '', falhou = false;
+  try { texto = await _extrairTextoArquivoInterno(nomeArquivo, buf, onProgresso); return texto; }
+  catch (e) { falhou = true; throw e; }
+  finally {
+    const m = window._ultimaMedidaPDF || {};
+    _medida({ etapa: 'extracao', arquivo: String(nomeArquivo || ''), tipo: ((String(nomeArquivo || '').toLowerCase().match(/\.([a-z0-9]{1,5})$/) || [])[1]) || '',
+      tamanho_kb: Math.round(((buf && buf.byteLength) || 0) / 1024), paginas: m.paginas || 0, paginas_ocr: m.paginas_ocr || 0, paginas_sem_texto: m.paginas_sem_texto || 0,
+      chars: (texto || '').length, ms: Math.round(performance.now() - t0), ms_ocr: Math.round(m.ms_ocr || 0), resultado: falhou ? 'falhou' : 'ok' });
+  }
+}
+
+async function _extrairTextoArquivoInterno(nomeArquivo, buf, onProgresso) {
   const nome = nomeArquivo.toLowerCase();
   if (nome.endsWith('.pdf')) return extrairTextoPDF(buf, onProgresso);
   if (nome.endsWith('.docx') || nome.endsWith('.doc')) {
@@ -2152,6 +2237,8 @@ async function processarUploadZIP(files) {
 async function extrairTextoPDF(buf, onProgresso) {
   if (typeof pdfjsLib === 'undefined') return '';
   const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(buf) }).promise;
+  const medida = { paginas: pdf.numPages, paginas_ocr: 0, paginas_sem_texto: 0, ms_ocr: 0 };
+  window._ultimaMedidaPDF = medida;
   let txt = '';
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
@@ -2161,6 +2248,7 @@ async function extrairTextoPDF(buf, onProgresso) {
     // Página sem texto extraível de verdade — indício forte de página escaneada/foto,
     // não texto real. Tenta OCR como plano B (mais lento, por isso só entra aqui).
     if (textoPagina.trim().length < 15) {
+      const tOcr = performance.now();
       try {
         if (onProgresso) onProgresso(`Página ${i}/${pdf.numPages} sem texto — lendo via OCR (pode ser lento)...`);
         const viewport = page.getViewport({ scale: 2 });
@@ -2171,9 +2259,12 @@ async function extrairTextoPDF(buf, onProgresso) {
         await page.render({ canvasContext: ctx, viewport }).promise;
         const textoOcr = await ocrImagem(canvas);
         if (textoOcr.trim().length > textoPagina.trim().length) textoPagina = '[leitura por OCR]\n' + textoOcr;
+        medida.paginas_ocr++;
       } catch (e) {
         console.warn(`OCR falhou na página ${i}:`, e.message);
       }
+      medida.ms_ocr += performance.now() - tOcr;
+      if (textoPagina.trim().length < 15) medida.paginas_sem_texto++;
     }
 
     // Marcador de página — não usa o mesmo formato "--- DOC: ... ---" (usado para separar
@@ -2421,7 +2512,9 @@ async function _invocarIAComFallbackInterno(prompt, isChat = false, statusEl = n
     estados[id] = (info && info.temChave()) ? 'pendente' : 'pulado';
   });
 
+  const tMasc = performance.now();
   const { textoMascarado: promptMascarado, mapa, totalMascarado, detalhes } = mascararDadosSensiveis(prompt);
+  _medida({ etapa: 'mascaramento', chars: String(prompt || '').length, ms: Math.round(performance.now() - tMasc), resultado: 'ok' });
   // Exposto globalmente pra quem chamou (rodarRaioX, rodarRevisaoFinal) poder montar o
   // painel "o que foi mascarado" depois que a chamada terminar — o Ollama (local) não
   // mascara nada, mas se ele for usado DEPOIS de uma tentativa em nuvem que já mascarou,
@@ -2444,7 +2537,11 @@ async function _invocarIAComFallbackInterno(prompt, isChat = false, statusEl = n
       // Ollama roda local — usa o prompt ORIGINAL, sem máscara (não há por quê mascarar
       // pra si mesmo). Todo o resto (nuvem) usa a versão mascarada.
       const promptDesteProvedor = id === 'ollama' ? prompt : promptMascarado;
-      const r = await info.invocar(promptDesteProvedor, isChat, statusEl);
+      const tIA = performance.now();
+      let r;
+      try { r = await info.invocar(promptDesteProvedor, isChat, statusEl); }
+      catch (eIA) { _medida({ etapa: 'ia', provedor: id, chars: promptDesteProvedor.length, ms: Math.round(performance.now() - tIA), resultado: 'falhou' }); throw eIA; }
+      _medida({ etapa: 'ia', provedor: id, chars: promptDesteProvedor.length, ms: Math.round(performance.now() - tIA), resultado: 'ok' });
       estados[id] = 'ok';
       (window._provedoresQueResponderam = window._provedoresQueResponderam || new Set()).add(info ? info.nome : id);
       renderPainelProvedores(statusEl, estados, 'Concluído.');

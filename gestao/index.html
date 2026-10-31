@@ -84,6 +84,10 @@
   .ok-msg { background:#d1e7dd; color:#0f5132; padding:8px 12px; border-radius:6px; font-size:.84rem; margin-bottom:12px; }
   .dica { font-size:.76rem; color:var(--mudo); margin-top:4px; }
   footer { text-align:center; font-size:.72rem; color:#adb5bd; padding:20px; }
+  .p-ext { background:#5c636a; } .p-mas { background:#f0a030; } .p-iaa { background:#8e1628; }
+  /* Dentro do Analista (menu Administração): sem cabeçalho de navegação própria, sair, outros apps nem rodapé */
+  body.embutido #btn-ir-analista, body.embutido #btn-ir-docs, body.embutido footer, body.embutido header .dir > button[onclick="sair()"], body.embutido header h1, body.embutido #login-volta { display:none !important; }
+  body.embutido header { padding:8px 16px; } body.embutido nav.abas { padding:0 16px; } body.embutido main { padding:16px; }
 </style>
 </head>
 <body>
@@ -95,7 +99,7 @@
     <label for="l-senha">Senha</label><input id="l-senha" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter') entrar()">
     <button class="btn btn-escuro" style="width:100%; justify-content:center; margin-top:18px; padding:11px;" onclick="entrar()"><i class="ti ti-login-2"></i> Entrar</button>
     <div id="l-erro" class="erro hidden"></div>
-    <div style="text-align:center; margin-top:16px; font-size:.78rem;"><a href="../" style="color:#495057;">Ir para o Analista</a></div>
+    <div id="login-volta" style="text-align:center; margin-top:16px; font-size:.78rem;"><a href="../" style="color:#495057;">Ir para o Analista</a></div>
   </div>
 </div>
 
@@ -118,6 +122,7 @@
     <a href="#" data-aba="achados" onclick="abrirAba('achados'); return false;">Achados</a>
     <a href="#" data-aba="incoerentes" onclick="abrirAba('incoerentes'); return false;">Incoerentes</a>
     <a href="#" data-aba="registro" onclick="abrirAba('registro'); return false;">Registro de atividades</a>
+    <a href="#" data-aba="leitura" onclick="abrirAba('leitura'); return false;">Leitura de documentos</a>
     <a href="#" data-aba="relatos" onclick="abrirAba('relatos'); return false;">Mapa real</a>
     <a href="#" data-aba="banco" onclick="abrirAba('banco'); return false;">Banco de dados</a>
     <a href="#" data-aba="usuarios" onclick="abrirAba('usuarios'); return false;">Usuários e IA</a>
@@ -130,8 +135,8 @@
 // ============================================================
 // GESTÃO — lógica da página
 // ============================================================
-const VERSAO_GESTAO = 'v2.5';
-const VERSAO_GESTAO_DATA = '14/10/2026 19:40';
+const VERSAO_GESTAO = 'v2.6';
+const VERSAO_GESTAO_DATA = '31/10/2026 01:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 
 let TOKEN = null, usuario = null, versaoServidor = '', abaAtual = 'hoje', painel = null;
@@ -147,7 +152,7 @@ const NOMES_ACOES = {
   CRIOU_ANOTACAO: 'Criou anotação', ENCAMINHOU_ACHADO: 'Encaminhou achado', RESPONDEU_ACHADO: 'Respondeu achado',
   LEU_AVISO_RELATOS: 'Leu o aviso do mapa real', ADIOU_AVISO_RELATOS: 'Adiou o aviso do mapa real', REGISTROU_RELATO: 'Registrou um relato', ATUALIZOU_RELATO: 'Corrigiu um relato', EXCLUIU_RELATO: 'Excluiu um relato', GESTAO_VIU_ADESAO_RELATOS: 'Gestão: viu a adesão ao mapa real', GESTAO_VIU_LISTA_DE_RELATOS: 'Gestão: viu a lista de pessoas do mapa real', GESTAO_ABRIU_RELATOS_DE_PESSOA: 'Gestão: abriu as respostas de uma pessoa', CONFIRMOU_DADOS_RELATO: 'Confirmou nome e setor no mapa real',
   ACAO_RECUSADA: 'Ação recusada', 'APP: ERRO_EXIBIDO': 'Erro mostrado ao usuário', 'APP: PEDIU_TEXTO': 'Pediu um texto (rascunho)', 'APP: RASCUNHO_PRONTO': 'Rascunho montado', GESTAO_VIU_PAINEL: 'Gestão: viu o painel', MARCOU_ACHADO_INCOERENTE: 'Marcou achado como incoerente', REABRIU_ACHADO: 'Reabriu achado', GESTAO_VIU_INCOERENCIAS: 'Gestão: viu os incoerentes', GESTAO_CADASTROU_CHAVE_IA: 'Gestão: cadastrou chave de IA', GESTAO_ALTEROU_CHAVE_IA: 'Gestão: alterou chave de IA', GESTAO_REMOVEU_CHAVE_IA: 'Gestão: removeu chave de IA', GESTAO_VIU_ESTATISTICAS: 'Gestão: viu estatísticas',
-  GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro',
+  GESTAO_VIU_TODOS_OS_ACHADOS: 'Gestão: viu todos os achados', GESTAO_VIU_REGISTRO_DE_ATIVIDADES: 'Gestão: viu o registro', GESTAO_VIU_DESEMPENHO_DA_LEITURA: 'Gestão: viu o desempenho da leitura',
   GESTAO_CRIOU_USUARIO: 'Gestão: criou usuário', GESTAO_ALTEROU_USUARIO: 'Gestão: alterou usuário',
   GESTAO_REDEFINIU_SENHA: 'Gestão: redefiniu senha', GESTAO_DESBLOQUEOU_LOGIN: 'Gestão: desbloqueou login',
   DOCS_ENVIOU_DOCUMENTO: 'Docs: enviou documento à base', DOCS_REMOVEU_DOCUMENTO: 'Docs: removeu documento da base', DOCS_BUSCOU: 'Docs: pesquisou na base', DOCS_VIU_UNIDADE: 'Docs: viu a linha do tempo de uma unidade', DOCS_CONTOU_PASTA: 'Docs: contou a pasta LEIS E DECRETOS', DOCS_VIU_VOLUME: 'Docs: viu o volume da base'
@@ -283,6 +288,7 @@ async function verificarVersaoNova(forcar = false) {
   } catch (e) { /* sem rede: tenta de novo mais tarde */ }
 }
 window.name = 'sei_gestao';
+if (/[?&]embutido=1/.test(location.search)) document.body.classList.add('embutido');
 window.addEventListener('load', () => { _entrarComPasse('gestao'); _iniciarVigiaDeVersao(); });
 
 async function sair() {
@@ -294,7 +300,7 @@ async function sair() {
 function abrirAba(aba) {
   abaAtual = aba;
   document.querySelectorAll('nav.abas a').forEach(a => a.classList.toggle('ativa', a.dataset.aba === aba));
-  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, banco: telaBanco, usuarios: telaUsuarios, incoerentes: telaIncoerentes, relatos: telaRelatos })[aba]();
+  ({ hoje: telaHoje, processos: telaProcessos, achados: telaAchados, registro: telaRegistro, leitura: telaLeitura, banco: telaBanco, usuarios: telaUsuarios, incoerentes: telaIncoerentes, relatos: telaRelatos })[aba]();
 }
 function recarregar() { painel = null; abrirAba(abaAtual); }
 
@@ -605,6 +611,58 @@ async function buscarRegistro() {
     <tr><th>Quando</th><th>Quem</th><th>O quê</th><th>Processo</th><th>Detalhes</th><th>App</th></tr>` +
     ev.map(e => `<tr><td>${dataHora(e.data)}</td><td>${esc(e.usuario)}</td><td>${e.acao === 'ACAO_RECUSADA' || e.acao === 'LOGIN_RECUSADO' ? `<span class="etq vermelho">${esc(nomeAcao(e.acao))}</span>` : esc(nomeAcao(e.acao))}</td>
       <td>${esc(e.processo_id)}</td><td>${esc(e.detalhes)}</td><td>${esc(e.app)}</td></tr>`).join('') + '</table></div>' : '<div class="vazio">Nenhum registro nesse período.</div>';
+}
+
+// ==================== ABA LEITURA DE DOCUMENTOS (tempos medidos pelo Analista) ====================
+// O Analista mede, em cada leitura, quanto tempo gasta lendo o arquivo (com OCR, quando a página é imagem),
+// mascarando e esperando a IA. Aqui aparece onde o tempo realmente vai. Do conteúdo dos documentos nada é enviado.
+function tempoMs(ms) {
+  ms = Number(ms) || 0;
+  if (ms < 1000) return ms + ' ms';
+  const s = ms / 1000;
+  if (s < 60) return s.toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + ' s';
+  const m = Math.floor(s / 60), r = Math.round(s - m * 60);
+  return m + ' min ' + String(r).padStart(2, '0') + ' s';
+}
+const ROTULO_ETAPA = { extracao: 'Ler o arquivo (inclui OCR)', mascaramento: 'Mascarar dados sensíveis', ia: 'Esperar a IA' };
+const COR_ETAPA = { extracao: 'p-ext', mascaramento: 'p-mas', ia: 'p-iaa' };
+
+async function telaLeitura() {
+  const c = $('conteudo');
+  const dias = Number(localStorage.getItem('gestao_dias_leitura')) || 30;
+  c.innerHTML = carregando('Somando as medições...');
+  const res = await api('adm/leitura-resumo', { dias });
+  if (!res.ok) { c.innerHTML = `<div class="erro">${esc(res.erro)}</div>`; return; }
+  const seletor = `<select style="width:auto; padding:4px 8px; font-size:.8rem;" onchange="localStorage.setItem('gestao_dias_leitura', this.value); telaLeitura();">
+    ${[7, 30, 90, 365].map(d => `<option value="${d}" ${d === res.dias ? 'selected' : ''}>últimos ${d} dias</option>`).join('')}</select>`;
+  if (!res.total_medicoes) {
+    c.innerHTML = `<div class="bloco"><h2><i class="ti ti-stopwatch"></i> Leitura de documentos ${seletor}</h2>
+      <div class="vazio">Ainda não há medições nesse período. Elas passam a aparecer quando alguém importar ou conferir um processo no Analista v26.20 ou mais novo.</div></div>`;
+    return;
+  }
+  const et = res.por_etapa, total = Object.keys(et).reduce((s, k) => s + et[k].total_ms, 0) || 1;
+  const pilha = Object.keys(ROTULO_ETAPA).map(k => `<i class="${COR_ETAPA[k]}" style="width:${(et[k].total_ms / total * 100).toFixed(1)}%;" title="${esc(ROTULO_ETAPA[k])}"></i>`).join('');
+  const legenda = Object.keys(ROTULO_ETAPA).map(k => `<span><i class="${COR_ETAPA[k]}"></i>${esc(ROTULO_ETAPA[k])}: <b>${tempoMs(et[k].total_ms)}</b> (${Math.round(et[k].total_ms / total * 100)}%)</span>`).join('');
+  const linhaEtapa = k => `<tr><td>${esc(ROTULO_ETAPA[k])}</td><td class="n">${et[k].n}</td><td class="n">${tempoMs(et[k].total_ms)}</td><td class="n">${tempoMs(et[k].media_ms)}</td><td class="n">${tempoMs(et[k].mediana_ms)}</td><td class="n">${tempoMs(et[k].maximo_ms)}</td><td class="n">${n0(et[k].falhas)}</td></tr>`;
+  const o = res.ocr;
+  const avisoOcr = o.paginas_sem_leitura > 0
+    ? `<div class="erro">${o.paginas_sem_leitura} página(s) em ${o.arquivos_com_pagina_sem_leitura} arquivo(s) ficaram sem leitura (imagem sem texto e o OCR não conseguiu ler ou não estava disponível). A checagem desses documentos pode estar incompleta.</div>` : '';
+  c.innerHTML = `<div class="bloco"><h2><i class="ti ti-stopwatch"></i> Onde o tempo vai <small>${res.total_medicoes} medições, ${res.pessoas} pessoa(s) ${seletor}</small></h2>
+      <div class="pilha">${pilha}</div><div class="legenda-pilha">${legenda}</div>
+      <div class="dica">Tempo somado de todas as leituras do período. Se a barra for quase toda cinza, o gargalo é ler o arquivo (OCR). Se for vinho, é a espera pela IA.</div></div>
+    <div class="bloco"><h2><i class="ti ti-list-details"></i> Por etapa</h2><div class="rolagem"><table class="tabela">
+      <tr><th>Etapa</th><th>Medições</th><th>Tempo total</th><th>Média</th><th>Mediana</th><th>Maior</th><th>Falhas</th></tr>${Object.keys(ROTULO_ETAPA).map(linhaEtapa).join('')}</table></div></div>
+    <div class="bloco"><h2><i class="ti ti-scan"></i> Páginas escaneadas (OCR)</h2><div class="grade">
+      <div class="num"><b>${o.paginas_total.toLocaleString('pt-BR')}</b><span>Páginas de PDF lidas</span></div>
+      <div class="num"><b>${o.paginas_lidas_por_ocr.toLocaleString('pt-BR')}</b><span>Lidas por OCR (em ${o.arquivos_com_ocr} arquivo(s))</span></div>
+      <div class="num"><b>${tempoMs(o.ms_ocr)}</b><span>Tempo gasto em OCR</span></div>
+      <div class="num"><b>${o.paginas_sem_leitura.toLocaleString('pt-BR')}</b><span>Páginas sem leitura</span></div></div>${avisoOcr}</div>
+    <div class="bloco"><h2><i class="ti ti-sparkles"></i> Por serviço de IA</h2>${res.por_provedor.length ? `<div class="rolagem"><table class="tabela">
+      <tr><th>Serviço</th><th>Chamadas</th><th>Tempo total</th><th>Média</th><th>Mediana</th><th>Maior</th><th>Falhas</th></tr>` +
+      res.por_provedor.map(p => `<tr><td>${esc(p.provedor)}</td><td class="n">${p.n}</td><td class="n">${tempoMs(p.total_ms)}</td><td class="n">${tempoMs(p.media_ms)}</td><td class="n">${tempoMs(p.mediana_ms)}</td><td class="n">${tempoMs(p.maximo_ms)}</td><td class="n">${n0(p.falhas)}</td></tr>`).join('') + '</table></div>' : '<div class="vazio">Nenhuma chamada de IA medida.</div>'}</div>
+    <div class="bloco"><h2><i class="ti ti-turtle"></i> Os 10 mais lentos</h2><div class="rolagem"><table class="tabela">
+      <tr><th>Quando</th><th>Etapa</th><th>Arquivo / serviço</th><th>Páginas</th><th>OCR (pág.)</th><th>Tempo</th><th>Quem</th></tr>` +
+      res.mais_lentos.map(l => `<tr><td>${dataHora(l.data)}</td><td>${esc(ROTULO_ETAPA[l.etapa] || l.etapa)}</td><td>${esc(l.arquivo || l.provedor || '—')}</td><td class="n">${l.paginas || '—'}</td><td class="n">${l.paginas_ocr || '—'}</td><td class="n"><b>${tempoMs(l.ms)}</b></td><td>${esc(l.usuario)}</td></tr>`).join('') + '</table></div></div>';
 }
 
 // ==================== ABA BANCO DE DADOS ====================
