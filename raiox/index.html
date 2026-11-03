@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.18';
-const VERSAO_RAIOX_DATA = '03/11/2026 16:30';
+const VERSAO_RAIOX = 'v0.19';
+const VERSAO_RAIOX_DATA = '03/11/2026 17:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -208,9 +208,9 @@ async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Relatório para a diretoria'], ['fatias', 'Fatias e pareceres'], ['equipe', 'Equipe']],
-  coordenacao: [['achados', 'Achados'], ['fatias', 'Fatias e pareceres']],
-  analista: [['minhas', 'Minhas fatias']]
+  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Relatório para a diretoria'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
+  coordenacao: [['achados', 'Achados'], ['fatias', 'Distribuições e pareceres']],
+  analista: [['minhas', 'Minhas distribuições']]
 };
 function montarNav() {
   $('nav').innerHTML = (ABAS_POR_PAPEL[PAPEL] || []).map(x => `<a href="#" id="aba-${x[0]}" onclick="abrirAba('${x[0]}'); return false;">${esc(x[1])}</a>`).join('');
@@ -562,7 +562,7 @@ async function telaAchados() {
         <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
         <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
       </div></div>
-    ${PAPEL === 'analista' ? '' : `<div class="bloco" id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar fatia com os achados filtrados</button><div id="form-fatia"></div></div>`}
+    ${PAPEL === 'analista' ? '' : `<div class="bloco" id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar distribuição com os achados filtrados</button><div id="form-fatia"></div></div>`}
     <div class="bloco"><button class="btn btn-sm" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button> <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">Baixar CSV de todos os achados</button><div class="dica" style="margin-top:6px">Abre direto no Excel. Inclui o número do SEI, o setor, a gravidade e o contrato de cada achado.</div></div>
     <div id="lista-ach"></div>`;
   if (filtroInicial) {      // veio de um clique na matriz ou nas barras da aba da diretoria
@@ -698,7 +698,7 @@ async function conferir(id, valor) {
 // ==================== FATIAS, PARECERES, EQUIPE (v0.14, sem anexos) ====================
 const NOME_PAPEL = { admin: 'Administrador', coordenacao: 'Coordenação', analista: 'Analista' };
 const NOME_SIT = { atribuida: 'atribuída', em_analise: 'em análise', devolvida: 'devolvida' };
-const NOME_IMP = { sem: 'sem impacto', com: 'há impacto', nao_avalio: 'precisa pesquisar mais' };
+const NOME_IMP = { sem: 'não há impacto', com: 'há impacto', nao_avalio: 'diligência necessária (precisa pesquisar mais)' };
 const ALVOS_IMP = [['imp_setor', 'Setor (GGPCG/DGMCG)'], ['imp_diretoria', 'Diretoria'], ['imp_secexec', 'Secretaria Executiva'], ['imp_ses', 'SES']];
 const fmtData = t => { try { return t ? new Date(t).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : ''; } catch (e) { return ''; } };
 
@@ -708,10 +708,10 @@ async function abrirFormFatia() {
   if (!lista.length) { alert('Nenhum achado no filtro atual.'); return; }
   const r = await api('raiox/equipe', {});
   if (!r.ok) { alert(r.erro); return; }
-  if (!r.pessoas.length) { alert('Cadastre pessoas na aba Equipe antes de criar fatias.'); return; }
+  if (!r.pessoas.length) { alert('Cadastre as pessoas na aba Equipe antes de criar distribuições.'); return; }
   $('form-fatia').innerHTML = `<div style="margin-top:10px">
-    <p class="dica">Esta fatia terá <strong>${lista.length}</strong> achado(s) (os que aparecem no filtro agora, inclusive além dos 300 mostrados).</p>
-    <label>Nome da fatia</label><input id="ft-nome" maxlength="120" placeholder="ex.: Prazos e vigência — contratos de OS">
+    <p class="dica">Esta distribuição terá <strong>${lista.length}</strong> achado(s) (os que aparecem no filtro agora, inclusive além dos 300 mostrados).</p>
+    <label>Nome da distribuição</label><input id="ft-nome" maxlength="120" placeholder="ex.: Prazos e vigência — contratos de OS">
     <label>Quem vai analisar</label><select id="ft-para">${r.pessoas.map(p => `<option value="${esc(p.email)}">${esc(p.nome || p.email)} (${esc(NOME_PAPEL[p.papel] || p.papel)})</option>`).join('')}</select>
     <label>Recado para quem vai analisar (opcional)</label><textarea id="ft-msg" rows="3" maxlength="800"></textarea>
     <div class="acoes"><button class="btn btn-principal btn-sm" onclick="criarFatia()"><i class="ti ti-send"></i> Criar e enviar</button> <button class="btn btn-sm btn-claro" onclick="$('form-fatia').innerHTML=''">Cancelar</button></div></div>`;
@@ -722,14 +722,14 @@ async function criarFatia() {
   const filtro = ['f-unidade', 'f-grav', 'f-orig', 'f-setor', 'f-orgao', 'f-tipo', 'f-conf', 'f-q'].map(i => f(i) ? i.slice(2) + '=' + f(i) : '').filter(Boolean).join('; ');
   const r = await api('raiox/fatia-criar', { nome: f('ft-nome'), atribuida_a: f('ft-para'), mensagem: f('ft-msg'), ids: lista.map(a => a.id), filtro });
   if (!r.ok) { alert(r.erro); return; }
-  alert('Fatia criada com ' + r.n + ' achado(s).' + (r.ja_em_outra_fatia ? '\n' + r.ja_em_outra_fatia + ' deles já estão em outra fatia aberta.' : '') + (r.ignorados ? '\n' + r.ignorados + ' não foram encontrados.' : ''));
+  alert('Distribuição criada com ' + r.n + ' achado(s).' + (r.ja_em_outra_fatia ? '\n' + r.ja_em_outra_fatia + ' deles já estão em outra distribuição aberta.' : '') + (r.ignorados ? '\n' + r.ignorados + ' não foram encontrados.' : ''));
   $('form-fatia').innerHTML = '';
   abrirAba('fatias');
 }
 
 // ---- lista de fatias ----
 async function telaFatias() {
-  $('conteudo').innerHTML = carregando('Carregando as fatias...');
+  $('conteudo').innerHTML = carregando('Carregando as distribuições...');
   const r = await api('raiox/fatias-listar', {});
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
   const gestor = PAPEL !== 'analista';
@@ -738,9 +738,9 @@ async function telaFatias() {
     ${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
     <div class="acoes"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>
     ${gestor && f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`).join('');
-  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-cut"></i> ${gestor ? 'Fatias e pareceres' : 'Minhas fatias'}</h2>
-    ${gestor ? '<p class="dica">Para criar uma fatia, vá em Achados, filtre o que quer enviar e use "Criar fatia com os achados filtrados".</p>' : '<p class="dica">Estas são as fatias de achados que foram enviadas para você analisar.</p>'}</div>
-    ${linhas || '<div class="vazio">Nenhuma fatia ainda.</div>'}
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-cut"></i> ${gestor ? 'Distribuições e pareceres' : 'Minhas distribuições'}</h2>
+    ${gestor ? '<p class="dica">Para criar uma distribuição, vá em Achados, filtre o que quer enviar e use "Criar distribuição com os achados filtrados".</p>' : '<p class="dica">Estas são as distribuições de achados que a coordenação enviou para você analisar.</p>'}</div>
+    ${linhas || '<div class="vazio">Nenhuma distribuição ainda.</div>'}
     ${gestor ? '<div id="visao-par"></div>' : ''}`;
   if (gestor) visaoPareceres();
 }
@@ -753,8 +753,8 @@ async function visaoPareceres() {
   const cnt = campo => { const c = { sem: 0, com: 0, nao_avalio: 0 }; r.pareceres.forEach(x => { c[x[campo]] = (c[x[campo]] || 0) + 1; }); return c; };
   const linha = ALVOS_IMP.map(([c, n]) => { const k = cnt(c); return `<tr><td>${esc(n)}</td><td>${k.com}</td><td>${k.sem}</td><td>${k.nao_avalio}</td></tr>`; }).join('');
   $('visao-par').innerHTML = `<div class="bloco"><h2><i class="ti ti-gavel"></i> Visão geral dos pareceres</h2>
-    <p class="dica">${r.n_achados_com_parecer} de ${r.n_achados_em_fatias} achados em fatias já têm parecer. Cada parecer conta uma vez (última versão).</p>
-    ${r.pareceres.length ? `<table class="tab"><thead><tr><th>Alvo</th><th>Há impacto</th><th>Sem impacto</th><th>Não consigo avaliar</th></tr></thead><tbody>${linha}</tbody></table>` : '<p class="dica">Nenhum parecer registrado ainda.</p>'}
+    <p class="dica">${r.n_achados_com_parecer} de ${r.n_achados_em_fatias} achados em distribuições já têm parecer. Cada parecer conta uma vez (última versão).</p>
+    ${r.pareceres.length ? `<table class="tab"><thead><tr><th>Área</th><th>Há impacto</th><th>Não há impacto</th><th>Diligência necessária</th></tr></thead><tbody>${linha}</tbody></table>` : '<p class="dica">Nenhum parecer registrado ainda.</p>'}
     ${r.pareceres.map(x => `<details style="margin-top:8px"><summary><strong>${esc(x.fatia_nome)}</strong> · ${x.n_achados} achado(s) · ${esc(x.autor_nome)} · v${x.versao}</summary>
       <p class="dica">${ALVOS_IMP.map(([c, n]) => esc(n) + ': ' + esc(NOME_IMP[x[c]] || x[c])).join(' · ')}</p>
       <p style="white-space:pre-wrap">${esc(x.justificativa)}</p></details>`).join('')}
@@ -764,7 +764,7 @@ async function visaoPareceres() {
 // ---- uma fatia aberta ----
 let FATIA = null, SEL = new Set(), PAR_EDIT = null, FILTRO_FATIA = { q: '', cob: '' };
 async function abrirFatia(id) {
-  $('conteudo').innerHTML = carregando('Abrindo a fatia...');
+  $('conteudo').innerHTML = carregando('Abrindo a distribuição...');
   const r = await api('raiox/fatia-obter', { id }, 180000);
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
   FATIA = r; FATIA.achados = prepararAchados(FATIA.achados || []); SEL = new Set(); PAR_EDIT = null; FILTRO_FATIA = { q: '', cob: '' };
@@ -784,10 +784,10 @@ function pintarFatia() {
   $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="abrirAba(abaAtual)"><i class="ti ti-arrow-left"></i> Voltar</button>
     <h2>${esc(f.nome)} <small>${esc(NOME_SIT[f.situacao] || f.situacao)}</small></h2>
     <p class="dica">Para: ${esc(f.atribuida_nome)} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer</p>${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
-    ${f.situacao !== 'devolvida' ? `<div class="acoes"><button class="btn btn-principal btn-sm" onclick="devolverFatia()"><i class="ti ti-arrow-back-up"></i> Devolver fatia pronta</button></div>` : '<p class="dica">Fatia devolvida.</p>'}</div>
+    ${f.situacao !== 'devolvida' ? `<div class="acoes"><button class="btn btn-principal btn-sm" onclick="devolverFatia()"><i class="ti ti-arrow-back-up"></i> Devolver distribuição pronta</button></div>` : '<p class="dica">Distribuição devolvida.</p>'}</div>
     <div class="bloco"><h2>Pareceres</h2>${par || '<p class="dica">Nenhum parecer ainda. Marque os achados abaixo e preencha o formulário.</p>'}</div>
     ${aberta ? `<div class="bloco" id="form-par"></div>` : ''}
-    <div class="bloco"><h2>Achados da fatia <small>${lista.length} de ${FATIA.achados.length}</small></h2>
+    <div class="bloco"><h2>Achados da distribuição <small>${lista.length} de ${FATIA.achados.length}</small></h2>
       <div class="filtros"><div><label>Parecer</label><select onchange="FILTRO_FATIA.cob=this.value;pintarFatia()"><option value="">Todos</option><option value="sem" ${FILTRO_FATIA.cob === 'sem' ? 'selected' : ''}>Sem parecer</option><option value="com" ${FILTRO_FATIA.cob === 'com' ? 'selected' : ''}>Com parecer</option></select></div>
       <div><label>Busca</label><input value="${esc(FILTRO_FATIA.q)}" onchange="FILTRO_FATIA.q=this.value;pintarFatia()" placeholder="palavra"></div></div>
       ${aberta ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="selTodosFatia(true)">Marcar todos os listados</button> <button class="btn btn-sm btn-claro" onclick="selTodosFatia(false)">Desmarcar</button> <span class="dica" id="cont-sel"></span></div>` : ''}</div>
@@ -804,7 +804,7 @@ function pintarFormParecer() {
   const p = PAR_EDIT ? FATIA.pareceres.find(x => x.parecer_id === PAR_EDIT) : null;
   const selImp = (c) => `<select id="pf-${c}"><option value="">— escolha —</option>${['com', 'sem', 'nao_avalio'].map(v => `<option value="${v}" ${p && p[c] === v ? 'selected' : ''}>${esc(NOME_IMP[v])}</option>`).join('')}</select>`;
   $('form-par').innerHTML = `<h2>${p ? 'Editar parecer (nova versão)' : 'Novo parecer'}</h2>
-    <p class="dica">Este parecer cobre <strong id="par-n">${SEL.size}</strong> achado(s) marcado(s). Para cada alvo diga se há impacto, se não há, ou se precisa pesquisar mais. Você pode fazer vários pareceres na mesma fatia (um para o que tem impacto, outro para o que não tem, outro para o que precisa pesquisar). Todo achado precisa ficar coberto por algum parecer antes de devolver.</p>
+    <p class="dica">Este parecer cobre <strong id="par-n">${SEL.size}</strong> achado(s) marcado(s). Para cada área (setor, diretoria, Secretaria Executiva, SES), diga: há impacto, não há impacto, ou diligência necessária (precisa pesquisar mais). Escreva sempre o motivo. Você pode fazer vários pareceres na mesma distribuição, um para cada resposta. Antes de devolver, todos os achados precisam ter parecer.</p>
     <div class="filtros">${ALVOS_IMP.map(([c, n]) => `<div><label>${esc(n)}</label>${selImp(c)}</div>`).join('')}</div>
     <label>Justificativa (obrigatória, inclusive quando não há impacto)</label><textarea id="pf-just" rows="6" maxlength="4000">${esc(p ? p.justificativa : '')}</textarea>
     <div class="acoes"><button class="btn btn-principal btn-sm" onclick="salvarParecer()"><i class="ti ti-device-floppy"></i> Salvar parecer</button>${p ? ' <button class="btn btn-sm btn-claro" onclick="PAR_EDIT=null;pintarFormParecer()">Cancelar edição</button>' : ''}</div><div id="pf-msg" class="dica"></div>`;
@@ -827,7 +827,7 @@ async function verVersoes(pid) {
   el.innerHTML = r.versoes.map(x => `<div class="dica" style="margin-top:6px"><strong>v${x.versao}</strong> · ${esc(x.autor_nome)} · ${esc(fmtData(x.criado_em))} · ${x.n_achados} achado(s)<br>${ALVOS_IMP.map(([c, n]) => esc(n) + ': ' + esc(NOME_IMP[x[c]] || x[c])).join(' · ')}<br><span style="white-space:pre-wrap">${esc(x.justificativa)}</span></div>`).join('');
 }
 async function devolverFatia() {
-  if (!confirm('Devolver esta fatia? Depois disso você não poderá editar, a menos que a coordenação reabra.')) return;
+  if (!confirm('Devolver esta distribuição? Depois de devolver, você não poderá mudar os pareceres, a menos que a coordenação reabra a distribuição.')) return;
   const r = await api('raiox/fatia-devolver', { id: FATIA.fatia.id });
   if (!r.ok) { alert(r.erro); return; }
   abrirAba(abaAtual);
@@ -840,7 +840,7 @@ async function telaEquipe() {
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
   const papelDe = {}; r.perfis.forEach(p => { if (p.ativo !== 'nao') papelDe[p.email.toLowerCase()] = p.papel; });
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-users"></i> Equipe do Raio-X</h2>
-    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador</strong> vê tudo e roda o Raio-X. <strong>Coordenação</strong> vê todos os achados, cria fatias e vê os pareceres. <strong>Analista</strong> vê só as fatias que receber. Quem não tem papel não entra. A pessoa precisa ter login cadastrado (o mesmo da Gestão/Analista).</p>
+    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador:</strong> faz tudo, inclusive rodar a leitura e gerar relatórios. <strong>Coordenação:</strong> vê todos os achados, cria as distribuições e lê os pareceres. <strong>Analista:</strong> vê só as distribuições que receber e responde com parecer. Quem não tem perfil não entra. A pessoa precisa já ter login no Analista ou na Gestão.</p>
     <label>Buscar pessoa</label><input id="eq-q" oninput="pintarEquipe()" placeholder="nome ou e-mail"></div><div id="eq-lista"></div>`;
   window._EQ = { usuarios: r.usuarios, papelDe }; pintarEquipe();
 }
