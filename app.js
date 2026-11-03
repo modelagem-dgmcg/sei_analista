@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.21';
-const VERSAO_APP_DATA = '01/11/2026 22:30';
+const VERSAO_APP = 'v26.22';
+const VERSAO_APP_DATA = '03/11/2026 14:00';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -1561,6 +1561,10 @@ async function abrirProcesso(identificador) {
         <div class="fonte" id="card-web" style="display:none;">
           <span class="fonte-num" id="fn-web">3</span>
           <div class="fonte-corpo"><div class="fonte-tit">Fontes abertas <span class="fonte-chip fonte-chip-exp">Experimental</span></div><div class="fonte-estado" id="fe-web"></div></div>
+        </div>
+        <div class="fonte" id="card-gaocg">
+          <span class="fonte-num" id="fn-gaocg">4</span>
+          <div class="fonte-corpo"><div class="fonte-tit">Cadastro do GAOCG <span class="fonte-chip">Somente leitura</span></div><div class="fonte-estado" id="fe-gaocg"></div></div>
         </div>
       </div>
       <div id="ia-status" style="margin-top:15px;"></div>
@@ -3292,7 +3296,7 @@ function _fonteEstado(id, estado, texto) {
   if (!card || !el) return;
   card.dataset.estado = estado || '';
   el.innerHTML = texto ? escHtml(texto) : '';
-  if (num) num.innerHTML = estado === 'pronto' ? '✓' : estado === 'erro' ? '✕' : ({ docs: '1', drive: '2', web: '3' })[id];
+  if (num) num.innerHTML = estado === 'pronto' ? '✓' : estado === 'erro' ? '✕' : ({ docs: '1', drive: '2', web: '3', gaocg: '4' })[id];
 }
 function _fontesIniciar() {
   const d = document.getElementById('chk-historico-unidade')?.checked, w = document.getElementById('chk-legislacao-jurisprudencia')?.checked;
@@ -3301,9 +3305,10 @@ function _fontesIniciar() {
   _fonteEstado('docs', 'trabalhando', 'Refazendo as contas');
   _fonteEstado('drive', d ? 'espera' : 'off', d ? 'Na fila' : 'Não usado nesta checagem');
   _fonteEstado('web', w ? 'espera' : 'off', w ? 'Na fila' : 'Não usado nesta checagem');
+  _fonteEstado('gaocg', 'espera', 'Na fila');
 }
 function _fontesFinalizar() {
-  ['docs', 'drive', 'web'].forEach(id => {
+  ['docs', 'drive', 'web', 'gaocg'].forEach(id => {
     const st = document.getElementById('card-' + id)?.dataset.estado;
     if (st === 'trabalhando') _fonteEstado(id, 'erro', 'Não foi concluído');
     else if (st === 'espera') _fonteEstado(id, '', '');
@@ -3593,6 +3598,87 @@ function _montarCoberturaLeitura() {
 
 const LIMITE_LOTES_AUTOMATICO = 6;
 
+// ==================== CONFERÊNCIA COM O CADASTRO DO GAOCG ====================
+// Fonte 4 da Checagem. Compara o processo (unidade, OSS, contrato e aditivos citados nos
+// documentos) com o cadastro oficial do GAOCG, que é consultado SÓ PARA LEITURA pelo servidor.
+// Os achados saem como os de contas por código: aparecem na hora, sem depender da IA, e o
+// analista decide. O cadastro também pode estar errado ou atrasado, por isso tudo sai "verificar".
+async function _gaocgUnidades() {
+  const c = window._gaocgCache;
+  if (c && Date.now() - c.t < 600000) return c.lista;
+  const r = await api('gaocg/unidades', {}, { timeoutMs: 60000 });
+  if (!r || r.ok === false) throw new Error((r && r.erro) || 'sem resposta do servidor');
+  window._gaocgCache = { t: Date.now(), lista: r.unidades || [] };
+  return window._gaocgCache.lista;
+}
+function _gxNorm(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+function _gxTokens(s) { return _gxNorm(s).split(' ').filter(w => w.length > 2 && !['de', 'da', 'do', 'das', 'dos', 'unidade', 'hospital', 'upa', 'upae', 'oss', 'instituto'].includes(w)); }
+function _gxSimilaridade(a, b) {
+  const x = _gxNorm(a), y = _gxNorm(b); if (!x || !y) return 0;
+  if (x === y || x.includes(y) || y.includes(x)) return 1;
+  const A = _gxTokens(a), B = _gxTokens(b); if (!A.length || !B.length) return 0;
+  return A.filter(w => B.includes(w)).length / Math.min(A.length, B.length);
+}
+function _gxChaveContrato(s) {
+  const m = /(\d{1,4})\s*\/\s*(\d{2,4})/.exec(String(s || '')); if (!m) return '';
+  return ('000' + parseInt(m[1], 10)).slice(-3) + '/' + (m[2].length === 2 ? '20' + m[2] : m[2]);
+}
+function _gxTrecho(texto, termo) {
+  const i = termo ? texto.indexOf(termo) : -1; if (i < 0) return '';
+  return texto.substring(Math.max(0, i - 40), Math.min(texto.length, i + termo.length + 60)).replace(/\s+/g, ' ').trim();
+}
+
+async function conferirComGaocg(p, texto) {
+  const base = { tag: 'Cadastro', setor: 'GGPCG', verificar: true, conferido_por_codigo: true, fonte_cadastro: 'gaocg' };
+  const cards = [];
+  if (!p.unidade || String(p.unidade).trim().length < 3) return { cards, estado: 'aviso', texto: 'O processo está sem unidade definida, não há como comparar com o cadastro' };
+  const unidades = await _gaocgUnidades();
+  if (!unidades.length) return { cards, estado: 'aviso', texto: 'O GAOCG não devolveu nenhuma unidade' };
+  const ranque = unidades.map(u => ({ u, s: _gxSimilaridade(u.nome, p.unidade) })).sort((a, b) => b.s - a.s);
+  const melhor = ranque[0];
+  if (!melhor || melhor.s < 0.5) {
+    cards.push(Object.assign({}, base, {
+      titulo: 'A unidade do processo não aparece no cadastro do GAOCG',
+      explicacao: `O processo está com a unidade "${p.unidade}", e nenhuma unidade do GAOCG tem nome parecido.`,
+      sugestao: 'Confira se o nome da unidade no processo está correto. Se estiver, avise a GAOCG para cadastrar ou corrigir o nome.' }));
+    return { cards, estado: 'aviso', texto: 'Unidade não encontrada no cadastro' };
+  }
+  const u = melhor.u;
+  const nomeGaocg = u.nome;
+  if (p.oss && u.oss && _gxSimilaridade(p.oss, u.oss) < 0.5) {
+    cards.push(Object.assign({}, base, {
+      titulo: 'A OSS do processo é diferente da OSS cadastrada no GAOCG',
+      explicacao: `Processo: "${p.oss}". GAOCG, para a unidade "${nomeGaocg}": "${u.oss}".`,
+      sugestao: 'Confira no contrato qual é a OSS da unidade. Corrija o processo ou peça à GAOCG a correção do cadastro.' }));
+  }
+  // Contratos citados nos documentos
+  const contagem = {}, re = /contrato\s+(?:de\s+gest[ãa]o\s*)?(?:n[º°o.]{0,2}\s*)?(\d{1,4})\s*\/\s*(\d{2,4})/gi;
+  let m; while ((m = re.exec(texto)) !== null) { const k = _gxChaveContrato(m[0]); if (k) contagem[k] = (contagem[k] || 0) + 1; }
+  const citados = Object.keys(contagem).sort((a, b) => contagem[b] - contagem[a]);
+  const kG = _gxChaveContrato(u.contrato_gestao);
+  if (kG && citados.length && !citados.includes(kG)) {
+    cards.push(Object.assign({}, base, {
+      titulo: 'O contrato citado nos documentos é diferente do contrato cadastrado no GAOCG',
+      evidencia: _gxTrecho(texto, (/contrato\s+(?:de\s+gest[ãa]o\s*)?(?:n[º°o.]{0,2}\s*)?\d{1,4}\s*\/\s*\d{2,4}/i.exec(texto) || [''])[0]),
+      explicacao: `Os documentos citam o contrato ${citados.slice(0, 3).join(', ')}. O GAOCG tem o contrato ${kG} para "${nomeGaocg}".`,
+      sugestao: 'Confira no SEI qual é o contrato da unidade. Se o documento estiver certo, peça a correção do cadastro; se o cadastro estiver certo, o documento pode ser de outro contrato.' }));
+  }
+  // Termos aditivos citados
+  const noGaocg = new Set((u.tas || []).map(t => parseInt((/(\d+)/.exec(String(t.numero_ta || '')) || [])[1], 10)).filter(n => !isNaN(n)));
+  const citTa = new Set(), reTa = /(\d{1,2})\s*[ºo°]?\s*termo\s+aditivo/gi;
+  while ((m = reTa.exec(texto)) !== null) citTa.add(parseInt(m[1], 10));
+  const faltam = [...citTa].filter(n => n > 0 && !noGaocg.has(n)).sort((a, b) => a - b);
+  if (faltam.length) {
+    cards.push(Object.assign({}, base, {
+      titulo: faltam.length === 1 ? `O ${faltam[0]}º termo aditivo citado nos documentos não consta no GAOCG` : `Termos aditivos citados nos documentos que não constam no GAOCG: ${faltam.map(n => n + 'º').join(', ')}`,
+      evidencia: _gxTrecho(texto, (new RegExp(faltam[0] + '\\s*[ºo°]?\\s*termo\\s+aditivo', 'i').exec(texto) || [''])[0]),
+      explicacao: `O GAOCG tem ${noGaocg.size ? 'só os aditivos ' + [...noGaocg].sort((a, b) => a - b).join(', ') : 'nenhum aditivo cadastrado'} para "${nomeGaocg}".`,
+      sugestao: 'Confirme no SEI se o aditivo está assinado. Se estiver, peça à GAOCG a inclusão no cadastro, porque o cálculo de parcela e de vigência depende dele.' }));
+  }
+  const n = cards.length;
+  return { cards, estado: n ? 'aviso' : 'pronto', texto: n ? (n === 1 ? '1 divergência com o cadastro' : n + ' divergências com o cadastro') + ' · unidade "' + nomeGaocg + '"' : 'Confere com o cadastro · unidade "' + nomeGaocg + '"' };
+}
+
 async function rodarRaioX(automatica = false) {
   const st = document.getElementById('ia-status');
   const contadorEl = document.getElementById('contador-checagem');
@@ -3615,6 +3701,7 @@ async function rodarRaioX(automatica = false) {
 
   let achadosCodigo = [];
   let achadosIntegridade = [];
+  let achadosGaocg = [];
   try {
     prog.etapa(1, 'Refazendo as contas por código e comparando com a unidade', 0.2);
     let dadosExtraidos = montarDadosExtraidos(textoIntegralAtual);
@@ -3623,8 +3710,17 @@ async function rodarRaioX(automatica = false) {
     achadosCodigo = conferirContasPorCodigo(textoIntegralAtual);
     window._cobChecagem.codigo = JSON.parse(JSON.stringify(_cobCodigo));
     achadosIntegridade = _achadosDeIntegridade();
+    // Cadastro do GAOCG (somente leitura): se estiver fora do ar, a checagem segue sem ele.
+    try {
+      _fonteEstado('gaocg', 'trabalhando', 'Consultando o cadastro');
+      const g = await conferirComGaocg(p, textoIntegralAtual);
+      achadosGaocg = g.cards;
+      _fonteEstado('gaocg', g.estado, g.texto);
+    } catch (eG) {
+      _fonteEstado('gaocg', 'aviso', 'Cadastro indisponível: ' + String(eG.message || eG).slice(0, 140) + '. A checagem seguiu sem esta fonte.');
+    }
     // O que não depende da IA aparece já, enquanto ela ainda trabalha.
-    const _jaPronto = [...achadosIntegridade, ...achadosCodigo];
+    const _jaPronto = [...achadosIntegridade, ...achadosGaocg, ...achadosCodigo];
     if (_jaPronto.length) {
       window.achadosAtuais = _jaPronto;
       renderizarCards(_jaPronto);
@@ -3742,7 +3838,7 @@ depender de número dessas páginas, marque verificar=true e diga na explicaçã
 Retorne EXCLUSIVAMENTE um JSON válido, sem markdown:
 {"cards": [{"tag": "Financeiro", "setor": "SFCG", "titulo": "Título", "evidencia": "trecho extraído (verbatim, o mais curto possível)", "explicacao": "motivo técnico, citando os valores/documentos exatos comparados", "sugestao": "o que fazer, em linguagem simples", "doc_origem": "doc", "verificar": true, "baseado_em_fonte_externa": false, "fonte_externa": ""}]}
 
-${achadosCodigo.length ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + achadosCodigo.map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n' : ''}TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
+${(achadosCodigo.length + achadosGaocg.length) ? 'CONTAS JÁ CONFERIDAS POR CÓDIGO (NÃO repita estes achados — eles já serão mostrados ao analista):\n' + [...achadosCodigo, ...achadosGaocg].map(a => '- ' + a.titulo + ': ' + a.explicacao).join('\n') + '\n\n' : ''}TEXTO BRUTO DOS DOCUMENTOS (use para a regra 2 — texto duplicado/copiado/título divergente da tabela):
 ___TEXTO_DO_LOTE___`;
     window._mascaramentoAcumulado = [];
     const lotes = _dividirEmLotes(textoIntegralAtual, LIMITE_CHARS_LOTE);
@@ -3762,8 +3858,8 @@ ___TEXTO_DO_LOTE___`;
       _fonteEstado('docs', 'aviso', 'Só as contas por código. A IA espera você pedir');
       // Processo muito grande: não gasta a cota de IA sem você pedir.
       st.innerHTML = `<div style="background:#fff3cd;color:#664d03;padding:8px 12px;border-radius:6px;font-size:0.85rem;"><i class="ti ti-player-pause"></i> Este processo é grande (${lotes.length} lotes de IA). Mostrei só as contas conferidas por código. Toque em "Executar Checagem" para a IA analisar também.</div>`;
-      contadorEl.innerHTML = (achadosCodigo.length + achadosIntegridade.length)
-        ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length + achadosIntegridade.length} inconsistência(s), IA aguardando você</span>` : '';
+      contadorEl.innerHTML = (achadosCodigo.length + achadosIntegridade.length + achadosGaocg.length)
+        ? `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${achadosCodigo.length + achadosIntegridade.length + achadosGaocg.length} inconsistência(s), IA aguardando você</span>` : '';
       return;
     }
     prog.etapa(2, lotes.length > 1 ? `Parte 1 de ${lotes.length}` : 'A IA está lendo os documentos', 0.3);
@@ -3811,7 +3907,7 @@ ___TEXTO_DO_LOTE___`;
       }
       return c;
     });
-    window.achadosAtuais = [...achadosIntegridade, ...achadosCodigo, ...achadosIA];
+    window.achadosAtuais = [...achadosIntegridade, ...achadosGaocg, ...achadosCodigo, ...achadosIA];
     contadorEl.innerHTML = `<span style="background:#f8d7da; color:#842029; padding:6px 12px; border-radius:20px;">${_visiveis(window.achadosAtuais).length} inconsistência(s)</span>`;
     renderizarCards(window.achadosAtuais);
     _fonteEstado('docs', falhasLote.length ? 'aviso' : 'pronto', (_visiveis(window.achadosAtuais).length === 1 ? '1 inconsistência' : _visiveis(window.achadosAtuais).length + ' inconsistências') + (falhasLote.length ? `; ${falhasLote.length} de ${lotes.length} parte(s) sem análise da IA` : ''));
@@ -3826,7 +3922,7 @@ ___TEXTO_DO_LOTE___`;
     st.innerHTML = renderErroAmigavel(e.message);
     // A IA falhou, mas a conferência de contas por código não depende dela — mostra o
     // que ela achou, pra parte financeira nunca ficar sem cobertura.
-    const _semIA = [...achadosIntegridade, ...achadosCodigo];
+    const _semIA = [...achadosIntegridade, ...achadosGaocg, ...achadosCodigo];
     if (_semIA.length) {
       window.achadosAtuais = _semIA;
       renderizarCards(_semIA);
@@ -4121,6 +4217,7 @@ function _progressoIniciar(idContainer, titulo, etapas) {
 // De onde veio cada achado: 1 = documentos do processo (contas por código, leitura e IA sobre o texto),
 // 2 = histórico da unidade, 3 = busca em fontes abertas.
 function _fonteDoAchado(c) {
+  if (c.fonte_cadastro === 'gaocg') return 'gaocg';
   if (!c.baseado_em_fonte_externa) return 'docs';
   const f = String(c.fonte_externa || '').toLowerCase();
   if (f === 'web') return 'web';
@@ -4130,13 +4227,14 @@ function _fonteDoAchado(c) {
 }
 function _chipOrigem(c) {
   const f = _fonteDoAchado(c);
-  const m = { docs: ['Origem: documentos do processo', '#e9ecef', '#495057', ''], drive: ['Origem: histórico da unidade', '#e7f5ff', '#1864ab', ''], web: ['Origem: fonte aberta · confira antes de citar', '#fef3c7', '#92400e', 'Pesquisa na internet: pode estar desatualizada ou não ser oficial'] }[f];
+  const m = { gaocg: ['Origem: cadastro do GAOCG', '#e6fcf5', '#087f5b', 'Comparado com o cadastro oficial do GAOCG (somente leitura). O cadastro também pode estar desatualizado: confira antes de decidir.'], docs: ['Origem: documentos do processo', '#e9ecef', '#495057', ''], drive: ['Origem: histórico da unidade', '#e7f5ff', '#1864ab', ''], web: ['Origem: fonte aberta · confira antes de citar', '#fef3c7', '#92400e', 'Pesquisa na internet: pode estar desatualizada ou não ser oficial'] }[f];
   return `<span title="${escAttr(m[3])}" style="font-size:0.68rem;background:${m[1]};color:${m[2]};padding:2px 8px;border-radius:10px;font-weight:600;margin-left:6px;">${m[0]}</span>`;
 }
 const _GRUPOS_ACHADOS = [
   { id: 'docs',  num: 1, nome: 'Documentos anexados agora' },
   { id: 'drive', num: 2, nome: 'Todos os documentos da unidade' },
-  { id: 'web',   num: 3, nome: 'Busca em fontes abertas' }
+  { id: 'web',   num: 3, nome: 'Busca em fontes abertas' },
+  { id: 'gaocg', num: 4, nome: 'Cadastro do GAOCG' }
 ];
 // Só o clique da pessoa vale como escolha; o que o sistema abre sozinho não fica gravado.
 function _grupoAchadosClique(id, det) { (window._gruposAbertos = window._gruposAbertos || {})[id] = !det.open; }
@@ -4177,7 +4275,7 @@ function renderizarCards(cards) {
   let html = _htmlBarraFiltroEExportar(cards, filtrados);
   html += linhaOcultos;
   cards = filtrados;
-  const _grupos = { docs: [], drive: [], web: [] };
+  const _grupos = { docs: [], drive: [], web: [], gaocg: [] };
   cards.forEach((c, idx) => {
     const cardId = `rx-${idx}`;
     window.memoriaEvidencias[cardId] = { tag: c.tag, titulo: c.titulo, texto: c.explicacao + (Array.isArray(c.calculo) && c.calculo.length ? '\n\nMemória de cálculo:\n' + c.calculo.map(l => `• ${l[0]}: ${l[1]}`).join('\n') : '') + (c.sugestao ? `\n\n💡 O que fazer: ${c.sugestao}` : ''), doc: c.doc_origem };
