@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.16';
-const VERSAO_RAIOX_DATA = '26/10/2026 16:10';
+const VERSAO_RAIOX = 'v0.17';
+const VERSAO_RAIOX_DATA = '03/11/2026 13:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -384,7 +384,7 @@ function desenharRodar(totalDocs) {
     </div>
     <div class="bloco"><h2><i class="ti ti-code"></i> 1. Conferências por código <small>(rápidas, sem IA)</small></h2>
       <div class="dica">Datas fora de ordem, vigência, sequência de aditivos, contrato ou unidade citados no texto, documento de outro contrato dentro de um processo. Substitui os achados por código anteriores.</div>
-      <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar conferências por código</button></div>
+      <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar conferências por código</button> <button class="btn" id="btn-gaocg" onclick="rodarGaocg()" ${rodando ? 'disabled' : ''} title="Compara o Acervo com o cadastro do GAOCG (somente leitura)"><i class="ti ti-arrows-diff"></i> Conferir com o GAOCG</button></div>
     </div>
     <div class="bloco"><h2><i class="ti ti-sparkles"></i> 2. Leitura com IA <small>${c.length} contratos e ${p.length} processos · ${feitos} concluídos · ${fmt(totalDocs)} documentos na base</small></h2>
       <div class="dica">A IA lê cada contrato (com seus aditivos) e cada processo, e aponta achados com trecho, impacto, risco perante os órgãos de controle e sugestão. Dados pessoais são mascarados antes de irem para a nuvem. O trecho citado é conferido contra o texto; se não bater, o achado vem marcado.</div>
@@ -475,6 +475,13 @@ async function painelFila() {
 function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
 function prog(t) { const p = $('progresso'); if (p) p.innerHTML = t; }
 
+async function rodarGaocg() {
+  rodando = true; $('btn-gaocg').disabled = true; prog('<span class="spinner"></span>Consultando o cadastro do GAOCG (somente leitura) e comparando com o Acervo...');
+  const r = await api('raiox/gaocg', {}, 300000);
+  rodando = false;
+  prog(r.ok === false ? `<span style="color:var(--bordo)">${esc(r.erro)}</span>` : `Pronto: ${fmt(r.achados_gaocg)} achados do GAOCG (${fmt(r.unidades_gaocg)} unidades do GAOCG comparadas com ${fmt(r.documentos)} documentos do Acervo).`);
+  $('btn-gaocg').disabled = false;
+}
 async function rodarCodigo() {
   rodando = true; $('btn-codigo').disabled = true; prog('<span class="spinner"></span>Rodando as conferências por código na base inteira (pode levar um ou dois minutos)...');
   const r = await api('raiox/codigo', {}, 300000);
@@ -546,7 +553,7 @@ async function telaAchados() {
       <div class="filtros">
         <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
         <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
-        <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Código</option><option value="ia">IA</option></select></div>
+        <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Código</option><option value="gaocg">GAOCG</option><option value="ia">IA</option></select></div>
         <div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>
         <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
         <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
@@ -599,7 +606,7 @@ function cartao(a, comBotoes) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">trecho não encontrado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
-    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${a.origem === 'ia' ? 'IA' : 'código'}</span> <span class="etq azul">${esc(a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">estendido (prazo vencido)</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">liga ao passado</span>' : ''}
+    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${a.origem === 'ia' ? 'IA' : a.origem === 'gaocg' ? 'GAOCG' : 'código'}</span> <span class="etq azul">${esc(a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">estendido (prazo vencido)</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">liga ao passado</span>' : ''}
       <span class="dica" style="margin-left:6px;">${esc(a.unidade)}${a.contrato ? ' · contrato ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</span></div>
     <h3>${esc(a.titulo)}</h3>
     ${a.descricao ? `<p>${esc(a.descricao)}</p>` : ''}
