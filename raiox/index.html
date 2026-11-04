@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.19';
-const VERSAO_RAIOX_DATA = '03/11/2026 17:00';
+const VERSAO_RAIOX = 'v0.20';
+const VERSAO_RAIOX_DATA = '04/11/2026 13:40';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -326,7 +326,41 @@ const ORGAOS = ['TCE-PE', 'MPCO', 'MPPE', 'TJPE', 'CGE-PE', 'ALEPE', 'Conselho E
 const nomesSetores = () => SETORES.map(s => s.nome);
 const setorValido = s => { const t = String(s || '').trim().toUpperCase(); return nomesSetores().find(n => n.toUpperCase() === t) || ''; };
 
-function montarPrompt(rotulo, texto) {
+function montarPromptCtai(rotulo, texto) {
+  return `Você é um revisor dos pareceres técnicos da CTAI (Comissão Técnica de Acompanhamento Interno dos Contratos de Gestão) da Secretaria de Saúde de Pernambuco (SES-PE), que tratam de contratos de gestão com Organizações Sociais de Saúde.
+Leia o material abaixo (${rotulo}). Cada parecer começa com "=== DOCUMENTO: ... ===". Aponte SOMENTE o que o próprio texto sustenta, em quatro frentes:
+1. Erro interno do parecer: valores que não fecham (conclusão diferente do valor citado no corpo, soma, valor por extenso x numérico), datas fora de ordem ou impossíveis, contrato, unidade, OSS ou número de processo citados de forma inconsistente, número de SEI sem dizer o que é, base legal diferente entre o corpo e a conclusão, parecer que se contradiz (por exemplo recomenda devolver e manter o mesmo valor).
+2. Parecer x contrato: afirmações sobre vigência, termo aditivo, valor ou objeto que podem não bater com o contrato; escreva como "a conferir no contrato", pois o contrato não está no material.
+3. Consistência entre pareceres: o mesmo contrato, unidade ou assunto tratado de formas diferentes em pareceres distintos (numeração de termo aditivo que muda sem explicação, entendimento que muda sem justificativa, recomendação repetida e nunca atendida, mesmo número de parecer em dois arquivos).
+4. Qualidade e padronização: falta de fundamentação, conclusão que não decorre da análise, informação essencial ausente (valor, prazo, fonte), texto copiado de outro parecer com dados que não foram trocados, variação de modelo.
+
+Regras:
+- Não invente. Se o texto não sustenta, não aponte. Se não houver ponto, devolva uma lista vazia.
+- Dados pessoais de pacientes não devem aparecer na resposta.
+- "trecho" deve ser copiado EXATAMENTE do material (até 300 caracteres), para ser conferido depois.
+- "titulo" começa com o número do parecer e a unidade (por exemplo "Parecer 309/2026, UPA Torrões: ...").
+- "unidade" é o nome da unidade de saúde do parecer.
+- "documento" é o nome do arquivo do parecer. Todo número do SEI citado na "descricao" vem acompanhado do que ele é (tipo de documento).
+- "descricao" diz o que está errado ou a conferir, em linguagem simples. Se for item de frente 2, comece com "A conferir no contrato:".
+- "impacto" é a consequência concreta se o ponto for real, em 1 ou 2 frases.
+- "risco_controle" diz como um órgão de controle (TCE-PE, MPPE, CGE-PE) poderia ver o ponto, em 1 frase. Não cite artigo de lei nem acórdão.
+- "sugestao" é o que a CTAI ou a equipe pode fazer, em 1 frase.
+- "liga_passado": "sim" só se o ponto envolve contrato, vigência ou ajuste anterior citado no material; "ligacao" diz em 1 frase qual é.
+- "orgaos": lista dos órgãos que provavelmente se interessariam, escolhidos entre: ${ORGAOS.join(', ')}. Pode ser lista vazia.
+- Se o setor for CCGP, deixe "sugestao" vazia.
+- "gravidade": alta (afeta valor, vigência ou validade), media ou baixa (formal).
+- "tipo": valor, data, vigencia, parte, clausula, numero, unidade, objeto, formalizacao, processo ou outro.
+- "setor": o setor que deve resolver o ponto, escolhido entre: ${SETORES.map(s => s.nome + ' (' + s.quando + ')').join('; ')}. Se nenhum servir, deixe vazio.
+- Trate tudo como indício a conferir, nunca como irregularidade confirmada. Português do Brasil, linguagem simples e direta.
+
+Responda só com JSON neste formato:
+{"achados":[{"titulo":"","descricao":"","documento":"","unidade":"","trecho":"","gravidade":"","tipo":"","setor":"","impacto":"","risco_controle":"","sugestao":"","liga_passado":"","ligacao":"","orgaos":[]}]}
+
+MATERIAL:
+${texto}`;
+}
+function montarPrompt(rotulo, texto, tipo) {
+  if (tipo === 'ctai') return montarPromptCtai(rotulo, texto);
   return `Você é um auditor de contratos de gestão firmados pela Secretaria de Saúde de Pernambuco (SES-PE) com Organizações Sociais de Saúde.
 Leia o material abaixo (${rotulo}) e aponte SOMENTE inconsistências que o próprio texto sustenta: valores que não fecham (soma, valor por extenso x numérico, mesmo valor diferente em dois lugares), datas fora de ordem ou impossíveis, lacunas ou sobreposições de vigência, parte/unidade/CNPJ/número de contrato divergente, cláusulas que se contradizem, remissão a cláusula, anexo ou aditivo que não existe, numeração repetida ou faltando, objeto que não bate entre documentos.
 
@@ -353,20 +387,21 @@ ${texto}`;
 const normT = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ').trim();
 
 // ==================== TELA: RODAR ====================
-let incluirEnc = false, infoAtivos = {}, msgLista = '';
+let ctaiInfo = null, incluirEnc = false, infoAtivos = {}, msgLista = '';
 async function telaRodar(atualizar) {
   $('conteudo').innerHTML = carregando(atualizar ? 'Atualizando a lista de contratos a partir da planilha...' : 'Buscando os contratos e processos da base...');
   const r = await api('raiox/escopos', { incluir_encerrados: incluirEnc, atualizar_lista: atualizar === true });
   if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
   escopos = r.escopos; infoAtivos = r.ativos || {};
+  const rc = await api('raiox/ctai-estado', {}); ctaiInfo = rc.ok === false ? { erro: rc.erro } : rc;
   msgLista = r.atualizacao ? `Lista atualizada: ${r.atualizacao.ativos} dentro do prazo, ${r.atualizacao.estendidos} estendidos, ${r.atualizacao.anteriores} contrato(s) anterior(es), ${r.atualizacao.instrumentos} instrumentos.` : '';
   desenharRodar(r.total_documentos);
 }
 function alternarEncerrados(v) { incluirEnc = v; telaRodar(false); }
 function desenharRodar(totalDocs) {
   const c = escopos.filter(e => e.tipo === 'contrato'), p = escopos.filter(e => e.tipo === 'processo');
-  const feitos = escopos.filter(e => e.estado === 'concluido').length;
-  const linhas = escopos.map(e => `<tr>
+  const feitos = escopos.filter(e => e.tipo !== 'ctai' && e.estado === 'concluido').length;
+  const linhas = escopos.filter(e => e.tipo !== 'ctai').map(e => `<tr>
       <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)} ${e.papel === 'anterior' ? '<span class="etq azul">anterior</span>' : e.papel === 'estendido' ? '<span class="etq amarelo">estendido</span>' : e.papel === 'ativo' ? '' : '<span class="etq">encerrado</span>'}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
       <td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td>
       <td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
@@ -395,6 +430,17 @@ function desenharRodar(totalDocs) {
       </div>
       <div class="progresso" id="progresso"></div><div class="log hidden" id="log"></div>
       ${chaves.length ? '' : '<div class="aviso">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
+    </div>
+    <div class="bloco"><h2><i class="ti ti-gavel"></i> Pareceres da CTAI <small>${ctaiResumoTxt()}</small></h2>
+      <div class="dica">Os pareceres da CTAI ficam em pastas do Google Drive, uma por ano. O Raio-X lê as pastas (só leitura, nada é alterado), guarda o texto de cada parecer e faz a mesma leitura com IA, nas quatro frentes: erros internos do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados com a pasta e o nome do parecer. Esta leitura roda aqui na tela, não em segundo plano.</div>
+      ${ctaiPastasHtml()}
+      <div class="acoes" style="align-items:center;">
+        <button class="btn btn-claro" onclick="sincronizarCtai()" ${rodando ? 'disabled' : ''}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button>
+        <button class="btn btn-principal" onclick="rodarPendentes('ctai')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar pareceres pendentes</button>
+      </div>
+      <div class="progresso" id="progresso-ctai"></div>
+      ${escopos.filter(e => e.tipo === 'ctai').length ? `<table class="tabela"><thead><tr><th>Ano e pasta</th><th class="n">Pareceres</th><th>Situação</th><th class="n">Achados</th><th></th></tr></thead><tbody>${escopos.filter(e => e.tipo === 'ctai').map(e => `<tr><td>${esc(e.rotulo)}</td><td class="n">${e.n_docs}</td><td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td><td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${rodando ? 'disabled' : ''}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('')}</tbody></table>` : '<div class="dica">Ainda não há pareceres lidos. Clique em "Ler as pastas do Drive".</div>'}
+      ${ctaiNaoLidosHtml()}
     </div>
     <div class="bloco"><h2><i class="ti ti-cloud-computing"></i> Leitura com IA em segundo plano <small>(recomendado)</small></h2>
       <div class="dica">O servidor faz a leitura sozinho, sem precisar deixar esta tela aberta, nem o computador ligado, nem a sessão ativa. Você dá o comando, pode fechar tudo, e recebe um e-mail quando terminar (ou se travar). Usa as suas chaves de IA da Gestão.</div>
@@ -473,7 +519,8 @@ async function painelFila() {
 }
 
 function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
-function prog(t) { const p = $('progresso'); if (p) p.innerHTML = t; }
+let progCtai = false;
+function prog(t) { const p = $(progCtai && $('progresso-ctai') ? 'progresso-ctai' : 'progresso'); if (p) p.innerHTML = t; }
 
 async function rodarGaocg() {
   rodando = true; $('btn-gaocg').disabled = true; prog('<span class="spinner"></span>Consultando o cadastro do GAOCG (somente leitura) e comparando com o Acervo...');
@@ -489,24 +536,57 @@ async function rodarCodigo() {
   prog(r.ok === false ? `<span style="color:var(--bordo)">${esc(r.erro)}</span>` : `Pronto: ${fmt(r.achados_codigo)} achados por código em ${fmt(r.documentos)} documentos.`);
   $('btn-codigo').disabled = false;
 }
+// ---- Pareceres da CTAI (pastas do Drive) ----
+function ctaiResumoTxt() {
+  if (!ctaiInfo || ctaiInfo.erro) return '';
+  const t = ctaiInfo.pastas.reduce((s, x) => s + x.arquivos, 0), l = ctaiInfo.pastas.reduce((s, x) => s + x.lidos, 0);
+  return t ? `${fmt(l)} de ${fmt(t)} arquivos lidos` : 'pastas ainda não lidas';
+}
+function ctaiPastasHtml() {
+  if (!ctaiInfo) return '';
+  if (ctaiInfo.erro) return `<div class="erro">${esc(ctaiInfo.erro)}</div>`;
+  return `<div class="dica"><b>Pastas no Google Drive (abrem para quem recebeu o convite da CTAI):</b></div><div class="acoes">${ctaiInfo.pastas.map(x => `<a class="btn btn-sm btn-claro" href="${esc(x.url)}" target="_blank" rel="noopener"><i class="ti ti-folder"></i> Pareceres CTAI ${esc(x.ano)}${x.arquivos ? ' · ' + x.lidos + '/' + x.arquivos : ''}</a>`).join('')}</div>
+    ${ctaiInfo.drive_api ? '' : '<div class="aviso">O serviço avançado "Drive API" não está ativado no Apps Script: só os Google Docs são lidos. Arquivos Word e PDF ficam como "não lidos". Para ler também esses, ative o serviço (Serviços > + > Drive API) e leia as pastas de novo.</div>'}
+    ${ctaiInfo.ultima_leitura ? `<div class="dica">Última leitura das pastas: ${esc(String(ctaiInfo.ultima_leitura).slice(0, 16).replace('T', ' '))} (hora de Greenwich).</div>` : ''}`;
+}
+function ctaiNaoLidosHtml() {
+  if (!ctaiInfo || ctaiInfo.erro || !(ctaiInfo.nao_lidos || []).length) return '';
+  return `<details><summary>${ctaiInfo.nao_lidos.length} arquivo(s) que não foram lidos</summary><table class="tabela"><thead><tr><th>Ano</th><th>Pasta</th><th>Arquivo</th><th>Tipo</th><th>Motivo</th></tr></thead><tbody>${ctaiInfo.nao_lidos.map(x => `<tr><td>${esc(x.ano)}</td><td>${esc(x.subpasta)}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.nome)}</a></td><td>${esc(x.tipo)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</tbody></table></details>`;
+}
+async function sincronizarCtai() {
+  if (rodando) return; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
+  const pr = txt => { const el = $('progresso-ctai'); if (el) el.innerHTML = txt; };
+  let volta = 0, ultimo = null;
+  while (volta < 40) {
+    volta++;
+    pr(`<span class="spinner"></span>Lendo as pastas do Drive (etapa ${volta}). Pode levar alguns minutos na primeira vez...`);
+    const r = await api('raiox/ctai-sincronizar', {}, 330000);
+    if (r.ok === false) { pr(`<span style="color:var(--bordo)">${esc(r.erro)}</span>`); ultimo = null; break; }
+    ultimo = r;
+    if (r.concluido) break;
+  }
+  rodando = false;
+  await telaRodar();
+  if (ultimo) { const el = $('progresso-ctai'); if (el) el.innerHTML = `Pastas lidas: ${fmt(ultimo.total)} arquivos encontrados${ultimo.falhas ? ', ' + ultimo.falhas + ' não puderam ser lidos' : ''}.`; }
+}
 async function rodarPendentes(tipo) {
   const fila = escopos.filter(e => e.tipo === tipo && e.estado === 'pendente');
-  if (!fila.length) { prog('Não há ' + (tipo === 'contrato' ? 'contratos' : 'processos') + ' pendentes.'); return; }
-  parar = false; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
+  if (!fila.length) { prog('Não há ' + (tipo === 'contrato' ? 'contratos' : tipo === 'ctai' ? 'pareceres da CTAI' : 'processos') + ' pendentes.'); return; }
+  parar = false; rodando = true; progCtai = tipo === 'ctai'; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
   let i = 0;
   for (const e of fila) {
     if (parar) break; i++;
     prog(`<span class="spinner"></span>${i} de ${fila.length}: ${esc(e.rotulo)}`);
     await rodarEscopo(e);
   }
-  rodando = false; parar = false; await telaRodar();
+  rodando = false; parar = false; await telaRodar(); progCtai = false;
 }
 async function rodarUm(id) {
   const e = escopos.find(x => x.escopo === id); if (!e) return;
-  parar = false; rodando = true; desenharRodar(escopos.reduce((s, x) => s + x.n_docs, 0));
+  parar = false; rodando = true; progCtai = String(id).indexOf('q:') === 0; desenharRodar(escopos.reduce((s, x) => s + x.n_docs, 0));
   prog(`<span class="spinner"></span>${esc(e.rotulo)}`);
   await rodarEscopo(e);
-  rodando = false; await telaRodar();
+  rodando = false; await telaRodar(); progCtai = false;
 }
 async function rodarEscopo(e) {
   logar('▶ ' + e.rotulo);
@@ -521,7 +601,7 @@ async function rodarEscopo(e) {
       if (parar) { parcial = true; break; }
       const parte = masc.slice(i, i + CHUNK_IA);
       try {
-        const bruto = await perguntarIA(montarPrompt(e.rotulo, parte), logar);
+        const bruto = await perguntarIA(montarPrompt(e.rotulo, parte, e.tipo), logar);
         modelo = _provedorAtual;
         let j; try { j = JSON.parse(bruto); } catch (x) { logar('  resposta fora do formato; trecho ignorado'); continue; }
         (Array.isArray(j) ? j : (j.achados || [])).forEach(a => {
@@ -754,7 +834,7 @@ async function visaoPareceres() {
   const linha = ALVOS_IMP.map(([c, n]) => { const k = cnt(c); return `<tr><td>${esc(n)}</td><td>${k.com}</td><td>${k.sem}</td><td>${k.nao_avalio}</td></tr>`; }).join('');
   $('visao-par').innerHTML = `<div class="bloco"><h2><i class="ti ti-gavel"></i> Visão geral dos pareceres</h2>
     <p class="dica">${r.n_achados_com_parecer} de ${r.n_achados_em_fatias} achados em distribuições já têm parecer. Cada parecer conta uma vez (última versão).</p>
-    ${r.pareceres.length ? `<table class="tab"><thead><tr><th>Área</th><th>Há impacto</th><th>Não há impacto</th><th>Diligência necessária</th></tr></thead><tbody>${linha}</tbody></table>` : '<p class="dica">Nenhum parecer registrado ainda.</p>'}
+    ${r.pareceres.length ? `<table class="tabela"><thead><tr><th>Área</th><th>Há impacto</th><th>Não há impacto</th><th>Diligência necessária</th></tr></thead><tbody>${linha}</tbody></table>` : '<p class="dica">Nenhum parecer registrado ainda.</p>'}
     ${r.pareceres.map(x => `<details style="margin-top:8px"><summary><strong>${esc(x.fatia_nome)}</strong> · ${x.n_achados} achado(s) · ${esc(x.autor_nome)} · v${x.versao}</summary>
       <p class="dica">${ALVOS_IMP.map(([c, n]) => esc(n) + ': ' + esc(NOME_IMP[x[c]] || x[c])).join(' · ')}</p>
       <p style="white-space:pre-wrap">${esc(x.justificativa)}</p></details>`).join('')}
