@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.21';
-const VERSAO_RAIOX_DATA = '05/11/2026 11:50';
+const VERSAO_RAIOX = 'v0.22';
+const VERSAO_RAIOX_DATA = '05/11/2026 12:40';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -540,12 +540,14 @@ async function rodarCodigo() {
 function ctaiResumoTxt() {
   if (!ctaiInfo || ctaiInfo.erro) return '';
   const t = ctaiInfo.pastas.reduce((s, x) => s + x.arquivos, 0), l = ctaiInfo.pastas.reduce((s, x) => s + x.lidos, 0);
-  return t ? `${fmt(l)} de ${fmt(t)} arquivos lidos` : 'pastas ainda não lidas';
+  const pl = ctaiInfo.pastas_por_listar || 0;
+  return (t ? `${fmt(l)} de ${fmt(t)} arquivos lidos` : 'pastas ainda não lidas') + (pl ? ` · varredura incompleta (${fmt(pl)} pastas por percorrer)` : '');
 }
 function ctaiPastasHtml() {
   if (!ctaiInfo) return '';
   if (ctaiInfo.erro) return `<div class="erro">${esc(ctaiInfo.erro)}</div>`;
   return `<div class="dica"><b>Pastas no Google Drive (abrem para quem recebeu o convite da CTAI):</b></div><div class="acoes">${ctaiInfo.pastas.map(x => `<a class="btn btn-sm btn-claro" href="${esc(x.url)}" target="_blank" rel="noopener"><i class="ti ti-folder"></i> Pareceres CTAI ${esc(x.ano)}${x.arquivos ? ' · ' + x.lidos + '/' + x.arquivos : ''}</a>`).join('')}</div>
+    ${ctaiInfo.pastas.some(x => x.ignorados) ? `<div class="dica">Arquivos que o Raio-X não lê (planilhas, imagens e outros formatos): ${ctaiInfo.pastas.filter(x => x.ignorados).map(x => esc(x.ano) + ': ' + Object.keys(x.tipos_ignorados || {}).map(t => x.tipos_ignorados[t] + ' ' + esc(t)).join(', ')).join(' · ')}.</div>` : ''}
     ${ctaiInfo.drive_api ? '' : '<div class="aviso">O serviço avançado "Drive API" não está ativado no Apps Script: só os Google Docs são lidos. Arquivos Word e PDF ficam como "não lidos". Para ler também esses, ative o serviço (Serviços > + > Drive API) e leia as pastas de novo.</div>'}
     ${ctaiInfo.ultima_leitura ? `<div class="dica">Última leitura das pastas: ${esc(String(ctaiInfo.ultima_leitura).slice(0, 16).replace('T', ' '))} (hora de Greenwich).</div>` : ''}`;
 }
@@ -556,18 +558,20 @@ function ctaiNaoLidosHtml() {
 async function sincronizarCtai() {
   if (rodando) return; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
   const pr = txt => { const el = $('progresso-ctai'); if (el) el.innerHTML = txt; };
-  let volta = 0, ultimo = null;
-  while (volta < 40) {
+  let volta = 0, ultimo = null, falhas = 0, lidos = 0;
+  while (volta < 120) {
     volta++;
-    pr(`<span class="spinner"></span>Lendo as pastas do Drive (etapa ${volta}). Pode levar alguns minutos na primeira vez...`);
-    const r = await api('raiox/ctai-sincronizar', {}, 330000);
+    const r = await api('raiox/ctai-sincronizar', { reiniciar: volta === 1 }, 330000);
     if (r.ok === false) { pr(`<span style="color:var(--bordo)">${esc(r.erro)}</span>`); ultimo = null; break; }
-    ultimo = r;
+    ultimo = r; falhas += r.falhas || 0; lidos += r.lidos_agora || 0;
     if (r.concluido) break;
+    pr(r.fase === 'listando'
+      ? `<span class="spinner"></span>Etapa ${volta}: percorrendo as pastas do Drive (faltam ${fmt(r.pastas_restantes)} pastas). Pode demorar alguns minutos; deixe esta tela aberta.`
+      : `<span class="spinner"></span>Etapa ${volta}: lendo os pareceres (${fmt(lidos)} lidos até agora, faltam ${fmt(r.a_ler)}). Deixe esta tela aberta.`);
   }
   rodando = false;
   await telaRodar();
-  if (ultimo) { const el = $('progresso-ctai'); if (el) el.innerHTML = `Pastas lidas: ${fmt(ultimo.total)} arquivos encontrados${ultimo.falhas ? ', ' + ultimo.falhas + ' não puderam ser lidos' : ''}.`; }
+  if (ultimo) { const el = $('progresso-ctai'); if (el) el.innerHTML = `Pronto: ${fmt(lidos)} pareceres lidos${falhas ? ', ' + fmt(falhas) + ' não puderam ser lidos (veja a lista abaixo)' : ''}.`; }
 }
 async function rodarPendentes(tipo) {
   const fila = escopos.filter(e => e.tipo === tipo && e.estado === 'pendente');
