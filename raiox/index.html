@@ -120,6 +120,23 @@
   .card-ach blockquote { font-size:.8rem; background:#f7f5f1; border-left:3px solid #d8cfc0; padding:6px 10px; margin-top:4px; color:#4a4237; }
   .progresso { font-size:.82rem; color:#455a64; margin-top:10px; min-height:20px; }
   .log { font:.74rem/1.5 Consolas,monospace; background:#f4f7f8; border:1px solid var(--borda); border-radius:6px; padding:8px 10px; max-height:200px; overflow:auto; white-space:pre-wrap; margin-top:10px; }
+
+  /* tela Rodar a leitura (v0.24) */
+  .resumo { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-bottom:14px; }
+  .resumo .num { background:#fff; border:1px solid var(--borda); border-radius:10px; padding:12px 16px; }
+  .resumo .n1 { font-size:1.7rem; font-weight:600; line-height:1.15; color:var(--noite); } .resumo .n1 small { font-size:.95rem; font-weight:400; color:var(--mudo); }
+  .resumo .n2 { font-size:.8rem; color:var(--texto); margin-top:2px; } .resumo .n3 { font-size:.74rem; color:var(--mudo); margin-top:4px; }
+  .pbar { height:6px; background:#e3eaed; border-radius:4px; overflow:hidden; margin-top:8px; } .pbar i { display:block; height:100%; background:var(--acento); border-radius:4px; transition:width .3s; min-width:2px; }
+  .subabas { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .subabas button { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border:1px solid var(--borda); background:#fff; color:var(--mudo); border-radius:20px; cursor:pointer; font-size:.86rem; font-weight:500; }
+  .subabas button:hover { color:var(--texto); border-color:#b9c7ce; } .subabas button.ativa { background:var(--noite); color:#fff; border-color:var(--noite); }
+  .exec { display:none; border-left:4px solid var(--acento); } .exec.vivo { display:block; } .exec-topo { display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap:wrap; } .exec .progresso { margin-top:0; flex:1; min-width:220px; }
+  .passo { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px; border-radius:50%; background:var(--acento); color:#fff; font-size:.75rem; font-weight:600; }
+  .bloco .acoes { margin-top:12px; } .bloco details { margin-top:12px; } .bloco details > summary { cursor:pointer; font-size:.82rem; color:var(--acento); font-weight:500; } .bloco details[open] > summary { margin-bottom:8px; }
+  .pastas { display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }
+  .pasta { display:flex; flex-direction:column; gap:2px; min-width:130px; padding:9px 12px; border:1px solid var(--borda); border-radius:10px; text-decoration:none; color:var(--texto); background:#f9fbfc; font-size:.78rem; }
+  .pasta:hover { border-color:var(--acento); background:var(--acento-claro); } .pasta i.ti { color:var(--acento); font-size:1.1rem; } .pasta b { font-size:.95rem; } .pasta span { color:var(--mudo); }
+  .escolhas { display:flex; gap:8px 18px; flex-wrap:wrap; margin-top:12px; } .marca-op { display:flex; gap:6px; align-items:center; margin:0; font-size:.84rem; color:var(--texto); font-weight:400; } .marca-op input { width:auto; }
 </style>
 </head>
 <body>
@@ -148,8 +165,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.23';
-const VERSAO_RAIOX_DATA = '05/11/2026 13:10';
+const VERSAO_RAIOX = 'v0.24';
+const VERSAO_RAIOX_DATA = '05/11/2026 14:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -398,64 +415,98 @@ async function telaRodar(atualizar) {
   desenharRodar(r.total_documentos);
 }
 function alternarEncerrados(v) { incluirEnc = v; telaRodar(false); }
+let subRodar = 'contratos';
+function trocarSub(n) { subRodar = n; ['contratos', 'ctai', 'fundo'].forEach(k => { const a = $('sub-' + k), b = $('pane-' + k); if (a) a.classList.toggle('ativa', k === n); if (b) b.classList.toggle('hidden', k !== n); }); }
+function segundoPlano(tipo) { trocarSub('fundo'); ['contrato', 'processo', 'ctai'].forEach(t => { const el = $('bg-' + t); if (el) el.checked = (t === tipo); }); const e = $('bg-email'); if (e) e.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+const pctDe = (a, b) => b ? Math.min(100, Math.round(100 * a / b)) : 0;
+const barraHtml = (a, b) => `<div class="pbar" title="${fmt(a)} de ${fmt(b)}"><i style="width:${pctDe(a, b)}%"></i></div>`;
+const etqEstado = e => e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>';
 function desenharRodar(totalDocs) {
-  const c = escopos.filter(e => e.tipo === 'contrato'), p = escopos.filter(e => e.tipo === 'processo');
-  const feitos = escopos.filter(e => e.tipo !== 'ctai' && e.estado === 'concluido').length;
+  const c = escopos.filter(e => e.tipo === 'contrato'), p = escopos.filter(e => e.tipo === 'processo'), q = escopos.filter(e => e.tipo === 'ctai');
+  const feitos = escopos.filter(e => e.tipo !== 'ctai' && e.estado === 'concluido').length, totalIA = c.length + p.length;
+  const ia = infoAtivos || {}, ci = ctaiInfo && !ctaiInfo.erro ? ctaiInfo : null;
+  const qArq = ci ? ci.pastas.reduce((t, x) => t + x.arquivos, 0) : 0, qLid = ci ? ci.pastas.reduce((t, x) => t + x.lidos, 0) : 0, qFeitos = q.filter(e => e.estado === 'concluido').length;
+  const off = rodando ? 'disabled' : '';
   const linhas = escopos.filter(e => e.tipo !== 'ctai').map(e => `<tr>
       <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)} ${e.papel === 'anterior' ? '<span class="etq azul">anterior</span>' : e.papel === 'estendido' ? '<span class="etq amarelo">estendido</span>' : e.papel === 'ativo' ? '' : '<span class="etq">encerrado</span>'}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
-      <td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td>
-      <td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
-      <td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${rodando ? 'disabled' : ''}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
-  const ia = infoAtivos || {};
+      <td>${etqEstado(e)}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
+      <td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${off}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
+  const linhasQ = q.map(e => `<tr><td>${esc(String(e.rotulo).replace(/^Pareceres CTAI /, ''))}</td><td class="n">${e.n_docs}</td><td>${etqEstado(e)}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td><td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${off}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
   $('conteudo').innerHTML = `
-    <div class="bloco"><h2><i class="ti ti-file-certificate"></i> Contratos ativos <small>${ia.lista_vazia ? 'lista ainda não carregada' : (ia.ativos + ' dentro do prazo · ' + ia.estendidos + ' estendidos (prazo vencido) · ' + ia.anteriores + ' anterior(es)')}</small></h2>
-      <div class="dica">Por padrão o Raio-X lê só os contratos que não estão encerrados (vigentes, prorrogação excepcional, TAC, emergenciais e termos de compromisso) e, nos emergenciais e termos de compromisso, o contrato anterior da mesma unidade. Dos contratos anteriores e dos estendidos (com o prazo já vencido), os achados só aparecem quando ligam ao passado. A lista vem da planilha de contratos e fica guardada na base. ${ia.atualizado_em ? 'Atualizada em ' + new Date(ia.atualizado_em).toLocaleString('pt-BR') + '.' : ''}</div>
-      ${ia.lista_vazia ? '<div class="aviso">Sem a lista, o Raio-X mostra tudo o que existe na base. Clique em "Atualizar lista de contratos".</div>' : ''}
-      ${msgLista ? `<div class="dica"><b>${esc(msgLista)}</b></div>` : ''}
-      <div class="acoes" style="align-items:center;">
-        <button class="btn btn-claro" onclick="telaRodar(true)" ${rodando ? 'disabled' : ''}><i class="ti ti-refresh"></i> Atualizar lista de contratos</button>
-        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" ${incluirEnc ? 'checked' : ''} onchange="alternarEncerrados(this.checked)"> Incluir encerrados${!ia.lista_vazia && !incluirEnc && ia.ocultos ? ' (' + ia.ocultos + ' fora da lista)' : ''}</label>
+    ${chaves.length ? '' : '<div class="aviso" style="margin-top:0;margin-bottom:14px;">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
+    <div class="resumo">
+      <div class="num"><div class="n1">${ia.lista_vazia ? '—' : fmt(ia.ativos)}</div><div class="n2">contratos no prazo</div><div class="n3">${fmt(ia.estendidos || 0)} estendidos · ${fmt(ia.anteriores || 0)} anterior(es)</div></div>
+      <div class="num"><div class="n1">${fmt(feitos)}<small> / ${fmt(totalIA)}</small></div><div class="n2">contratos e processos lidos pela IA</div>${barraHtml(feitos, totalIA)}</div>
+      <div class="num"><div class="n1">${ci ? fmt(qLid) : '—'}<small> / ${ci ? fmt(qArq) : '—'}</small></div><div class="n2">pareceres da CTAI lidos das pastas</div>${barraHtml(qLid, qArq)}<div class="n3">${fmt(qFeitos)} de ${fmt(q.length)} pastas já analisadas pela IA</div></div>
+    </div>
+    <div class="subabas">
+      <button id="sub-contratos" class="${subRodar === 'contratos' ? 'ativa' : ''}" onclick="trocarSub('contratos')"><i class="ti ti-file-certificate"></i> Contratos e processos</button>
+      <button id="sub-ctai" class="${subRodar === 'ctai' ? 'ativa' : ''}" onclick="trocarSub('ctai')"><i class="ti ti-gavel"></i> Pareceres da CTAI</button>
+      <button id="sub-fundo" class="${subRodar === 'fundo' ? 'ativa' : ''}" onclick="trocarSub('fundo')"><i class="ti ti-cloud-computing"></i> Segundo plano</button>
+    </div>
+    <div class="bloco exec" id="exec"><div class="exec-topo"><div class="progresso" id="progresso"></div><button class="btn btn-sm btn-perigo" onclick="parar = true" ${rodando ? '' : 'disabled'}><i class="ti ti-player-stop"></i> Parar</button></div><div class="log hidden" id="log"></div></div>
+
+    <div id="pane-contratos" class="${subRodar === 'contratos' ? '' : 'hidden'}">
+      <div class="bloco"><h2><span class="passo">1</span> Lista de contratos ativos</h2>
+        <div class="dica">${ia.lista_vazia ? 'Lista ainda não carregada.' : `${fmt(ia.ativos)} no prazo · ${fmt(ia.estendidos)} estendidos (prazo vencido) · ${fmt(ia.anteriores)} anterior(es)`}${ia.atualizado_em ? ' · atualizada em ' + new Date(ia.atualizado_em).toLocaleString('pt-BR') : ''}</div>
+        ${ia.lista_vazia ? '<div class="aviso">Sem a lista, o Raio-X mostra tudo o que existe na base. Clique em "Atualizar lista de contratos".</div>' : ''}
+        ${msgLista ? `<div class="ok-msg">${esc(msgLista)}</div>` : ''}
+        <div class="acoes" style="align-items:center;">
+          <button class="btn btn-claro" onclick="telaRodar(true)" ${off}><i class="ti ti-refresh"></i> Atualizar lista de contratos</button>
+          <label class="marca-op"><input type="checkbox" ${incluirEnc ? 'checked' : ''} onchange="alternarEncerrados(this.checked)"> Incluir encerrados${!ia.lista_vazia && !incluirEnc && ia.ocultos ? ' (' + ia.ocultos + ' fora da lista)' : ''}</label>
+        </div>
+        <details><summary>Como a lista é usada</summary><div class="dica">Por padrão o Raio-X lê só os contratos que não estão encerrados (vigentes, prorrogação excepcional, TAC, emergenciais e termos de compromisso) e, nos emergenciais e termos de compromisso, o contrato anterior da mesma unidade. Dos contratos anteriores e dos estendidos (com o prazo já vencido), os achados só aparecem quando ligam ao passado. A lista vem da planilha de contratos e fica guardada na base.</div></details>
+      </div>
+      <div class="bloco"><h2><span class="passo">2</span> Conferências automáticas <small>rápidas, sem IA</small></h2>
+        <div class="dica">Por código: datas fora de ordem, vigência, sequência de aditivos, contrato ou unidade citados no texto, documento de outro contrato dentro de um processo. Com o GAOCG: compara o Acervo com o cadastro de contratos (somente leitura). Cada uma substitui os achados anteriores do mesmo tipo.</div>
+        <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${off}><i class="ti ti-code"></i> Conferir por código</button> <button class="btn btn-principal" id="btn-gaocg" onclick="rodarGaocg()" ${off} title="Compara o Acervo com o cadastro do GAOCG (somente leitura)"><i class="ti ti-arrows-diff"></i> Conferir com o GAOCG</button></div>
+      </div>
+      <div class="bloco"><h2><span class="passo">3</span> Leitura com IA <small>${fmt(feitos)} de ${fmt(totalIA)} concluídos · ${fmt(totalDocs)} documentos na base</small></h2>
+        <div class="dica">A IA lê cada contrato (com seus aditivos) e cada processo e aponta achados com trecho, impacto, risco perante os órgãos de controle e sugestão. Dados pessoais são mascarados antes de irem para a nuvem. O trecho citado é conferido contra o texto; se não bater, o achado vem marcado.</div>
+        ${barraHtml(feitos, totalIA)}
+        <div class="acoes">
+          <button class="btn btn-principal" onclick="rodarPendentes('contrato')" ${off}><i class="ti ti-player-play"></i> Ler contratos pendentes aqui</button>
+          ${p.length ? `<button class="btn btn-principal" onclick="rodarPendentes('processo')" ${off}><i class="ti ti-player-play"></i> Ler processos pendentes aqui</button>` : ''}
+          <button class="btn btn-claro" onclick="segundoPlano('contrato')"><i class="ti ti-cloud-computing"></i> Prefiro em segundo plano</button>
+        </div>
+        <details><summary>Ver os ${fmt(totalIA)} contratos e processos</summary><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Escopo</th><th class="n">Docs</th><th class="n">Caracteres</th><th>Estado</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="7" class="vazio">Nada na base ainda.</td></tr>'}</tbody></table></div></details>
       </div>
     </div>
-    <div class="bloco"><h2><i class="ti ti-code"></i> 1. Conferências por código <small>(rápidas, sem IA)</small></h2>
-      <div class="dica">Datas fora de ordem, vigência, sequência de aditivos, contrato ou unidade citados no texto, documento de outro contrato dentro de um processo. Substitui os achados por código anteriores.</div>
-      <div class="acoes"><button class="btn btn-principal" id="btn-codigo" onclick="rodarCodigo()" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar conferências por código</button> <button class="btn" id="btn-gaocg" onclick="rodarGaocg()" ${rodando ? 'disabled' : ''} title="Compara o Acervo com o cadastro do GAOCG (somente leitura)"><i class="ti ti-arrows-diff"></i> Conferir com o GAOCG</button></div>
-    </div>
-    <div class="bloco"><h2><i class="ti ti-sparkles"></i> 2. Leitura com IA <small>${c.length} contratos e ${p.length} processos · ${feitos} concluídos · ${fmt(totalDocs)} documentos na base</small></h2>
-      <div class="dica">A IA lê cada contrato (com seus aditivos) e cada processo, e aponta achados com trecho, impacto, risco perante os órgãos de controle e sugestão. Dados pessoais são mascarados antes de irem para a nuvem. O trecho citado é conferido contra o texto; se não bater, o achado vem marcado.</div>
-      <div class="acoes">
-        <button class="btn btn-principal" onclick="rodarPendentes('contrato')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar contratos pendentes</button>
-        <button class="btn btn-principal" onclick="rodarPendentes('processo')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar processos pendentes</button>
-        <button class="btn btn-perigo" onclick="parar = true" ${rodando ? '' : 'disabled'}><i class="ti ti-player-stop"></i> Parar</button>
+
+    <div id="pane-ctai" class="${subRodar === 'ctai' ? '' : 'hidden'}">
+      <div class="bloco"><h2><span class="passo">1</span> Ler as pastas do Drive <small>${ctaiResumoTxt()}</small></h2>
+        <div class="dica">Percorre as pastas dos pareceres da CTAI (uma por ano, só leitura, nada é alterado no Drive) e guarda o texto de cada parecer. Pode levar vários minutos na primeira vez; deixe esta tela aberta enquanto lê.</div>
+        ${ctaiPastasHtml()}
+        <div class="acoes"><button class="btn btn-principal" onclick="sincronizarCtai()" ${off}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button></div>
+        ${ctaiNaoLidosHtml()}
       </div>
-      <div class="progresso" id="progresso"></div><div class="log hidden" id="log"></div>
-      ${chaves.length ? '' : '<div class="aviso">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
-    </div>
-    <div class="bloco"><h2><i class="ti ti-gavel"></i> Pareceres da CTAI <small>${ctaiResumoTxt()}</small></h2>
-      <div class="dica">Os pareceres da CTAI ficam em pastas do Google Drive, uma por ano. O Raio-X lê as pastas (só leitura, nada é alterado), guarda o texto de cada parecer e faz a mesma leitura com IA (aqui na tela ou, depois de ler as pastas, em segundo plano no bloco abaixo), nas quatro frentes: erros internos do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados com a pasta e o nome do parecer.</div>
-      ${ctaiPastasHtml()}
-      <div class="acoes" style="align-items:center;">
-        <button class="btn btn-claro" onclick="sincronizarCtai()" ${rodando ? 'disabled' : ''}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button>
-        <button class="btn btn-principal" onclick="rodarPendentes('ctai')" ${rodando ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar pareceres pendentes</button>
+      <div class="bloco"><h2><span class="passo">2</span> Ler com IA <small>${fmt(qFeitos)} de ${fmt(q.length)} pastas analisadas</small></h2>
+        <div class="dica">A IA lê cada parecer em quatro frentes: erro interno do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados, com o filtro "Pareceres da CTAI" em Origem.</div>
+        ${q.length ? barraHtml(qFeitos, q.length) + `<div class="rolagem"><table class="tabela"><thead><tr><th>Ano e pasta</th><th class="n">Pareceres lidos</th><th>Situação</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhasQ}</tbody></table></div>` : '<div class="vazio" style="margin-top:10px;">Ainda não há pareceres lidos. Faça o passo 1.</div>'}
+        <div class="acoes">
+          <button class="btn btn-principal" onclick="rodarPendentes('ctai')" ${off}><i class="ti ti-player-play"></i> Ler pendentes aqui</button>
+          <button class="btn btn-claro" onclick="segundoPlano('ctai')"><i class="ti ti-cloud-computing"></i> Prefiro em segundo plano</button>
+        </div>
       </div>
-      <div class="progresso" id="progresso-ctai"></div>
-      ${escopos.filter(e => e.tipo === 'ctai').length ? `<table class="tabela"><thead><tr><th>Ano e pasta</th><th class="n">Pareceres</th><th>Situação</th><th class="n">Achados</th><th></th></tr></thead><tbody>${escopos.filter(e => e.tipo === 'ctai').map(e => `<tr><td>${esc(e.rotulo)}</td><td class="n">${e.n_docs}</td><td>${e.estado === 'concluido' ? '<span class="etq verde">concluído</span>' : e.estado === 'parcial' ? '<span class="etq amarelo">parcial</span>' : '<span class="etq">pendente</span>'}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td><td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${rodando ? 'disabled' : ''}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('')}</tbody></table>` : '<div class="dica">Ainda não há pareceres lidos. Clique em "Ler as pastas do Drive".</div>'}
-      ${ctaiNaoLidosHtml()}
     </div>
-    <div class="bloco"><h2><i class="ti ti-cloud-computing"></i> Leitura com IA em segundo plano <small>(recomendado)</small></h2>
-      <div class="dica">O servidor faz a leitura sozinho, sem precisar deixar esta tela aberta, nem o computador ligado, nem a sessão ativa. Você dá o comando, pode fechar tudo, e recebe um e-mail quando terminar (ou se travar). Usa as suas chaves de IA da Gestão.</div>
-      <div class="acoes" style="align-items:center;">
-        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-contrato" checked> contratos pendentes</label>
-        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-processo"> processos pendentes</label>
-        <label style="display:flex;gap:5px;align-items:center;" title="Antes, leia as pastas do Drive no bloco Pareceres da CTAI"><input type="checkbox" id="bg-ctai"> pareceres da CTAI pendentes</label>
-        <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-parciais"> incluir os parciais</label>
-        <input id="bg-email" type="email" placeholder="e-mail para o aviso" value="${esc((usuario && usuario.email) || '')}" style="min-width:230px;">
-        <button class="btn btn-principal" id="bg-iniciar" onclick="filaIniciar()"><i class="ti ti-player-play"></i> Rodar em segundo plano</button>
+
+    <div id="pane-fundo" class="${subRodar === 'fundo' ? '' : 'hidden'}">
+      <div class="bloco"><h2><i class="ti ti-cloud-computing"></i> Leitura com IA em segundo plano <small>recomendado</small></h2>
+        <div class="dica">O servidor lê sozinho: você pode fechar esta tela e desligar o computador. Ao terminar (ou se travar) chega um e-mail. Usa as suas chaves de IA da Gestão.</div>
+        <div class="escolhas">
+          <label class="marca-op"><input type="checkbox" id="bg-contrato" checked> contratos pendentes</label>
+          <label class="marca-op"><input type="checkbox" id="bg-processo"> processos pendentes</label>
+          <label class="marca-op" title="Antes, leia as pastas do Drive na aba Pareceres da CTAI"><input type="checkbox" id="bg-ctai"> pareceres da CTAI pendentes</label>
+          <label class="marca-op"><input type="checkbox" id="bg-parciais"> incluir os parciais</label>
+        </div>
+        <div class="acoes" style="align-items:center;">
+          <input id="bg-email" type="email" placeholder="e-mail para o aviso" value="${esc((usuario && usuario.email) || '')}" style="min-width:250px;max-width:340px;">
+          <button class="btn btn-principal" id="bg-iniciar" onclick="filaIniciar()"><i class="ti ti-player-play"></i> Rodar em segundo plano</button>
+        </div>
+        <div id="fila-estado" class="progresso"></div>
+        <details><summary>Desempenho da IA</summary><div id="fila-metricas"></div></details>
       </div>
-      <div id="fila-estado" class="progresso"></div>
-      <div id="fila-metricas"></div>
-    </div>
-    <div class="bloco"><div class="rolagem"><table class="tabela"><thead><tr><th>Tipo</th><th>Escopo</th><th class="n">Docs</th><th class="n">Caracteres</th><th>Estado</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhas || '<tr><td colspan="7" class="vazio">Nada na base ainda.</td></tr>'}</tbody></table></div></div>`;
+    </div>`;
   painelFila();
 }
 // ----- segundo plano -----
@@ -519,9 +570,9 @@ async function painelFila() {
   painelMetricas();
 }
 
-function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
+function logar(t) { const l = $('log'); if (!l) return; l.classList.remove('hidden'); const x = $('exec'); if (x) x.classList.add('vivo'); l.textContent += t + '\n'; l.scrollTop = l.scrollHeight; }
 let progCtai = false;
-function prog(t) { const p = $(progCtai && $('progresso-ctai') ? 'progresso-ctai' : 'progresso'); if (p) p.innerHTML = t; }
+function prog(t) { const p = $('progresso'); if (p) p.innerHTML = t; const x = $('exec'); if (x) x.classList.toggle('vivo', !!t); }
 
 async function rodarGaocg() {
   rodando = true; $('btn-gaocg').disabled = true; prog('<span class="spinner"></span>Consultando o cadastro do GAOCG (somente leitura) e comparando com o Acervo...');
@@ -547,10 +598,11 @@ function ctaiResumoTxt() {
 function ctaiPastasHtml() {
   if (!ctaiInfo) return '';
   if (ctaiInfo.erro) return `<div class="erro">${esc(ctaiInfo.erro)}</div>`;
-  return `<div class="dica"><b>Pastas no Google Drive (abrem para quem recebeu o convite da CTAI):</b></div><div class="acoes">${ctaiInfo.pastas.map(x => `<a class="btn btn-sm btn-claro" href="${esc(x.url)}" target="_blank" rel="noopener"><i class="ti ti-folder"></i> Pareceres CTAI ${esc(x.ano)}${x.arquivos ? ' · ' + x.lidos + '/' + x.arquivos : ''}</a>`).join('')}</div>
-    ${ctaiInfo.pastas.some(x => x.ignorados) ? `<div class="dica">Arquivos que o Raio-X não lê (planilhas, imagens e outros formatos): ${ctaiInfo.pastas.filter(x => x.ignorados).map(x => esc(x.ano) + ': ' + Object.keys(x.tipos_ignorados || {}).map(t => x.tipos_ignorados[t] + ' ' + esc(t)).join(', ')).join(' · ')}.</div>` : ''}
+  const ign = ctaiInfo.pastas.filter(x => x.ignorados);
+  return `<div class="pastas">${ctaiInfo.pastas.map(x => `<a class="pasta" href="${esc(x.url)}" target="_blank" rel="noopener" title="Abrir a pasta no Drive (abre para quem recebeu o convite da CTAI)"><i class="ti ti-folder"></i><b>${esc(x.ano)}</b><span>${x.arquivos ? fmt(x.lidos) + ' de ' + fmt(x.arquivos) + ' lidos' : 'não lida'}</span>${x.arquivos ? barraHtml(x.lidos, x.arquivos) : ''}</a>`).join('')}</div>
     ${ctaiInfo.drive_api ? '' : '<div class="aviso">O serviço avançado "Drive API" não está ativado no Apps Script: só os Google Docs são lidos. Arquivos Word e PDF ficam como "não lidos". Para ler também esses, ative o serviço (Serviços > + > Drive API) e leia as pastas de novo.</div>'}
-    ${ctaiInfo.ultima_leitura ? `<div class="dica">Última leitura das pastas: ${esc(String(ctaiInfo.ultima_leitura).slice(0, 16).replace('T', ' '))} (hora de Greenwich).</div>` : ''}`;
+    ${ctaiInfo.ultima_leitura ? `<div class="dica">Última leitura das pastas: ${esc(new Date(ctaiInfo.ultima_leitura).toLocaleString('pt-BR'))}.</div>` : ''}
+    ${ign.length ? `<details><summary>Arquivos que o Raio-X não lê (planilhas, imagens e outros formatos)</summary><div class="dica">${ign.map(x => esc(x.ano) + ': ' + Object.keys(x.tipos_ignorados || {}).map(t => x.tipos_ignorados[t] + ' ' + esc(t)).join(', ')).join(' · ')}.</div></details>` : ''}`;
 }
 function ctaiNaoLidosHtml() {
   if (!ctaiInfo || ctaiInfo.erro || !(ctaiInfo.nao_lidos || []).length) return '';
@@ -558,9 +610,9 @@ function ctaiNaoLidosHtml() {
 }
 async function sincronizarCtai() {
   if (rodando) return; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
-  const pr = txt => { const el = $('progresso-ctai'); if (el) el.innerHTML = txt; };
+  const pr = prog; parar = false;
   let volta = 0, ultimo = null, falhas = 0, lidos = 0;
-  while (volta < 120) {
+  while (volta < 120 && !parar) {
     volta++;
     const r = await api('raiox/ctai-sincronizar', { reiniciar: volta === 1 }, 330000);
     if (r.ok === false) { pr(`<span style="color:var(--bordo)">${esc(r.erro)}</span>`); ultimo = null; break; }
@@ -572,7 +624,7 @@ async function sincronizarCtai() {
   }
   rodando = false;
   await telaRodar();
-  if (ultimo) { const el = $('progresso-ctai'); if (el) el.innerHTML = `Pronto: ${fmt(lidos)} pareceres lidos${falhas ? ', ' + fmt(falhas) + ' não puderam ser lidos (veja a lista abaixo)' : ''}.`; }
+  if (ultimo) prog(`${ultimo.concluido ? 'Pronto' : 'Interrompido'}: ${fmt(lidos)} pareceres lidos${falhas ? ', ' + fmt(falhas) + ' não puderam ser lidos (veja a lista abaixo)' : ''}.`);
 }
 async function rodarPendentes(tipo) {
   const fila = escopos.filter(e => e.tipo === tipo && e.estado === 'pendente');
