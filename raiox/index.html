@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.20';
-const VERSAO_RAIOX_DATA = '04/11/2026 13:40';
+const VERSAO_RAIOX = 'v0.21';
+const VERSAO_RAIOX_DATA = '05/11/2026 11:50';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -633,7 +633,7 @@ async function telaAchados() {
       <div class="filtros">
         <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
         <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
-        <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option></select></div>
+        <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option><option value="parecer">Pareceres da CTAI (lidos pela IA)</option></select></div>
         <div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>
         <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
         <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
@@ -672,7 +672,7 @@ function filtrados() {
   const v = id => ($(id) || {}).value || '';
   const q = normT(v('f-q'));
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
-  return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || a.origem === v('f-orig')) &&
+  return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || (v('f-orig') === 'parecer' ? ehParecerCtai(a) : a.origem === v('f-orig') && !ehParecerCtai(a))) &&
     (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!v('f-tce') || (v('f-tce') === 'sem' ? !a.tce_ref : v('f-tce') === 'aud' ? a.tce_relacao === 'mesmo tema em contrato auditado' : v('f-tce') === 'pers' ? !!a.tce_persist : v('f-tce') === 'risco' ? a.tce_relacao === 'mesmo tipo de risco em outro contrato' : (a.tce_processos || '').includes(v('f-tce')))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
@@ -685,6 +685,7 @@ function pintarAchados() {
 // ---- texto claro para quem lê: todo número do SEI vem com o que ele é ----
 const GRAV_FRASE = { alta: 'Gravidade alta: pode mexer em valor, prazo ou validade do contrato.', media: 'Gravidade média: questão de forma ou de clareza.', baixa: 'Gravidade baixa: ajuste de redação.' };
 const TIPO_ROT = { valor: 'valor', data: 'data', numero: 'numeração', formalizacao: 'formalização', vigencia: 'prazo (vigência)', unidade: 'unidade', cadastro: 'cadastro', outro: 'outro' };
+const ehParecerCtai = a => String(a.escopo || '').indexOf('q:') === 0;
 const ORIGEM_ROT = { ia: 'lido pela IA', codigo: 'conferência automática', gaocg: 'comparado com o GAOCG' };
 const TCE_STYLE = 'background:#fdecea;border-left:3px solid #8e1628;padding:6px 10px;font-size:.84rem;margin:8px 0;-webkit-print-color-adjust:exact;print-color-adjust:exact';
 function nomeInstrumento(rot) {
@@ -751,7 +752,7 @@ function cartao(a, comBotoes) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">o trecho citado não foi achado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
-    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${esc(ORIGEM_ROT[a.origem] || a.origem)}</span> <span class="etq azul">${esc(TIPO_ROT[a.tipo] || a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">prazo vencido, contrato ainda em funcionamento</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">ligado a contrato anterior</span>' : ''}</div>
+    <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${esc(ehParecerCtai(a) ? 'parecer da CTAI lido pela IA' : (ORIGEM_ROT[a.origem] || a.origem))}</span> <span class="etq azul">${esc(TIPO_ROT[a.tipo] || a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">prazo vencido, contrato ainda em funcionamento</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">ligado a contrato anterior</span>' : ''}</div>
     <div class="dica" style="margin:4px 0 0">${esc(a.unidade)}${a.contrato ? ' · Contrato de Gestão nº ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</div>
     <h3>${esc(tituloClaro(a))}</h3>
     <div class="dica" style="margin:-4px 0 6px">${esc(GRAV_FRASE[a.gravidade] || '')}</div>
