@@ -148,8 +148,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.22';
-const VERSAO_RAIOX_DATA = '05/11/2026 12:40';
+const VERSAO_RAIOX = 'v0.23';
+const VERSAO_RAIOX_DATA = '05/11/2026 13:10';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -432,7 +432,7 @@ function desenharRodar(totalDocs) {
       ${chaves.length ? '' : '<div class="aviso">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
     </div>
     <div class="bloco"><h2><i class="ti ti-gavel"></i> Pareceres da CTAI <small>${ctaiResumoTxt()}</small></h2>
-      <div class="dica">Os pareceres da CTAI ficam em pastas do Google Drive, uma por ano. O Raio-X lê as pastas (só leitura, nada é alterado), guarda o texto de cada parecer e faz a mesma leitura com IA, nas quatro frentes: erros internos do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados com a pasta e o nome do parecer. Esta leitura roda aqui na tela, não em segundo plano.</div>
+      <div class="dica">Os pareceres da CTAI ficam em pastas do Google Drive, uma por ano. O Raio-X lê as pastas (só leitura, nada é alterado), guarda o texto de cada parecer e faz a mesma leitura com IA (aqui na tela ou, depois de ler as pastas, em segundo plano no bloco abaixo), nas quatro frentes: erros internos do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados com a pasta e o nome do parecer.</div>
       ${ctaiPastasHtml()}
       <div class="acoes" style="align-items:center;">
         <button class="btn btn-claro" onclick="sincronizarCtai()" ${rodando ? 'disabled' : ''}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button>
@@ -447,6 +447,7 @@ function desenharRodar(totalDocs) {
       <div class="acoes" style="align-items:center;">
         <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-contrato" checked> contratos pendentes</label>
         <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-processo"> processos pendentes</label>
+        <label style="display:flex;gap:5px;align-items:center;" title="Antes, leia as pastas do Drive no bloco Pareceres da CTAI"><input type="checkbox" id="bg-ctai"> pareceres da CTAI pendentes</label>
         <label style="display:flex;gap:5px;align-items:center;"><input type="checkbox" id="bg-parciais"> incluir os parciais</label>
         <input id="bg-email" type="email" placeholder="e-mail para o aviso" value="${esc((usuario && usuario.email) || '')}" style="min-width:230px;">
         <button class="btn btn-principal" id="bg-iniciar" onclick="filaIniciar()"><i class="ti ti-player-play"></i> Rodar em segundo plano</button>
@@ -460,8 +461,8 @@ function desenharRodar(totalDocs) {
 // ----- segundo plano -----
 let _timerFila = null;
 async function filaIniciar() {
-  const tipos = ['contrato', 'processo'].filter(t => $('bg-' + t).checked);
-  if (!tipos.length) { alert('Marque contratos, processos ou os dois.'); return; }
+  const tipos = ['contrato', 'processo', 'ctai'].filter(t => $('bg-' + t).checked);
+  if (!tipos.length) { alert('Marque contratos, processos ou pareceres da CTAI.'); return; }
   $('bg-iniciar').disabled = true;
   const r = await api('raiox/fila-iniciar', { tipos, incluir_encerrados: incluirEnc, incluir_parciais: $('bg-parciais').checked, avisar_em: $('bg-email').value.trim() });
   $('bg-iniciar').disabled = false;
