@@ -169,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.29';
-const VERSAO_RAIOX_DATA = '06/11/2026 15:00';
+const VERSAO_RAIOX = 'v0.31';
+const VERSAO_RAIOX_DATA = '06/11/2026 17:30';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -229,7 +229,7 @@ async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Relatório para a diretoria'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
+  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
   coordenacao: [['achados', 'Achados'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
   analista: [['minhas', 'Minhas distribuições']]
 };
@@ -435,17 +435,14 @@ function desenharRodar(totalDocs) {
       <td>${e.tipo === 'contrato' ? 'Contrato' : 'Processo'}</td><td>${esc(e.rotulo)} ${e.papel === 'anterior' ? '<span class="etq azul">anterior</span>' : e.papel === 'estendido' ? '<span class="etq amarelo">estendido</span>' : e.papel === 'ativo' ? '' : '<span class="etq">encerrado</span>'}</td><td class="n">${e.n_docs}</td><td class="n">${fmt(e.chars)}</td>
       <td>${etqEstado(e)}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td>
       <td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${off}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
-  const linhasQ = q.map(e => `<tr><td>${esc(String(e.rotulo).replace(/^Pareceres CTAI /, ''))}</td><td class="n">${e.n_docs}</td><td>${etqEstado(e)}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td><td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${off}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
   $('conteudo').innerHTML = `
     ${chaves.length ? '' : '<div class="aviso" style="margin-top:0;margin-bottom:14px;">Nenhuma chave de IA liberada para o seu usuário. Peça na Gestão.</div>'}
     <div class="resumo">
       <div class="num"><div class="n1">${ia.lista_vazia ? '—' : fmt(ia.ativos)}</div><div class="n2">contratos no prazo</div><div class="n3">${fmt(ia.estendidos || 0)} estendidos · ${fmt(ia.anteriores || 0)} anterior(es)</div></div>
       <div class="num"><div class="n1">${fmt(feitos)}<small> / ${fmt(totalIA)}</small></div><div class="n2">contratos e processos lidos pela IA</div>${barraHtml(feitos, totalIA)}</div>
-      <div class="num"><div class="n1">${ci ? fmt(qLid) : '—'}<small> / ${ci ? fmt(qArq) : '—'}</small></div><div class="n2">pareceres da CTAI lidos das pastas</div>${barraHtml(qLid, qArq)}<div class="n3">${fmt(qFeitos)} de ${fmt(q.length)} pastas já analisadas pela IA</div></div>
     </div>
     <div class="subabas">
       <button id="sub-contratos" class="${subRodar === 'contratos' ? 'ativa' : ''}" onclick="trocarSub('contratos')"><i class="ti ti-file-certificate"></i> Contratos e processos</button>
-      <button id="sub-ctai" class="${subRodar === 'ctai' ? 'ativa' : ''}" onclick="trocarSub('ctai')"><i class="ti ti-gavel"></i> Pareceres da CTAI</button>
       <button id="sub-fundo" class="${subRodar === 'fundo' ? 'ativa' : ''}" onclick="trocarSub('fundo')"><i class="ti ti-cloud-computing"></i> Segundo plano</button>
     </div>
     <div class="bloco exec" id="exec"><div class="exec-topo"><div class="progresso" id="progresso"></div><button class="btn btn-sm btn-perigo" onclick="parar = true" ${rodando ? '' : 'disabled'}><i class="ti ti-player-stop"></i> Parar</button></div><div class="log hidden" id="log"></div></div>
@@ -477,30 +474,12 @@ function desenharRodar(totalDocs) {
       </div>
     </div>
 
-    <div id="pane-ctai" class="${subRodar === 'ctai' ? '' : 'hidden'}">
-      <div class="bloco"><h2><span class="passo">1</span> Ler as pastas do Drive <small>${ctaiResumoTxt()}</small></h2>
-        <div class="dica">Percorre as pastas dos pareceres da CTAI (uma por ano, só leitura, nada é alterado no Drive) e guarda o texto de cada parecer. Pode levar vários minutos na primeira vez; deixe esta tela aberta enquanto lê.</div>
-        ${ctaiPastasHtml()}
-        <div class="acoes"><button class="btn btn-principal" onclick="sincronizarCtai()" ${off}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button></div>
-        ${ctaiNaoLidosHtml()}
-      </div>
-      <div class="bloco"><h2><span class="passo">2</span> Ler com IA <small>${fmt(qFeitos)} de ${fmt(q.length)} pastas analisadas</small></h2>
-        <div class="dica">A IA lê cada parecer em quatro frentes: erro interno do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados entram na aba Achados, com o filtro "Pareceres da CTAI" em Origem.</div>
-        ${q.length ? barraHtml(qFeitos, q.length) + `<div class="rolagem"><table class="tabela"><thead><tr><th>Ano e pasta</th><th class="n">Pareceres lidos</th><th>Situação</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhasQ}</tbody></table></div>` : '<div class="vazio" style="margin-top:10px;">Ainda não há pareceres lidos. Faça o passo 1.</div>'}
-        <div class="acoes">
-          <button class="btn btn-principal" onclick="rodarPendentes('ctai')" ${off}><i class="ti ti-player-play"></i> Ler pendentes aqui</button>
-          <button class="btn btn-claro" onclick="segundoPlano('ctai')"><i class="ti ti-cloud-computing"></i> Prefiro em segundo plano</button>
-        </div>
-      </div>
-    </div>
-
     <div id="pane-fundo" class="${subRodar === 'fundo' ? '' : 'hidden'}">
       <div class="bloco"><h2><i class="ti ti-cloud-computing"></i> Leitura com IA em segundo plano <small>recomendado</small></h2>
         <div class="dica">O servidor lê sozinho: você pode fechar esta tela e desligar o computador. Ao terminar (ou se travar) chega um e-mail. Usa as suas chaves de IA da Gestão.</div>
         <div class="escolhas">
           <label class="marca-op"><input type="checkbox" id="bg-contrato" checked> contratos pendentes</label>
           <label class="marca-op"><input type="checkbox" id="bg-processo"> processos pendentes</label>
-          <label class="marca-op" title="Antes, leia as pastas do Drive na aba Pareceres da CTAI"><input type="checkbox" id="bg-ctai"> pareceres da CTAI pendentes</label>
           <label class="marca-op"><input type="checkbox" id="bg-parciais"> incluir os parciais</label>
         </div>
         <div class="acoes" style="align-items:center;">
@@ -516,8 +495,8 @@ function desenharRodar(totalDocs) {
 // ----- segundo plano -----
 let _timerFila = null;
 async function filaIniciar() {
-  const tipos = ['contrato', 'processo', 'ctai'].filter(t => $('bg-' + t).checked);
-  if (!tipos.length) { alert('Marque contratos, processos ou pareceres da CTAI.'); return; }
+  const tipos = ['contrato', 'processo'].filter(t => $('bg-' + t) && $('bg-' + t).checked);
+  if (!tipos.length) { alert('Marque contratos ou processos.'); return; }
   $('bg-iniciar').disabled = true;
   const r = await api('raiox/fila-iniciar', { tipos, incluir_encerrados: incluirEnc, incluir_parciais: $('bg-parciais').checked, avisar_em: $('bg-email').value.trim() });
   $('bg-iniciar').disabled = false;
@@ -613,7 +592,7 @@ function ctaiNaoLidosHtml() {
   return `<details><summary>${ctaiInfo.nao_lidos.length} arquivo(s) que não foram lidos</summary><table class="tabela"><thead><tr><th>Ano</th><th>Pasta</th><th>Arquivo</th><th>Tipo</th><th>Motivo</th></tr></thead><tbody>${ctaiInfo.nao_lidos.map(x => `<tr><td>${esc(x.ano)}</td><td>${esc(x.subpasta)}</td><td><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.nome)}</a></td><td>${esc(x.tipo)}</td><td>${esc(x.motivo)}</td></tr>`).join('')}</tbody></table></details>`;
 }
 async function sincronizarCtai() {
-  if (rodando) return; rodando = true; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
+  if (rodando) return; rodando = true; redesenhar();
   const pr = prog; parar = false;
   let volta = 0, ultimo = null, falhas = 0, lidos = 0;
   while (volta < 120 && !parar) {
@@ -627,27 +606,27 @@ async function sincronizarCtai() {
       : `<span class="spinner"></span>Etapa ${volta}: lendo os pareceres (${fmt(lidos)} lidos até agora, faltam ${fmt(r.a_ler)}). Deixe esta tela aberta.`);
   }
   rodando = false;
-  await telaRodar();
+  await recarregar();
   if (ultimo) prog(`${ultimo.concluido ? 'Pronto' : 'Interrompido'}: ${fmt(lidos)} pareceres lidos${falhas ? ', ' + fmt(falhas) + ' não puderam ser lidos (veja a lista abaixo)' : ''}.`);
 }
 async function rodarPendentes(tipo) {
   const fila = escopos.filter(e => e.tipo === tipo && e.estado === 'pendente');
   if (!fila.length) { prog('Não há ' + (tipo === 'contrato' ? 'contratos' : tipo === 'ctai' ? 'pareceres da CTAI' : 'processos') + ' pendentes.'); return; }
-  parar = false; rodando = true; progCtai = tipo === 'ctai'; desenharRodar(escopos.reduce((s, e) => s + e.n_docs, 0));
+  parar = false; rodando = true; progCtai = tipo === 'ctai'; redesenhar();
   let i = 0;
   for (const e of fila) {
     if (parar) break; i++;
     prog(`<span class="spinner"></span>${i} de ${fila.length}: ${esc(e.rotulo)}`);
     await rodarEscopo(e);
   }
-  rodando = false; parar = false; await telaRodar(); progCtai = false;
+  rodando = false; parar = false; await recarregar(); progCtai = false;
 }
 async function rodarUm(id) {
   const e = escopos.find(x => x.escopo === id); if (!e) return;
-  parar = false; rodando = true; progCtai = String(id).indexOf('q:') === 0; desenharRodar(escopos.reduce((s, x) => s + x.n_docs, 0));
+  parar = false; rodando = true; progCtai = String(id).indexOf('q:') === 0; redesenhar();
   prog(`<span class="spinner"></span>${esc(e.rotulo)}`);
   await rodarEscopo(e);
-  rodando = false; await telaRodar(); progCtai = false;
+  rodando = false; await recarregar(); progCtai = false;
 }
 async function rodarEscopo(e) {
   logar('▶ ' + e.rotulo);
@@ -683,7 +662,48 @@ async function rodarEscopo(e) {
 }
 
 // ==================== TELA: PARECERES DA CTAI (por ano, por pasta, por parecer) ====================
-const PAR = { ano: null, doc: null, q: '', docs: [] };
+const PAR = { ano: null, doc: null, q: '', docs: [], sub: 'ver' };
+function redesenhar() { if (abaAtual === 'pareceres') desenharPar(); else desenharRodar(escopos.reduce((t, e) => t + e.n_docs, 0)); }
+async function recarregar() { if (abaAtual === 'pareceres') await telaPareceres(true); else await telaRodar(); }
+async function filaCtai() {
+  const r = await api('raiox/fila-iniciar', { tipos: ['ctai'], incluir_encerrados: false, incluir_parciais: false, avisar_em: ((usuario && usuario.email) || '') });
+  $('par-fila').innerHTML = r.ok === false ? `<span style="color:var(--bordo)">${esc(r.erro)}</span>` : 'Leitura em segundo plano iniciada. Você pode fechar esta tela; chega um e-mail ao terminar. Para acompanhar, veja "Rodar a leitura" > "Segundo plano".';
+}
+function parSub(n) { PAR.sub = n; ['ver', 'ler'].forEach(k => { const a = $('psub-' + k), b = $('par-' + k); if (a) a.classList.toggle('ativa', k === n); if (b) b.classList.toggle('hidden', k !== n); }); }
+function desenharPar() {
+  const q = escopos.filter(e => e.tipo === 'ctai'), qFeitos = q.filter(e => e.estado === 'concluido').length, off = rodando ? 'disabled' : '';
+  const ci = ctaiInfo && !ctaiInfo.erro ? ctaiInfo : null, qArq = ci ? ci.pastas.reduce((t, x) => t + x.arquivos, 0) : 0, qLid = ci ? ci.pastas.reduce((t, x) => t + x.lidos, 0) : 0;
+  const linhasQ = q.map(e => `<tr><td>${esc(String(e.rotulo).replace(/^Pareceres CTAI /, ''))}</td><td class="n">${e.n_docs}</td><td>${etqEstado(e)}</td><td class="n">${e.estado === 'pendente' ? '—' : e.n_achados}</td><td><button class="btn btn-sm btn-claro" onclick="rodarUm('${esc(e.escopo)}')" ${off}>${e.estado === 'pendente' ? 'Rodar' : 'Rodar de novo'}</button></td></tr>`).join('');
+  $('conteudo').innerHTML = `
+    <div class="resumo"><div class="num"><div class="n1">${ci ? fmt(qLid) : '—'}<small> / ${ci ? fmt(qArq) : '—'}</small></div><div class="n2">pareceres da CTAI lidos das pastas do Drive</div>${barraHtml(qLid, qArq)}<div class="n3">${fmt(qFeitos)} de ${fmt(q.length)} pastas já analisadas pela IA</div></div></div>
+    <div class="subabas">
+      <button id="psub-ver" class="${PAR.sub === 'ver' ? 'ativa' : ''}" onclick="parSub('ver')"><i class="ti ti-file-text"></i> Pareceres e achados</button>
+      <button id="psub-ler" class="${PAR.sub === 'ler' ? 'ativa' : ''}" onclick="parSub('ler')"><i class="ti ti-refresh"></i> Ler as pastas e analisar</button>
+    </div>
+    <div class="bloco exec" id="exec"><div class="exec-topo"><div class="progresso" id="progresso"></div><button class="btn btn-sm btn-perigo" onclick="parar = true" ${rodando ? '' : 'disabled'}><i class="ti ti-player-stop"></i> Parar</button></div><div class="log hidden" id="log"></div></div>
+    <div id="par-ver" class="${PAR.sub === 'ver' ? '' : 'hidden'}"></div>
+    <div id="par-ler" class="${PAR.sub === 'ler' ? '' : 'hidden'}">
+    <div>
+      <div class="bloco"><h2><span class="passo">1</span> Ler as pastas do Drive <small>${ctaiResumoTxt()}</small></h2>
+        <div class="dica">Percorre as pastas dos pareceres da CTAI (uma por ano, só leitura, nada é alterado no Drive) e guarda o texto de cada parecer. Pode levar vários minutos na primeira vez; deixe esta tela aberta enquanto lê.</div>
+        ${ctaiPastasHtml()}
+        <div class="acoes"><button class="btn btn-principal" onclick="sincronizarCtai()" ${off}><i class="ti ti-refresh"></i> Ler as pastas do Drive</button></div>
+        ${ctaiNaoLidosHtml()}
+      </div>
+      <div class="bloco"><h2><span class="passo">2</span> Ler com IA <small>${fmt(qFeitos)} de ${fmt(q.length)} pastas analisadas</small></h2>
+        <div class="dica">A IA lê cada parecer em quatro frentes: erro interno do parecer, parecer contra contrato (a conferir), consistência entre pareceres e qualidade. Os achados aparecem na aba "Pareceres e achados", dentro de cada parecer.</div>
+        ${q.length ? barraHtml(qFeitos, q.length) + `<div class="rolagem"><table class="tabela"><thead><tr><th>Ano e pasta</th><th class="n">Pareceres lidos</th><th>Situação</th><th class="n">Achados</th><th></th></tr></thead><tbody>${linhasQ}</tbody></table></div>` : '<div class="vazio" style="margin-top:10px;">Ainda não há pareceres lidos. Faça o passo 1.</div>'}
+        <div class="acoes">
+          <button class="btn btn-principal" onclick="rodarPendentes('ctai')" ${off}><i class="ti ti-player-play"></i> Ler pendentes aqui</button>
+          <button class="btn btn-claro" onclick="filaCtai()"><i class="ti ti-cloud-computing"></i> Prefiro em segundo plano</button>
+        </div>
+      </div>
+    </div>
+      <div id="par-fila" class="progresso"></div>
+    </div>`;
+  parPintar();
+}
+
 function parBase() {
   return achados.filter(a => ehParecerCtai(a) && visivel(a)).map(a => {
     const m = /^q:(\d{4})\|(.*)$/.exec(String(a.escopo || ''));
@@ -692,21 +712,23 @@ function parBase() {
 }
 function parResumo(l) {
   const n = l.length, alta = l.filter(x => x.a.gravidade === 'alta').length, pend = l.filter(x => !x.a.conferido).length;
-  return `<b>${fmt(n)}</b> ${n === 1 ? 'achado' : 'achados'}${alta ? ` · <span class="etq vermelho">${fmt(alta)} de gravidade alta</span>` : ''}${pend ? ` · ${fmt(pend)} a conferir` : ''}`;
+  return `<b>${fmt(n)}</b> ${n === 1 ? 'achado' : 'achados'}${alta ? ` · <span class="etq vermelho">${fmt(alta)} de gravidade alta</span>` : ''}${pend && temConf() ? ` · ${fmt(pend)} a conferir` : ''}`;
 }
-async function telaPareceres() {
-  $('conteudo').innerHTML = carregando('Carregando os pareceres...');
-  const [r, rc] = await Promise.all([api('raiox/achados', {}), api('raiox/ctai-estado', {})]);
+async function telaPareceres(manter) {
+  if (!manter) $('conteudo').innerHTML = carregando('Carregando os pareceres...');
+  const [r, rc, re] = await Promise.all([api('raiox/achados', {}), api('raiox/ctai-estado', {}), api('raiox/escopos', { incluir_encerrados: false })]);
   if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
-  achados = prepararAchados(r.achados || []); ctaiInfo = rc.ok === false ? null : rc; _mesmo = null;
-  PAR.ano = null; PAR.doc = null; PAR.q = ''; parPintar();
+  achados = prepararAchados(r.achados || []); ctaiInfo = rc.ok === false ? { erro: rc.erro } : rc; _mesmo = null; if (re.ok !== false) escopos = re.escopos || [];
+  if (!manter) { PAR.ano = null; PAR.doc = null; PAR.q = ''; PAR.sub = 'ver'; }
+  desenharPar();
 }
 function parIr(ano, doc) { PAR.ano = ano; PAR.doc = doc; window.scrollTo(0, 0); parPintar(); }
 function parPintar() {
   if (PAR.doc !== null && PAR.docs[PAR.doc]) return parTelaDoc();
   if (PAR.ano) return parTelaAno();
   const base = parBase(), anos = [...new Set(base.map(x => x.ano).concat((ctaiInfo && ctaiInfo.pastas || []).map(p => String(p.ano))))].filter(Boolean).sort().reverse();
-  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-file-text"></i> Pareceres da CTAI <small>lidos pela IA nas pastas do Drive · escolha o ano</small></h2>
+  $('par-ver').innerHTML = `<div class="bloco"><h2><i class="ti ti-file-text"></i> Pareceres da CTAI <small>lidos pela IA nas pastas do Drive · escolha o ano</small></h2>
+    ${relBotoes('relPar')}
     <div class="tiles">${anos.map(an => {
       const l = base.filter(x => x.ano === an), docs = new Set(l.map(x => x.doc)).size, p = ctaiInfo && (ctaiInfo.pastas || []).find(z => String(z.ano) === an);
       return `<div class="tile" style="cursor:pointer" onclick="parIr('${esc(an)}', null)"><h3>${esc(an)}</h3><div class="grande">${fmt(docs)}<small> ${docs === 1 ? 'parecer com achados' : 'pareceres com achados'}</small></div>
@@ -721,14 +743,15 @@ function parTelaAno() {
       .filter(d => !q || normT(d + ' ' + pa).includes(q));
     if (!docs.length) return '';
     return `<h3 style="margin:14px 0 6px;font-size:.92rem"><i class="ti ti-folder"></i> ${esc(pa)} <small class="dica">${docs.length} ${docs.length === 1 ? 'parecer' : 'pareceres'}</small></h3>
-      <div class="rolagem"><table class="tabela"><thead><tr><th>Parecer</th><th>Achados</th><th>Gravidade alta</th><th>A conferir</th><th></th></tr></thead><tbody>${docs.map(d => {
+      <div class="rolagem"><table class="tabela"><thead><tr><th>Parecer</th><th>Achados</th>${base.some(x => x.a.gravidade === 'alta') ? '<th>Gravidade alta</th>' : ''}${temConf() ? '<th>A conferir</th>' : ''}<th></th></tr></thead><tbody>${docs.map(d => {
         const l = base.filter(x => x.pasta === pa && x.doc === d), k = PAR.docs.push({ ano: PAR.ano, pasta: pa, doc: d }) - 1;
-        return `<tr style="cursor:pointer" onclick="parIr('${esc(PAR.ano)}', ${k})"><td>${esc(d)}</td><td>${fmt(l.length)}</td><td>${fmt(l.filter(x => x.a.gravidade === 'alta').length)}</td><td>${fmt(l.filter(x => !x.a.conferido).length)}</td><td><button class="btn btn-sm btn-claro">Abrir</button></td></tr>`; }).join('')}</tbody></table></div>`;
+        return `<tr style="cursor:pointer" onclick="parIr('${esc(PAR.ano)}', ${k})"><td>${esc(d)}</td><td>${fmt(l.length)}</td>${base.some(x => x.a.gravidade === 'alta') ? `<td>${fmt(l.filter(x => x.a.gravidade === 'alta').length)}</td>` : ''}${temConf() ? `<td>${fmt(l.filter(x => !x.a.conferido).length)}</td>` : ''}<td><button class="btn btn-sm btn-claro">Abrir</button></td></tr>`; }).join('')}</tbody></table></div>`;
   }).join('');
   const p = ctaiInfo && (ctaiInfo.pastas || []).find(z => String(z.ano) === PAR.ano);
-  $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr(null, null)"><i class="ti ti-arrow-left"></i> Todos os anos</button>
+  $('par-ver').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr(null, null)"><i class="ti ti-arrow-left"></i> Todos os anos</button>
     <h2 style="margin-top:10px"><i class="ti ti-file-text"></i> Pareceres de ${esc(PAR.ano)} <small>${parResumo(base)}</small></h2>
     ${p && p.url ? `<div class="dica"><a href="${esc(p.url)}" target="_blank" rel="noopener"><i class="ti ti-folder"></i> Abrir a pasta de ${esc(PAR.ano)} no Drive</a> (abre para quem recebeu o convite da CTAI)</div>` : ''}
+    ${relBotoes('relPar')}
     <div class="filtros" style="margin-top:10px"><div style="flex:2;min-width:220px"><label>Buscar parecer</label><input id="par-q" value="${esc(PAR.q)}" placeholder="nome do parecer ou da pasta" oninput="PAR.q=this.value;parTelaAnoLista()"></div></div></div>
     <div id="par-lista" class="bloco">${bloco || '<div class="vazio">Nenhum parecer com esse nome.</div>'}</div>`;
 }
@@ -736,9 +759,10 @@ function parTelaAnoLista() { const pos = $('par-q').selectionStart; parTelaAno()
 function parTelaDoc() {
   const d = PAR.docs[PAR.doc], l = parBase().filter(x => x.ano === d.ano && x.pasta === d.pasta && x.doc === d.doc).map(x => x.a)
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
-  $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr('${esc(d.ano)}', null)"><i class="ti ti-arrow-left"></i> Pareceres de ${esc(d.ano)}</button>
+  $('par-ver').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr('${esc(d.ano)}', null)"><i class="ti ti-arrow-left"></i> Pareceres de ${esc(d.ano)}</button>
     <h2 style="margin-top:10px"><i class="ti ti-file-text"></i> ${esc(d.doc)}</h2>
-    <div class="dica">Pasta ${esc(d.pasta)} · ${esc(d.ano)} · ${parResumo(l.map(a => ({ a })))}</div></div>
+    <div class="dica">Pasta ${esc(d.pasta)} · ${esc(d.ano)} · ${parResumo(l.map(a => ({ a })))}</div>
+    ${relBotoes('relPar')}</div>
     ${l.map(a => cartao(a, PAPEL === 'admin', true)).join('') || '<div class="vazio">Sem achados.</div>'}`;
 }
 
@@ -755,14 +779,14 @@ async function telaAchados() {
       <div class="filtros">
         <div style="flex:2;min-width:220px"><label>Busca</label><input id="f-q" placeholder="palavra no título, descrição, contrato..." oninput="pintarAchados()"></div>
         <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option><option value="parecer">Pareceres da CTAI (lidos pela IA)</option></select></div>
-        <div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>
+        ${temSetor() ? `<div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>` : ''}
         <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
-        <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
+        ${temConf() ? `<div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>` : ''}
       </div>
       <details class="mais-filtros"><summary>Mais filtros (unidade, órgão, tipo, TCE-PE, contratos anteriores)</summary>
         <div class="filtros" style="margin-top:10px">
           <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
-          <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
+          ${temOrgao() ? `<div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>` : ''}
           <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
           <div><label>Referência TCE-PE</label><select id="f-tce" onchange="pintarAchados()"><option value="">Todas</option><option value="25100813-7">Proc. 25100813-7 (UPAs)</option><option value="24100082-8">Proc. 24100082-8 (HPS)</option><option value="aud">Contrato auditado pelo TCE</option><option value="risco">Mesmo tipo de risco, outro contrato</option><option value="pers">Possível persistência após o TCE-PE</option><option value="sem">Sem referência</option></select></div>
           <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
@@ -773,8 +797,8 @@ async function telaAchados() {
         ${PAPEL === 'analista' ? '' : `<span id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar distribuição com os achados filtrados</button></span>`}
         <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button>
         <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">CSV de todos</button>
-        <button class="btn btn-sm btn-claro" onclick="abrirAba('rx')"><i class="ti ti-report"></i> Ver como relatório</button>
       </div>
+      ${relBotoes('relAchadosTela')}
       <div id="form-fatia"></div>
     </div>
     <div id="lista-ach"></div>`;
@@ -807,7 +831,7 @@ const FILT = { setor: '', orgao: '', grav: '', conf: '', orig: '' };
 const origemOk = (a, o) => !o || (o === 'parecer' ? ehParecerCtai(a) : a.origem === o && !ehParecerCtai(a));
 function guardarFiltro(pre) {
   const v = id => ($(id) || {}).value || '';
-  if (!$(pre + 'setor')) return;
+  if (!$(pre + 'grav')) return;
   FILT.setor = v(pre + 'setor') === '__sem' ? 'Sem setor' : v(pre + 'setor');
   FILT.orgao = v(pre + 'orgao'); FILT.grav = v(pre + 'grav'); FILT.orig = v(pre + 'orig');
   const c = v(pre + 'conf'); FILT.conf = c === 'nao' ? '' : c;
@@ -842,7 +866,7 @@ function atalhosEChips() {
   const v = id => ($(id) || {}).value || '';
   const base = achados.filter(a => !a.oculto_passado && a.conferido !== 'nao');
   const ativo = k => k === 'alta' ? v('f-grav') === 'alta' : k === 'pend' ? v('f-conf') === 'pend' : k === 'ctai' ? v('f-orig') === 'parecer' : !Object.keys(ROT_F).some(id => v(id));
-  const at = [['todos', 'Todos', base.length], ['alta', 'Gravidade alta', base.filter(a => a.gravidade === 'alta').length], ['pend', 'A conferir', base.filter(a => !a.conferido).length], ['ctai', 'Pareceres da CTAI', base.filter(ehParecerCtai).length]];
+  const at = [['todos', 'Todos', base.length], ['alta', 'Gravidade alta', base.filter(a => a.gravidade === 'alta').length], ['pend', 'A conferir', base.filter(a => !a.conferido).length]].filter(x => x[0] !== 'pend' || temConf());
   if ($('atalhos-ach')) $('atalhos-ach').innerHTML = at.map(x => `<button class="${ativo(x[0]) ? 'on' : ''}" onclick="atalhoAch('${x[0]}')">${x[1]}<b>${fmt(x[2])}</b></button>`).join('');
   const chips = Object.keys(ROT_F).filter(id => v(id)).map(id => { const e = $(id), txt = e.tagName === 'SELECT' ? (e.options[e.selectedIndex] || {}).text : v(id); return `<span>${ROT_F[id]}: ${esc(txt)}<button title="Tirar este filtro" onclick="limparCampo('${id}')">×</button></span>`; });
   if ($('chips-ach')) $('chips-ach').innerHTML = chips.length ? chips.join('') + '<a href="#" onclick="limparTudoAchados();return false">limpar tudo</a>' : '';
@@ -930,7 +954,7 @@ function mesmoAchado(a) {
   return `<div class="rot">O mesmo achado também aparece em ${outros.length} ${outros.length === 1 ? 'outro contrato/processo' : 'outros contratos/processos'}</div><p>${esc(outros.slice(0, 10).join('; '))}${outros.length > 10 ? ' e mais ' + (outros.length - 10) : ''}</p>`;
 }
 function cartao(a, comBotoes, compacto) {
-  const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
+  const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">o trecho citado não foi achado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
     <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${esc(ehParecerCtai(a) ? 'parecer da CTAI lido pela IA' : (ORIGEM_ROT[a.origem] || a.origem))}</span> <span class="etq azul">${esc(TIPO_ROT[a.tipo] || a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">prazo vencido, contrato ainda em funcionamento</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">ligado a contrato anterior</span>' : ''}</div>
@@ -1301,7 +1325,10 @@ function htmlDetalhe(lista, agrupar) {
     ${corpoAchado(a, 'r', true)}</div>`).join('')).join('');
 }
 
+const temConf = () => achados.some(a => a.conferido === 'sim' || a.conferido === 'nao'), temSetor = () => achados.some(a => a.setor), temOrgao = () => achados.some(a => lerOrgaos(a).length);
+let RX_FONTE = null;       // quando preenchido, o relatório usa esta lista (relatório de uma aba específica)
 function listaRx() {
+  if (RX_FONTE) return RX_FONTE.lista;
   const v = id => ($(id) || {}).value || '';
   return achados.filter(a => visivel(a) && (!v('rx-setor') || (a.setor || 'Sem setor') === v('rx-setor')) && (!v('rx-orgao') || lerOrgaos(a).includes(v('rx-orgao'))) &&
     (!v('rx-grav') || a.gravidade === v('rx-grav')) && origemOk(a, v('rx-orig')) && (!v('rx-conf') || (v('rx-conf') === 'sim' ? a.conferido === 'sim' : !a.conferido)));
@@ -1314,10 +1341,11 @@ function pintarRx() {
   const contratos = new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size;
   $('rx-tiles').innerHTML = `
     <div class="tile"><h3>Achados no filtro</h3><div class="grande">${fmt(l.length)}</div></div>
-    <div class="tile"><h3>Gravidade alta</h3><div class="grande">${fmt(alta)}</div></div>
-    <div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conf)}<small>de ${fmt(l.length)}</small></div></div>
+    ${alta ? `<div class="tile"><h3>Gravidade alta</h3><div class="grande">${fmt(alta)}</div></div>` : ''}
+    ${conf ? `<div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conf)}<small>de ${fmt(l.length)}</small></div></div>` : ''}
     <div class="tile"><h3>Contratos com achados</h3><div class="grande">${fmt(contratos)}</div></div>`;
   $('rx-matriz').innerHTML = htmlMatriz(l, true);
+  if ($('rx-matriz').parentElement) $('rx-matriz').parentElement.style.display = (temSetor() || temOrgao()) ? '' : 'none';
 }
 
 async function telaRx() {
@@ -1330,11 +1358,11 @@ async function telaRx() {
   $('conteudo').innerHTML = `
     <div class="bloco"><h2><i class="ti ti-filter"></i> Filtro <small>vale para a tela e para o relatório</small></h2>
       <div class="filtros">
-        <div><label>Setor</label><select id="rx-setor" onchange="pintarRx()"><option value="">Todos</option>${setoresPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
-        <div><label>Órgão</label><select id="rx-orgao" onchange="pintarRx()"><option value="">Todos</option>${orgsPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
+        ${temSetor() ? `<div><label>Setor</label><select id="rx-setor" onchange="pintarRx()"><option value="">Todos</option>${setoresPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>` : ''}
+        ${orgsPres.length ? `<div><label>Órgão</label><select id="rx-orgao" onchange="pintarRx()"><option value="">Todos</option>${orgsPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>` : ''}
         <div><label>Gravidade</label><select id="rx-grav" onchange="pintarRx()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
         <div><label>Origem</label><select id="rx-orig" onchange="pintarRx()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option><option value="parecer">Pareceres da CTAI (lidos pela IA)</option></select></div>
-        <div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>
+        ${temConf() ? `<div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>` : ''}
       </div>
       <div class="dica">Este filtro é o mesmo da aba Achados: o que você escolhe lá aparece aqui e vice-versa. Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado (a aba Achados mostra esses também, se você marcar). <a href="#" onclick="limparFiltroRx();return false">Limpar filtros</a></div>
       <div class="chips-ativos" id="chips-rx"></div>
@@ -1399,7 +1427,7 @@ function rascunhoMsgRx() {
 function montarRelatorio() {
   const l = listaRx(), op = id => !!($(id) && $(id).checked), cols = [...document.querySelectorAll('.op-col:checked')].map(x => x.value);
   const hoje = new Date().toLocaleDateString('pt-BR'), v = id => ($(id) || {}).value || '';
-  const filtros = [v('rx-setor') && 'setor ' + v('rx-setor'), v('rx-orgao') && 'órgão ' + v('rx-orgao'), v('rx-grav') && 'gravidade ' + v('rx-grav'), v('rx-orig') && 'origem ' + ({codigo:'conferência automática',gaocg:'GAOCG',ia:'lido pela IA',parecer:'pareceres da CTAI'}[v('rx-orig')]), v('rx-conf') === 'sim' && 'só conferidos', v('rx-conf') === 'pend' && 'só a conferir'].filter(Boolean);
+  const filtros = RX_FONTE ? [RX_FONTE.filtros].filter(Boolean) : [v('rx-setor') && 'setor ' + v('rx-setor'), v('rx-orgao') && 'órgão ' + v('rx-orgao'), v('rx-grav') && 'gravidade ' + v('rx-grav'), v('rx-orig') && 'origem ' + ({codigo:'conferência automática',gaocg:'GAOCG',ia:'lido pela IA',parecer:'pareceres da CTAI'}[v('rx-orig')]), v('rx-conf') === 'sim' && 'só conferidos', v('rx-conf') === 'pend' && 'só a conferir'].filter(Boolean);
   const alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
   const css = `body{font-family:Segoe UI,system-ui,sans-serif;color:#1f2a30;margin:0;background:#f4f2ee}main{max-width:1100px;margin:0 auto;padding:24px 20px}
     h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.1rem;margin:26px 0 10px;border-bottom:2px solid #b45309;padding-bottom:4px;page-break-after:avoid}.sub{color:#66757d;font-size:.88rem}
@@ -1424,7 +1452,7 @@ function montarRelatorio() {
   if (op('op-tabela')) sec.push(`<h2>Tabela de achados</h2>${htmlTabelaAchadosFiltravel(l, cols)}`);
   if (op('op-detalhe')) sec.push(htmlDetalhe(l, v('op-agrupar') || 'unidade'));
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raio-X documental — DGMCG/GGPCG</title><style>${CSS_RX}${css}</style></head><body><div class="barra"><button onclick="window.print()">Salvar em PDF / imprimir</button></div><main>
-    <h1>Raio-X documental</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
+    <h1>${esc(RX_FONTE ? RX_FONTE.titulo : 'Raio-X documental')}</h1><div class="sub">Inconsistências presentes nos documentos da base, em ${hoje}. DGMCG/GGPCG — SES-PE.${filtros.length ? ' Filtro: ' + esc(filtros.join('; ')) + '.' : ''}</div>
     ${blocoMsg}
     <div class="intro"><h2 style="margin-top:6px">Resumo</h2>
       <p>Este relatório mostra pontos dos contratos de gestão e dos aditivos que merecem conferência. Há <b>${l.length}</b> achado(s) em <b>${new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size}</b> contrato(s), <b>${alta}</b> de gravidade alta.</p>
@@ -1444,6 +1472,28 @@ function montarRelatorio() {
       <p class="sub">Uso interno.</p></div>
     ${sec.join('')}<p class="sub" style="margin-top:26px">Gerado pelo Raio-X em ${hoje}. © 2026 SES-PE — DGMCG/GGPCG.</p></main></body></html>`;
 }
+function relatorioDe(tipo, lista, titulo, filtros) {
+  if (!lista.length) { alert('Não há achados para gerar o relatório.'); return; }
+  RX_FONTE = { lista, titulo, filtros };
+  try { if (tipo === 'imprimir') imprimirRx(); else if (tipo === 'pdf') salvarPdfRx(); else if (tipo === 'html') baixarRx(); else baixarCsvAchados(true, lista); } finally { RX_FONTE = null; }
+}
+function relBotoes(expr) {
+  return `<div class="acoes"><span class="dica" style="align-self:center">Relatório desta tela:</span>
+    <button class="btn btn-sm btn-claro" onclick="${expr}('imprimir')"><i class="ti ti-printer"></i> Imprimir</button>
+    <button class="btn btn-sm btn-claro" onclick="${expr}('pdf')"><i class="ti ti-file-type-pdf"></i> PDF</button>
+    <button class="btn btn-sm btn-claro" onclick="${expr}('html')"><i class="ti ti-download"></i> HTML</button>
+    <button class="btn btn-sm btn-claro" onclick="${expr}('csv')"><i class="ti ti-file-spreadsheet"></i> Excel/CSV</button></div>`;
+}
+function relAchadosTela(tipo) {
+  const f = ['f-orig', 'f-setor', 'f-grav', 'f-conf', 'f-unidade', 'f-q'].map(id => ($(id) || {}).value && ROT_F[id] + ' ' + (($(id).options ? ($(id).options[$(id).selectedIndex] || {}).text : $(id).value))).filter(Boolean).join('; ');
+  relatorioDe(tipo, filtrados(), 'Raio-X documental — achados', f);
+}
+function parAtual() {
+  const d = PAR.doc !== null && PAR.docs[PAR.doc];
+  const base = parBase().filter(x => !PAR.ano || x.ano === PAR.ano).filter(x => !d || (x.pasta === d.pasta && x.doc === d.doc));
+  return { lista: base.map(x => x.a), titulo: d ? 'Parecer da CTAI — ' + d.doc : PAR.ano ? 'Pareceres da CTAI de ' + PAR.ano + ' — achados' : 'Pareceres da CTAI — achados', filtros: d ? 'pasta ' + d.pasta + ', ' + d.ano : PAR.ano ? 'ano ' + PAR.ano : '' };
+}
+function relPar(tipo) { const x = parAtual(); relatorioDe(tipo, x.lista, x.titulo, x.filtros); }
 function imprimirRx() {
   const html = montarRelatorio(), f = document.createElement('iframe');
   f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
