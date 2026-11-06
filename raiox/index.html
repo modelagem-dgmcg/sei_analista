@@ -169,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.28';
-const VERSAO_RAIOX_DATA = '06/11/2026 14:00';
+const VERSAO_RAIOX = 'v0.29';
+const VERSAO_RAIOX_DATA = '06/11/2026 15:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -229,8 +229,8 @@ async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Relatório para a diretoria'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
-  coordenacao: [['achados', 'Achados'], ['fatias', 'Distribuições e pareceres']],
+  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Relatório para a diretoria'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
+  coordenacao: [['achados', 'Achados'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
   analista: [['minhas', 'Minhas distribuições']]
 };
 function montarNav() {
@@ -240,7 +240,7 @@ function abrirAba(a) {
   if (!(ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === a)) return;
   abaAtual = a;
   (ABAS_POR_PAPEL[PAPEL] || []).forEach(x => { const el = $('aba-' + x[0]); if (el) el.classList.toggle('ativa', x[0] === a); });
-  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx();
+  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres();
   else if (a === 'fatias' || a === 'minhas') telaFatias(); else if (a === 'equipe') telaEquipe();
 }
 const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
@@ -682,6 +682,66 @@ async function rodarEscopo(e) {
   const x = escopos.find(z => z.escopo === e.escopo); if (x && s.ok !== false) { x.estado = parcial ? 'parcial' : 'concluido'; x.n_achados = unicos.length; }
 }
 
+// ==================== TELA: PARECERES DA CTAI (por ano, por pasta, por parecer) ====================
+const PAR = { ano: null, doc: null, q: '', docs: [] };
+function parBase() {
+  return achados.filter(a => ehParecerCtai(a) && visivel(a)).map(a => {
+    const m = /^q:(\d{4})\|(.*)$/.exec(String(a.escopo || ''));
+    return { a, ano: m ? m[1] : '?', pasta: m ? m[2] : 'sem pasta', doc: String(a.documentos || '').trim() || '(parecer não identificado pela IA)' };
+  });
+}
+function parResumo(l) {
+  const n = l.length, alta = l.filter(x => x.a.gravidade === 'alta').length, pend = l.filter(x => !x.a.conferido).length;
+  return `<b>${fmt(n)}</b> ${n === 1 ? 'achado' : 'achados'}${alta ? ` · <span class="etq vermelho">${fmt(alta)} de gravidade alta</span>` : ''}${pend ? ` · ${fmt(pend)} a conferir` : ''}`;
+}
+async function telaPareceres() {
+  $('conteudo').innerHTML = carregando('Carregando os pareceres...');
+  const [r, rc] = await Promise.all([api('raiox/achados', {}), api('raiox/ctai-estado', {})]);
+  if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
+  achados = prepararAchados(r.achados || []); ctaiInfo = rc.ok === false ? null : rc; _mesmo = null;
+  PAR.ano = null; PAR.doc = null; PAR.q = ''; parPintar();
+}
+function parIr(ano, doc) { PAR.ano = ano; PAR.doc = doc; window.scrollTo(0, 0); parPintar(); }
+function parPintar() {
+  if (PAR.doc !== null && PAR.docs[PAR.doc]) return parTelaDoc();
+  if (PAR.ano) return parTelaAno();
+  const base = parBase(), anos = [...new Set(base.map(x => x.ano).concat((ctaiInfo && ctaiInfo.pastas || []).map(p => String(p.ano))))].filter(Boolean).sort().reverse();
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-file-text"></i> Pareceres da CTAI <small>lidos pela IA nas pastas do Drive · escolha o ano</small></h2>
+    <div class="tiles">${anos.map(an => {
+      const l = base.filter(x => x.ano === an), docs = new Set(l.map(x => x.doc)).size, p = ctaiInfo && (ctaiInfo.pastas || []).find(z => String(z.ano) === an);
+      return `<div class="tile" style="cursor:pointer" onclick="parIr('${esc(an)}', null)"><h3>${esc(an)}</h3><div class="grande">${fmt(docs)}<small> ${docs === 1 ? 'parecer com achados' : 'pareceres com achados'}</small></div>
+        <div class="dica">${parResumo(l)}</div>${p ? `<div class="dica">${fmt(p.lidos || 0)} de ${fmt(p.arquivos || 0)} arquivos da pasta lidos</div>` : ''}</div>`; }).join('') || '<div class="vazio">Ainda não há achados de pareceres. Leia as pastas e rode a IA na aba "Rodar a leitura".</div>'}</div></div>`;
+}
+function parTelaAno() {
+  const base = parBase().filter(x => x.ano === PAR.ano), q = normT(PAR.q);
+  const pastas = [...new Set(base.map(x => x.pasta))].sort();
+  PAR.docs = [];
+  const bloco = pastas.map(pa => {
+    const docs = [...new Set(base.filter(x => x.pasta === pa).map(x => x.doc))].sort((m, n) => n.localeCompare(m, 'pt-BR'))
+      .filter(d => !q || normT(d + ' ' + pa).includes(q));
+    if (!docs.length) return '';
+    return `<h3 style="margin:14px 0 6px;font-size:.92rem"><i class="ti ti-folder"></i> ${esc(pa)} <small class="dica">${docs.length} ${docs.length === 1 ? 'parecer' : 'pareceres'}</small></h3>
+      <div class="rolagem"><table class="tabela"><thead><tr><th>Parecer</th><th>Achados</th><th>Gravidade alta</th><th>A conferir</th><th></th></tr></thead><tbody>${docs.map(d => {
+        const l = base.filter(x => x.pasta === pa && x.doc === d), k = PAR.docs.push({ ano: PAR.ano, pasta: pa, doc: d }) - 1;
+        return `<tr style="cursor:pointer" onclick="parIr('${esc(PAR.ano)}', ${k})"><td>${esc(d)}</td><td>${fmt(l.length)}</td><td>${fmt(l.filter(x => x.a.gravidade === 'alta').length)}</td><td>${fmt(l.filter(x => !x.a.conferido).length)}</td><td><button class="btn btn-sm btn-claro">Abrir</button></td></tr>`; }).join('')}</tbody></table></div>`;
+  }).join('');
+  const p = ctaiInfo && (ctaiInfo.pastas || []).find(z => String(z.ano) === PAR.ano);
+  $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr(null, null)"><i class="ti ti-arrow-left"></i> Todos os anos</button>
+    <h2 style="margin-top:10px"><i class="ti ti-file-text"></i> Pareceres de ${esc(PAR.ano)} <small>${parResumo(base)}</small></h2>
+    ${p && p.url ? `<div class="dica"><a href="${esc(p.url)}" target="_blank" rel="noopener"><i class="ti ti-folder"></i> Abrir a pasta de ${esc(PAR.ano)} no Drive</a> (abre para quem recebeu o convite da CTAI)</div>` : ''}
+    <div class="filtros" style="margin-top:10px"><div style="flex:2;min-width:220px"><label>Buscar parecer</label><input id="par-q" value="${esc(PAR.q)}" placeholder="nome do parecer ou da pasta" oninput="PAR.q=this.value;parTelaAnoLista()"></div></div></div>
+    <div id="par-lista" class="bloco">${bloco || '<div class="vazio">Nenhum parecer com esse nome.</div>'}</div>`;
+}
+function parTelaAnoLista() { const pos = $('par-q').selectionStart; parTelaAno(); const e = $('par-q'); e.focus(); e.setSelectionRange(pos, pos); }
+function parTelaDoc() {
+  const d = PAR.docs[PAR.doc], l = parBase().filter(x => x.ano === d.ano && x.pasta === d.pasta && x.doc === d.doc).map(x => x.a)
+    .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
+  $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="parIr('${esc(d.ano)}', null)"><i class="ti ti-arrow-left"></i> Pareceres de ${esc(d.ano)}</button>
+    <h2 style="margin-top:10px"><i class="ti ti-file-text"></i> ${esc(d.doc)}</h2>
+    <div class="dica">Pasta ${esc(d.pasta)} · ${esc(d.ano)} · ${parResumo(l.map(a => ({ a })))}</div></div>
+    ${l.map(a => cartao(a, PAPEL === 'admin', true)).join('') || '<div class="vazio">Sem achados.</div>'}`;
+}
+
 // ==================== TELA: ACHADOS ====================
 async function telaAchados() {
   $('conteudo').innerHTML = carregando('Carregando os achados...');
@@ -788,6 +848,7 @@ function atalhosEChips() {
   if ($('chips-ach')) $('chips-ach').innerHTML = chips.length ? chips.join('') + '<a href="#" onclick="limparTudoAchados();return false">limpar tudo</a>' : '';
 }
 function pintarAchados() {
+  if (abaAtual === 'pareceres') { parPintar(); return; }
   guardarFiltro('f-');
   atalhosEChips();
   const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
