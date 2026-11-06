@@ -165,8 +165,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.25';
-const VERSAO_RAIOX_DATA = '06/11/2026 10:00';
+const VERSAO_RAIOX = 'v0.26';
+const VERSAO_RAIOX_DATA = '06/11/2026 11:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -714,15 +714,15 @@ async function telaAchados() {
 // ---- exportar achados em CSV (UTF-8 com BOM, separador ponto e vírgula, abre direto no Excel em português) ----
 const CSV_COLS = ['id', 'unidade', 'contrato', 'processo', 'sei_contrato', 'sei_instrumento', 'instrumento_citado', 'instrumentos', 'gravidade', 'tipo', 'regra', 'origem', 'titulo', 'descricao', 'documentos', 'trecho', 'trecho_confere', 'impacto', 'risco_controle', 'sugestao', 'setor', 'orgaos', 'liga_passado', 'ligacao', 'papel', 'oculto_passado', 'conferido', 'obs', 'escopo', 'criado_por', 'criado_em', 'tce_processos', 'tce_temas', 'tce_relacao', 'tce_persistencia'];
 function csvCel(v) { let s = String(v === null || v === undefined ? '' : v).replace(/\r?\n/g, ' ').trim(); if (/^[=+\-@]/.test(s)) s = "'" + s; return '"' + s.replace(/"/g, '""') + '"'; }
-function baixarCsvAchados(soFiltrados) {
-  const lista = soFiltrados ? filtrados() : achados;
+function baixarCsvAchados(soFiltrados, lista0) {
+  const lista = lista0 || (soFiltrados ? filtrados() : achados);
   if (!lista.length) { alert('Nenhum achado para baixar.'); return; }
   const extras = [...new Set(lista.flatMap(a => Object.keys(a)))].filter(k => !CSV_COLS.includes(k) && !k.startsWith('_'));
   const cols = CSV_COLS.concat(extras);
   const linhas = [cols.map(csvCel).join(';')].concat(lista.map(a => cols.map(c => csvCel(a[c])).join(';')));
   const blob = new Blob(['\ufeff' + linhas.join('\r\n')], { type: 'text/csv;charset=utf-8' });
   const d = new Date(), p = n => String(n).padStart(2, '0');
-  const nome = `raiox_achados_${soFiltrados ? 'filtrados' : 'todos'}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.csv`;
+  const nome = `raiox_achados_${lista0 ? 'relatorio' : soFiltrados ? 'filtrados' : 'todos'}_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}.csv`;
   const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 const ordemGrav = { alta: 0, media: 1, baixa: 2 };
@@ -741,6 +741,7 @@ function aplicarFiltro(pre) {
   set('setor', pre === 'f-' && FILT.setor === 'Sem setor' ? '__sem' : FILT.setor);
   set('orgao', FILT.orgao); set('grav', FILT.grav); set('conf', FILT.conf); set('orig', FILT.orig);
 }
+function soCtaiRx() { limparFiltroRx(); $('rx-orig').value = 'parecer'; pintarRx(); }
 function limparFiltroRx() { Object.keys(FILT).forEach(k => FILT[k] = ''); ['setor','orgao','grav','conf','orig'].forEach(k => { if ($('rx-' + k)) $('rx-' + k).value = ''; }); pintarRx(); }
 function filtrados() {
   const v = id => ($(id) || {}).value || '';
@@ -1227,6 +1228,7 @@ async function telaRx() {
         <div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>
       </div>
       <div class="dica">Este filtro é o mesmo da aba Achados: o que você escolhe lá aparece aqui e vice-versa. Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado (a aba Achados mostra esses também, se você marcar). <a href="#" onclick="limparFiltroRx();return false">Limpar filtros</a></div>
+      <div class="acoes"><button class="btn btn-sm btn-claro" onclick="soCtaiRx()"><i class="ti ti-file-search"></i> Relatório só dos pareceres da CTAI (lido pela IA)</button></div>
     </div>
     <div class="tiles" id="rx-tiles"></div>
     <div class="bloco"><h2><i class="ti ti-grid-dots"></i> Achados por setor e órgão de controle <small>clique num número para ver os achados</small></h2><div class="rolagem" id="rx-matriz"></div></div>
@@ -1251,7 +1253,8 @@ async function telaRx() {
       </div>
       <div class="acoes"><button class="btn btn-principal" onclick="imprimirRx()"><i class="ti ti-printer"></i> Imprimir</button>
         <button class="btn btn-claro" onclick="salvarPdfRx()"><i class="ti ti-file-type-pdf"></i> Salvar em PDF</button>
-        <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button></div>
+        <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button>
+        <button class="btn btn-claro" onclick="baixarCsvAchados(true, listaRx())"><i class="ti ti-file-spreadsheet"></i> Baixar (Excel/CSV)</button></div>
       <div style="margin-top:12px;"><label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:#66757d;">Mensagem de abertura (opcional) — aparece no topo do relatório</label>
         <textarea id="op-msg-texto" rows="7" style="width:100%;box-sizing:border-box;padding:8px;font-size:.88rem;border:1px solid #c9c2b6;border-radius:6px;" placeholder="Texto de quem encaminha o relatório. Deixe em branco para não mostrar."></textarea>
         <div class="filtros" style="margin-top:6px;"><div><label>Título do bloco</label><input id="op-msg-titulo" value="Solicitação de análise jurídica"></div><div><label>Assinatura (nome e cargo)</label><input id="op-msg-autor" placeholder="Nome, cargo"></div></div>
