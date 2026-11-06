@@ -169,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.31';
-const VERSAO_RAIOX_DATA = '06/11/2026 17:30';
+const VERSAO_RAIOX = 'v0.32';
+const VERSAO_RAIOX_DATA = '06/11/2026 18:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -1130,15 +1130,31 @@ async function telaEquipe() {
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
   const papelDe = {}; r.perfis.forEach(p => { if (p.ativo !== 'nao') papelDe[p.email.toLowerCase()] = p.papel; });
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-users"></i> Equipe do Raio-X</h2>
-    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador:</strong> faz tudo, inclusive rodar a leitura e gerar relatórios. <strong>Coordenação:</strong> vê todos os achados, cria as distribuições e lê os pareceres. <strong>Analista:</strong> vê só as distribuições que receber e responde com parecer. Quem não tem perfil não entra. A pessoa precisa já ter login no Analista ou na Gestão.</p>
+    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador:</strong> faz tudo, inclusive rodar a leitura e gerar relatórios. <strong>Coordenação:</strong> vê todos os achados, cria as distribuições e lê os pareceres. <strong>Analista:</strong> vê só as distribuições que receber e responde com parecer. Quem não tem perfil não entra.</p>
+    <details class="mais-filtros" id="eq-novo"><summary><b>+ Cadastrar uma pessoa nova</b></summary>
+      <div class="filtros" style="margin-top:10px"><div><label>Nome</label><input id="nu-nome" placeholder="Nome e sobrenome"></div><div><label>Usuário (login)</label><input id="nu-login" placeholder="ex.: maria.silva" autocapitalize="none"></div><div><label>Gerência / setor</label><input id="nu-ger" placeholder="opcional"></div><div><label>Senha inicial</label><input id="nu-senha" type="password" autocomplete="new-password" placeholder="mín. 8 caracteres"></div><div><label>Papel no Raio-X</label><select id="nu-papel"><option value="analista">Analista</option><option value="coordenacao">Coordenação</option><option value="admin">Administrador</option></select></div></div>
+      <div class="acoes"><button class="btn btn-principal" onclick="cadastrarPessoa()"><i class="ti ti-user-plus"></i> Cadastrar</button></div><div id="nu-msg" class="dica"></div></details>
     <label>Buscar pessoa</label><input id="eq-q" oninput="pintarEquipe()" placeholder="nome ou e-mail"></div><div id="eq-lista"></div>`;
   window._EQ = { usuarios: r.usuarios, papelDe }; pintarEquipe();
 }
 function pintarEquipe() {
   const q = normT(($('eq-q') || {}).value || '');
   const us = window._EQ.usuarios.filter(u => !q || normT(u.nome + ' ' + u.email).includes(q)).sort((a, b) => (window._EQ.papelDe[b.email] ? 1 : 0) - (window._EQ.papelDe[a.email] ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
-  $('eq-lista').innerHTML = us.slice(0, 80).map(u => `<div class="bloco" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><strong>${esc(u.nome)}</strong><div class="dica">${esc(u.email)}${u.gerencia ? ' · ' + esc(u.gerencia) : ''}</div></div>
+  $('eq-lista').innerHTML = us.slice(0, 80).map(u => `<div class="bloco" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><strong>${esc(u.nome)}</strong><div class="dica">Usuário: <b>${esc(u.email)}</b>${u.gerencia ? ' · ' + esc(u.gerencia) : ''}${window._EQ.papelDe[u.email] ? '' : ' · sem acesso ao Raio-X'}</div></div>
     <select onchange="salvarPapel('${esc(u.email)}',this.value)"><option value="">Sem papel</option>${['admin', 'coordenacao', 'analista'].map(p => `<option value="${p}" ${window._EQ.papelDe[u.email] === p ? 'selected' : ''}>${esc(NOME_PAPEL[p])}</option>`).join('')}</select></div>`).join('') + (us.length > 80 ? '<div class="dica">Mostrando 80. Use a busca.</div>' : '');
+}
+async function cadastrarPessoa() {
+  const v = id => ($(id) || {}).value.trim(), nome = v('nu-nome'), login = v('nu-login').toLowerCase(), senha = $('nu-senha').value, papel = v('nu-papel');
+  const msg = t => { $('nu-msg').innerHTML = t; };
+  if (!nome || !login) { msg('<span style="color:var(--bordo)">Informe o nome e o usuário.</span>'); return; }
+  if (senha.length < 8) { msg('<span style="color:var(--bordo)">A senha inicial precisa de pelo menos 8 caracteres. Combine com a pessoa para trocá-la no primeiro acesso.</span>'); return; }
+  msg('<span class="spinner"></span>Cadastrando...');
+  const r = await api('adm/usuarios-salvar', { nome_usuario: nome, login_usuario: login, gerencia_usuario: v('nu-ger'), senha_hash_usuario: await sha256(senha), perfil_usuario: papel === 'admin' ? 'admin' : 'usuario', apps_usuario: ['raiox'].concat(papel === 'admin' ? ['gestao'] : []), ativo_usuario: true });
+  if (r.ok === false) { msg(`<span style="color:var(--bordo)">${esc(r.erro || 'Não foi possível cadastrar.')}</span>`); return; }
+  const r2 = await api('raiox/perfis-salvar', { email: login, papel });
+  if (r2.ok === false) { msg(`<span style="color:var(--bordo)">Pessoa criada, mas o papel não foi salvo: ${esc(r2.erro)}</span>`); return; }
+  await telaEquipe();
+  $('nu-msg').innerHTML = `<span class="ok-msg">${esc(nome)} cadastrada(o) com o usuário ${esc(login)}.</span>`;
 }
 async function salvarPapel(email, papel) {
   const r = await api('raiox/perfis-salvar', { email, papel });
