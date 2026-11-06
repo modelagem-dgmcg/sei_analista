@@ -112,6 +112,10 @@
   .tabela td.n, .tabela th.n { text-align:right; font-variant-numeric:tabular-nums; }
   .sev { display:inline-block; padding:2px 9px; border-radius:10px; font-size:.72rem; font-weight:700; }
   .sev.alta { background:var(--bordo-claro); color:var(--bordo); } .sev.media { background:#fff4d6; color:#664d03; } .sev.baixa { background:#e6ecef; color:#455a64; }
+  .atalhos { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 12px; } .atalhos button { border:1px solid var(--borda); background:#faf8f4; border-radius:999px; padding:5px 12px; font-size:.8rem; cursor:pointer; } .atalhos button.on { background:var(--bordo); color:#fff; border-color:var(--bordo); } .atalhos b { margin-left:4px; }
+  .mais-filtros summary { cursor:pointer; font-size:.82rem; color:var(--mudo); margin:2px 0; }
+  .chips-ativos { display:flex; gap:6px; flex-wrap:wrap; margin-top:10px; } .chips-ativos span { background:#eef3f5; border:1px solid var(--borda); border-radius:999px; padding:3px 6px 3px 10px; font-size:.78rem; } .chips-ativos span button { border:0; background:none; cursor:pointer; margin-left:4px; color:var(--mudo); } .chips-ativos a { font-size:.78rem; align-self:center; }
+  .card-ach .det { margin-top:8px; } .card-ach .det summary { cursor:pointer; font-size:.8rem; color:var(--azul, #1f5f7a); font-weight:600; }
   .card-ach { background:#fff; border:1px solid var(--borda); border-left:4px solid var(--ambar); border-radius:8px; padding:12px 16px; margin-bottom:10px; }
   .card-ach.alta { border-left-color:var(--bordo); } .card-ach.baixa { border-left-color:#9fb2bb; }
   .card-ach h3 { font-size:.92rem; margin:6px 0 4px; }
@@ -165,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.26';
-const VERSAO_RAIOX_DATA = '06/11/2026 11:00';
+const VERSAO_RAIOX = 'v0.27';
+const VERSAO_RAIOX_DATA = '06/11/2026 13:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -687,20 +691,32 @@ async function telaAchados() {
   const opt = (campo) => [...new Set(achados.map(a => a[campo]).filter(Boolean))].sort().map(v => `<option>${esc(v)}</option>`).join('');
   $('conteudo').innerHTML = `
     <div class="bloco"><h2><i class="ti ti-list-search"></i> Achados <small id="cont-ach"></small></h2>
+      <div class="atalhos" id="atalhos-ach"></div>
       <div class="filtros">
-        <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
-        <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
+        <div style="flex:2;min-width:220px"><label>Busca</label><input id="f-q" placeholder="palavra no título, descrição, contrato..." oninput="pintarAchados()"></div>
         <div><label>Origem</label><select id="f-orig" onchange="pintarAchados()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option><option value="parecer">Pareceres da CTAI (lidos pela IA)</option></select></div>
         <div><label>Setor</label><select id="f-setor" onchange="pintarAchados()"><option value="">Todos</option>${nomesSetores().map(n => `<option>${esc(n)}</option>`).join('')}<option value="__sem">Sem setor</option></select></div>
-        <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
-        <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
+        <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
         <div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>
-        <div><label>Referência TCE-PE</label><select id="f-tce" onchange="pintarAchados()"><option value="">Todas</option><option value="25100813-7">Proc. 25100813-7 (UPAs)</option><option value="24100082-8">Proc. 24100082-8 (HPS)</option><option value="aud">Contrato auditado pelo TCE</option><option value="risco">Mesmo tipo de risco, outro contrato</option><option value="pers">Possível persistência após o TCE-PE</option><option value="sem">Sem referência</option></select></div>
-        <div><label>Busca</label><input id="f-q" placeholder="palavra" oninput="pintarAchados()"></div>
-        <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
-      </div></div>
-    ${PAPEL === 'analista' ? '' : `<div class="bloco" id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar distribuição com os achados filtrados</button><div id="form-fatia"></div></div>`}
-    <div class="bloco"><button class="btn btn-sm" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button> <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">Baixar CSV de todos os achados</button><div class="dica" style="margin-top:6px">Abre direto no Excel. Inclui o número do SEI, o setor, a gravidade e o contrato de cada achado.</div></div>
+      </div>
+      <details class="mais-filtros"><summary>Mais filtros (unidade, órgão, tipo, TCE-PE, contratos anteriores)</summary>
+        <div class="filtros" style="margin-top:10px">
+          <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
+          <div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>
+          <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
+          <div><label>Referência TCE-PE</label><select id="f-tce" onchange="pintarAchados()"><option value="">Todas</option><option value="25100813-7">Proc. 25100813-7 (UPAs)</option><option value="24100082-8">Proc. 24100082-8 (HPS)</option><option value="aud">Contrato auditado pelo TCE</option><option value="risco">Mesmo tipo de risco, outro contrato</option><option value="pers">Possível persistência após o TCE-PE</option><option value="sem">Sem referência</option></select></div>
+          <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
+        </div>
+      </details>
+      <div class="chips-ativos" id="chips-ach"></div>
+      <div class="acoes" style="margin-top:10px">
+        ${PAPEL === 'analista' ? '' : `<span id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar distribuição com os achados filtrados</button></span>`}
+        <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button>
+        <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">CSV de todos</button>
+        <button class="btn btn-sm btn-claro" onclick="abrirAba('rx')"><i class="ti ti-report"></i> Ver como relatório</button>
+      </div>
+      <div id="form-fatia"></div>
+    </div>
     <div id="lista-ach"></div>`;
   aplicarFiltro('f-');
   if (filtroInicial) {      // veio de um clique na matriz ou nas barras da aba da diretoria
@@ -753,10 +769,29 @@ function filtrados() {
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
+const ROT_F = { 'f-q': 'busca', 'f-orig': 'origem', 'f-setor': 'setor', 'f-grav': 'gravidade', 'f-conf': 'conferência', 'f-unidade': 'unidade', 'f-orgao': 'órgão', 'f-tipo': 'tipo', 'f-tce': 'TCE-PE' };
+function limparCampo(id) { if ($(id)) $(id).value = ''; pintarAchados(); }
+function limparTudoAchados() { Object.keys(ROT_F).forEach(id => { if ($(id)) $(id).value = ''; }); if ($('f-ocultos')) $('f-ocultos').checked = false; pintarAchados(); }
+function atalhoAch(k) {
+  const set = (id, val) => { if ($(id)) $(id).value = val; };
+  limparTudoAchados();
+  if (k === 'alta') set('f-grav', 'alta'); else if (k === 'pend') set('f-conf', 'pend'); else if (k === 'ctai') set('f-orig', 'parecer');
+  pintarAchados();
+}
+function atalhosEChips() {
+  const v = id => ($(id) || {}).value || '';
+  const base = achados.filter(a => !a.oculto_passado && a.conferido !== 'nao');
+  const ativo = k => k === 'alta' ? v('f-grav') === 'alta' : k === 'pend' ? v('f-conf') === 'pend' : k === 'ctai' ? v('f-orig') === 'parecer' : !Object.keys(ROT_F).some(id => v(id));
+  const at = [['todos', 'Todos', base.length], ['alta', 'Gravidade alta', base.filter(a => a.gravidade === 'alta').length], ['pend', 'A conferir', base.filter(a => !a.conferido).length], ['ctai', 'Pareceres da CTAI', base.filter(ehParecerCtai).length]];
+  if ($('atalhos-ach')) $('atalhos-ach').innerHTML = at.map(x => `<button class="${ativo(x[0]) ? 'on' : ''}" onclick="atalhoAch('${x[0]}')">${x[1]}<b>${fmt(x[2])}</b></button>`).join('');
+  const chips = Object.keys(ROT_F).filter(id => v(id)).map(id => { const e = $(id), txt = e.tagName === 'SELECT' ? (e.options[e.selectedIndex] || {}).text : v(id); return `<span>${ROT_F[id]}: ${esc(txt)}<button title="Tirar este filtro" onclick="limparCampo('${id}')">×</button></span>`; });
+  if ($('chips-ach')) $('chips-ach').innerHTML = chips.length ? chips.join('') + '<a href="#" onclick="limparTudoAchados();return false">limpar tudo</a>' : '';
+}
 function pintarAchados() {
   guardarFiltro('f-');
+  atalhosEChips();
   const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
-  $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, PAPEL === 'admin')).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
+  $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, PAPEL === 'admin', true)).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
 }
 // ---- texto claro para quem lê: todo número do SEI vem com o que ele é ----
 const GRAV_FRASE = { alta: 'Gravidade alta: pode mexer em valor, prazo ou validade do contrato.', media: 'Gravidade média: questão de forma ou de clareza.', baixa: 'Gravidade baixa: ajuste de redação.' };
@@ -824,7 +859,7 @@ function corpoAchado(a, c, comSetor) {
     + caixaTce(a)
     + (comSetor ? sec('Quem resolve', a.setor ? `<p>${esc(a.setor)}</p>` : '') : '');
 }
-function cartao(a, comBotoes) {
+function cartao(a, comBotoes, compacto) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">o trecho citado não foi achado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
@@ -832,8 +867,11 @@ function cartao(a, comBotoes) {
     <div class="dica" style="margin:4px 0 0">${esc(a.unidade)}${a.contrato ? ' · Contrato de Gestão nº ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</div>
     <h3>${esc(tituloClaro(a))}</h3>
     <div class="dica" style="margin:-4px 0 6px">${esc(GRAV_FRASE[a.gravidade] || '')}</div>
+    ${compacto ? `<p>${esc((a.descricao || '').length > 260 ? a.descricao.slice(0, 260) + '…' : (a.descricao || ''))}</p>` : ''}
+    ${compacto ? '<details class="det"><summary>Ver detalhes completos</summary>' : ''}
     ${corpoAchado(a, 'rot', false)}
     ${comBotoes ? `<div class="rot">Quem resolve</div><select style="max-width:220px" onchange="mudarSetor('${esc(a.id)}', this.value)"><option value="">Sem setor</option>${nomesSetores().map(n => `<option ${a.setor === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : (a.setor ? `<div class="rot">Quem resolve</div><p>${esc(a.setor)}</p>` : '')}
+    ${compacto ? '</details>' : ''}
     ${comBotoes ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','sim')"><i class="ti ti-check"></i> Procede</button>
       <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','nao')"><i class="ti ti-x"></i> Não procede</button>
       <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','')">Limpar</button></div>` : ''}
@@ -1199,6 +1237,8 @@ function listaRx() {
 }
 function pintarRx() {
   guardarFiltro('rx-');
+  const ROT_RX = { 'rx-setor': 'setor', 'rx-orgao': 'órgão', 'rx-grav': 'gravidade', 'rx-orig': 'origem', 'rx-conf': 'conferência' };
+  if ($('chips-rx')) $('chips-rx').innerHTML = Object.keys(ROT_RX).filter(id => ($(id) || {}).value).map(id => { const e = $(id); return `<span>${ROT_RX[id]}: ${esc((e.options[e.selectedIndex] || {}).text)}<button title="Tirar este filtro" onclick="$('${id}').value='';pintarRx()">×</button></span>`; }).join('');
   const l = listaRx(), alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
   const contratos = new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size;
   $('rx-tiles').innerHTML = `
@@ -1228,6 +1268,7 @@ async function telaRx() {
         <div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>
       </div>
       <div class="dica">Este filtro é o mesmo da aba Achados: o que você escolhe lá aparece aqui e vice-versa. Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado (a aba Achados mostra esses também, se você marcar). <a href="#" onclick="limparFiltroRx();return false">Limpar filtros</a></div>
+      <div class="chips-ativos" id="chips-rx"></div>
       <div class="acoes"><button class="btn btn-sm btn-claro" onclick="soCtaiRx()"><i class="ti ti-file-search"></i> Relatório só dos pareceres da CTAI (lido pela IA)</button></div>
     </div>
     <div class="tiles" id="rx-tiles"></div>
@@ -1255,6 +1296,7 @@ async function telaRx() {
         <button class="btn btn-claro" onclick="salvarPdfRx()"><i class="ti ti-file-type-pdf"></i> Salvar em PDF</button>
         <button class="btn btn-claro" onclick="baixarRx()"><i class="ti ti-download"></i> Baixar (HTML)</button>
         <button class="btn btn-claro" onclick="baixarCsvAchados(true, listaRx())"><i class="ti ti-file-spreadsheet"></i> Baixar (Excel/CSV)</button></div>
+      <details class="mais-filtros" style="margin-top:12px"><summary>Mensagem de abertura e link para compartilhar (opcional)</summary>
       <div style="margin-top:12px;"><label style="display:block;font-size:.72rem;font-weight:700;text-transform:uppercase;color:#66757d;">Mensagem de abertura (opcional) — aparece no topo do relatório</label>
         <textarea id="op-msg-texto" rows="7" style="width:100%;box-sizing:border-box;padding:8px;font-size:.88rem;border:1px solid #c9c2b6;border-radius:6px;" placeholder="Texto de quem encaminha o relatório. Deixe em branco para não mostrar."></textarea>
         <div class="filtros" style="margin-top:6px;"><div><label>Título do bloco</label><input id="op-msg-titulo" value="Solicitação de análise jurídica"></div><div><label>Assinatura (nome e cargo)</label><input id="op-msg-autor" placeholder="Nome, cargo"></div></div>
@@ -1263,7 +1305,7 @@ async function telaRx() {
       <div class="acoes"><button class="btn btn-principal" id="bt-link" onclick="criarLinkRx()"><i class="ti ti-link"></i> Criar link para compartilhar</button></div>
       <div id="rx-link" style="margin-top:8px;"></div>
       <div class="acoes"><button class="btn btn-claro btn-sm" onclick="listarLinksRx()"><i class="ti ti-list"></i> Meus links criados</button></div>
-      <div id="rx-lista" style="margin-top:8px;"></div>
+      <div id="rx-lista" style="margin-top:8px;"></div></details>
       <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
     </div>`;
   aplicarFiltro('rx-');
