@@ -165,8 +165,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.24';
-const VERSAO_RAIOX_DATA = '05/11/2026 14:00';
+const VERSAO_RAIOX = 'v0.25';
+const VERSAO_RAIOX_DATA = '06/11/2026 10:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -702,6 +702,7 @@ async function telaAchados() {
     ${PAPEL === 'analista' ? '' : `<div class="bloco" id="box-fatia"><button class="btn btn-sm" onclick="abrirFormFatia()"><i class="ti ti-cut"></i> Criar distribuição com os achados filtrados</button><div id="form-fatia"></div></div>`}
     <div class="bloco"><button class="btn btn-sm" onclick="baixarCsvAchados(true)"><i class="ti ti-file-spreadsheet"></i> Baixar CSV dos filtrados</button> <button class="btn btn-sm btn-claro" onclick="baixarCsvAchados(false)">Baixar CSV de todos os achados</button><div class="dica" style="margin-top:6px">Abre direto no Excel. Inclui o número do SEI, o setor, a gravidade e o contrato de cada achado.</div></div>
     <div id="lista-ach"></div>`;
+  aplicarFiltro('f-');
   if (filtroInicial) {      // veio de um clique na matriz ou nas barras da aba da diretoria
     const f = filtroInicial; filtroInicial = null;
     if (f.setor && $('f-setor')) $('f-setor').value = f.setor === 'Sem setor' ? '__sem' : f.setor;
@@ -725,17 +726,34 @@ function baixarCsvAchados(soFiltrados) {
   const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = nome; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
 const ordemGrav = { alta: 0, media: 1, baixa: 2 };
+// Filtro único: vale para a aba Achados e para o Relatório (o que se escolhe numa tela aparece na outra).
+const FILT = { setor: '', orgao: '', grav: '', conf: '', orig: '' };
+const origemOk = (a, o) => !o || (o === 'parecer' ? ehParecerCtai(a) : a.origem === o && !ehParecerCtai(a));
+function guardarFiltro(pre) {
+  const v = id => ($(id) || {}).value || '';
+  if (!$(pre + 'setor')) return;
+  FILT.setor = v(pre + 'setor') === '__sem' ? 'Sem setor' : v(pre + 'setor');
+  FILT.orgao = v(pre + 'orgao'); FILT.grav = v(pre + 'grav'); FILT.orig = v(pre + 'orig');
+  const c = v(pre + 'conf'); FILT.conf = c === 'nao' ? '' : c;
+}
+function aplicarFiltro(pre) {
+  const set = (id, val) => { const e = $(pre + id); if (e && val) e.value = val; };
+  set('setor', pre === 'f-' && FILT.setor === 'Sem setor' ? '__sem' : FILT.setor);
+  set('orgao', FILT.orgao); set('grav', FILT.grav); set('conf', FILT.conf); set('orig', FILT.orig);
+}
+function limparFiltroRx() { Object.keys(FILT).forEach(k => FILT[k] = ''); ['setor','orgao','grav','conf','orig'].forEach(k => { if ($('rx-' + k)) $('rx-' + k).value = ''; }); pintarRx(); }
 function filtrados() {
   const v = id => ($(id) || {}).value || '';
   const q = normT(v('f-q'));
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
-  return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && (!v('f-orig') || (v('f-orig') === 'parecer' ? ehParecerCtai(a) : a.origem === v('f-orig') && !ehParecerCtai(a))) &&
+  return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && origemOk(a, v('f-orig')) &&
     (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!v('f-tce') || (v('f-tce') === 'sem' ? !a.tce_ref : v('f-tce') === 'aud' ? a.tce_relacao === 'mesmo tema em contrato auditado' : v('f-tce') === 'pers' ? !!a.tce_persist : v('f-tce') === 'risco' ? a.tce_relacao === 'mesmo tipo de risco em outro contrato' : (a.tce_processos || '').includes(v('f-tce')))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
 function pintarAchados() {
+  guardarFiltro('f-');
   const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
   $('lista-ach').innerHTML = lista.slice(0, 300).map(a => cartao(a, PAPEL === 'admin')).join('') + (lista.length > 300 ? '<div class="dica">Mostrando os 300 primeiros. Use os filtros.</div>' : '') || '<div class="vazio">Nenhum achado com esse filtro.</div>';
 }
@@ -1176,9 +1194,10 @@ function htmlDetalhe(lista, agrupar) {
 function listaRx() {
   const v = id => ($(id) || {}).value || '';
   return achados.filter(a => visivel(a) && (!v('rx-setor') || (a.setor || 'Sem setor') === v('rx-setor')) && (!v('rx-orgao') || lerOrgaos(a).includes(v('rx-orgao'))) &&
-    (!v('rx-grav') || a.gravidade === v('rx-grav')) && (!v('rx-conf') || (v('rx-conf') === 'sim' ? a.conferido === 'sim' : !a.conferido)));
+    (!v('rx-grav') || a.gravidade === v('rx-grav')) && origemOk(a, v('rx-orig')) && (!v('rx-conf') || (v('rx-conf') === 'sim' ? a.conferido === 'sim' : !a.conferido)));
 }
 function pintarRx() {
+  guardarFiltro('rx-');
   const l = listaRx(), alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
   const contratos = new Set(l.map(a => (a.unidade || '') + '|' + (a.contrato || a.processo || ''))).size;
   $('rx-tiles').innerHTML = `
@@ -1204,9 +1223,10 @@ async function telaRx() {
         <div><label>Setor</label><select id="rx-setor" onchange="pintarRx()"><option value="">Todos</option>${setoresPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
         <div><label>Órgão</label><select id="rx-orgao" onchange="pintarRx()"><option value="">Todos</option>${orgsPres.map(s => `<option>${esc(s)}</option>`).join('')}</select></div>
         <div><label>Gravidade</label><select id="rx-grav" onchange="pintarRx()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
+        <div><label>Origem</label><select id="rx-orig" onchange="pintarRx()"><option value="">Todas</option><option value="codigo">Conferência automática</option><option value="gaocg">GAOCG</option><option value="ia">Lido pela IA</option><option value="parecer">Pareceres da CTAI (lidos pela IA)</option></select></div>
         <div><label>Conferência</label><select id="rx-conf" onchange="pintarRx()"><option value="">Todos</option><option value="sim">Só os conferidos (procedem)</option><option value="pend">Só os a conferir</option></select></div>
       </div>
-      <div class="dica">Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado.</div>
+      <div class="dica">Este filtro é o mesmo da aba Achados: o que você escolhe lá aparece aqui e vice-versa. Ficam de fora ${fmt(naoProcede)} achados marcados "não procede" e ${fmt(escondidos)} de contrato anterior ou estendido sem ligação ao passado (a aba Achados mostra esses também, se você marcar). <a href="#" onclick="limparFiltroRx();return false">Limpar filtros</a></div>
     </div>
     <div class="tiles" id="rx-tiles"></div>
     <div class="bloco"><h2><i class="ti ti-grid-dots"></i> Achados por setor e órgão de controle <small>clique num número para ver os achados</small></h2><div class="rolagem" id="rx-matriz"></div></div>
@@ -1243,6 +1263,7 @@ async function telaRx() {
       <div id="rx-lista" style="margin-top:8px;"></div>
       <div class="aviso">Uso interno: os documentos de origem podem conter nomes de pessoas. Os achados são sobre documentos e processos, não sobre quem assinou.</div>
     </div>`;
+  aplicarFiltro('rx-');
   pintarRx();
 }
 
@@ -1266,7 +1287,7 @@ function rascunhoMsgRx() {
 function montarRelatorio() {
   const l = listaRx(), op = id => !!($(id) && $(id).checked), cols = [...document.querySelectorAll('.op-col:checked')].map(x => x.value);
   const hoje = new Date().toLocaleDateString('pt-BR'), v = id => ($(id) || {}).value || '';
-  const filtros = [v('rx-setor') && 'setor ' + v('rx-setor'), v('rx-orgao') && 'órgão ' + v('rx-orgao'), v('rx-grav') && 'gravidade ' + v('rx-grav'), v('rx-conf') === 'sim' && 'só conferidos', v('rx-conf') === 'pend' && 'só a conferir'].filter(Boolean);
+  const filtros = [v('rx-setor') && 'setor ' + v('rx-setor'), v('rx-orgao') && 'órgão ' + v('rx-orgao'), v('rx-grav') && 'gravidade ' + v('rx-grav'), v('rx-orig') && 'origem ' + ({codigo:'conferência automática',gaocg:'GAOCG',ia:'lido pela IA',parecer:'pareceres da CTAI'}[v('rx-orig')]), v('rx-conf') === 'sim' && 'só conferidos', v('rx-conf') === 'pend' && 'só a conferir'].filter(Boolean);
   const alta = l.filter(a => a.gravidade === 'alta').length, conf = l.filter(a => a.conferido === 'sim').length;
   const css = `body{font-family:Segoe UI,system-ui,sans-serif;color:#1f2a30;margin:0;background:#f4f2ee}main{max-width:1100px;margin:0 auto;padding:24px 20px}
     h1{font-size:1.5rem;margin:0 0 4px}h2{font-size:1.1rem;margin:26px 0 10px;border-bottom:2px solid #b45309;padding-bottom:4px;page-break-after:avoid}.sub{color:#66757d;font-size:.88rem}
