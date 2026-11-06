@@ -169,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.27';
-const VERSAO_RAIOX_DATA = '06/11/2026 13:00';
+const VERSAO_RAIOX = 'v0.28';
+const VERSAO_RAIOX_DATA = '06/11/2026 14:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -859,6 +859,15 @@ function corpoAchado(a, c, comSetor) {
     + caixaTce(a)
     + (comSetor ? sec('Quem resolve', a.setor ? `<p>${esc(a.setor)}</p>` : '') : '');
 }
+let _mesmo = null;
+function mesmoAchado(a) {
+  const chave = x => (x.regra ? 'r:' + x.regra : 't:' + normT(String(x.titulo || '').replace(/\(.*?\)/g, '')));
+  if (!_mesmo || _mesmo.n !== achados.length) { _mesmo = { n: achados.length, m: {} }; achados.forEach(x => { if (x.oculto_passado || x.conferido === 'nao') return; const k = chave(x); (_mesmo.m[k] = _mesmo.m[k] || {})[(x.contrato ? 'Contrato ' + x.contrato : x.processo ? 'processo ' + x.processo : '') + ' — ' + (x.unidade || '')] = 1; }); }
+  const grupo = Object.keys(_mesmo.m[chave(a)] || {}), eu = (a.contrato ? 'Contrato ' + a.contrato : a.processo ? 'processo ' + a.processo : '') + ' — ' + (a.unidade || '');
+  const outros = grupo.filter(g => g !== eu);
+  if (!outros.length) return '';
+  return `<div class="rot">O mesmo achado também aparece em ${outros.length} ${outros.length === 1 ? 'outro contrato/processo' : 'outros contratos/processos'}</div><p>${esc(outros.slice(0, 10).join('; '))}${outros.length > 10 ? ' e mais ' + (outros.length - 10) : ''}</p>`;
+}
 function cartao(a, comBotoes, compacto) {
   const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '<span class="etq amarelo">a conferir</span>';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">o trecho citado não foi achado no texto</span>' : '';
@@ -870,6 +879,7 @@ function cartao(a, comBotoes, compacto) {
     ${compacto ? `<p>${esc((a.descricao || '').length > 260 ? a.descricao.slice(0, 260) + '…' : (a.descricao || ''))}</p>` : ''}
     ${compacto ? '<details class="det"><summary>Ver detalhes completos</summary>' : ''}
     ${corpoAchado(a, 'rot', false)}
+    ${compacto ? mesmoAchado(a) : ''}
     ${comBotoes ? `<div class="rot">Quem resolve</div><select style="max-width:220px" onchange="mudarSetor('${esc(a.id)}', this.value)"><option value="">Sem setor</option>${nomesSetores().map(n => `<option ${a.setor === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : (a.setor ? `<div class="rot">Quem resolve</div><p>${esc(a.setor)}</p>` : '')}
     ${compacto ? '</details>' : ''}
     ${comBotoes ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','sim')"><i class="ti ti-check"></i> Procede</button>
@@ -1247,8 +1257,6 @@ function pintarRx() {
     <div class="tile"><h3>Já conferidos (procedem)</h3><div class="grande">${fmt(conf)}<small>de ${fmt(l.length)}</small></div></div>
     <div class="tile"><h3>Contratos com achados</h3><div class="grande">${fmt(contratos)}</div></div>`;
   $('rx-matriz').innerHTML = htmlMatriz(l, true);
-  $('rx-barras').innerHTML = htmlBarras(l, true);
-  $('rx-contratos').innerHTML = htmlTabContratos(l);
 }
 
 async function telaRx() {
@@ -1273,8 +1281,6 @@ async function telaRx() {
     </div>
     <div class="tiles" id="rx-tiles"></div>
     <div class="bloco"><h2><i class="ti ti-grid-dots"></i> Achados por setor e órgão de controle <small>clique num número para ver os achados</small></h2><div class="rolagem" id="rx-matriz"></div></div>
-    <div class="bloco"><h2><i class="ti ti-chart-bar"></i> Achados por unidade</h2><div id="rx-barras"></div></div>
-    <div class="bloco"><h2><i class="ti ti-table"></i> Contratos com achados</h2><div class="rolagem" id="rx-contratos"></div></div>
     <div class="bloco"><h2><i class="ti ti-printer"></i> Imprimir ou baixar o relatório</h2>
       <div class="dica">Escolha o que entra. O relatório usa o filtro acima. Imprimir abre a janela de impressão do navegador (dá para salvar como PDF).</div>
       <div class="rot" style="font-size:.7rem;font-weight:700;text-transform:uppercase;color:var(--mudo);margin-top:10px;">Seções</div>
