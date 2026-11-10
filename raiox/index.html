@@ -176,7 +176,7 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.35';
+const VERSAO_RAIOX = 'v0.36';
 const VERSAO_RAIOX_DATA = '10/11/2026 14:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
@@ -1062,20 +1062,30 @@ function leiChips(a) {
   const ids = baseLegal(a); if (!ids.length) return '';
   return `<div class="dica" style="margin:2px 0 6px"><b>Base legal provável (Lei estadual 15.210/2013):</b> ${ids.map(id => { const l = LEI.find(x => x.id === id); return `<span class="etq azul" title="${esc(l.texto)}">${esc(l.art)} · ${esc(l.nome)}</span>`; }).join(' ')}</div>`;
 }
+let LEI_SEL = '';
 async function telaLei() {
   $('conteudo').innerHTML = carregando('Carregando...');
   const r = await api('raiox/achados', {});
   if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
-  achados = prepararAchados(r.achados || []);
-  const vis = achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido');
-  const linhas = LEI.map(l => { const x = vis.filter(a => baseLegal(a).includes(l.id)); return { l, n: x.length, alta: x.filter(a => a.gravidade === 'alta').length, unid: new Set(x.map(a => a.unidade)).size }; });
-  const sem = vis.filter(a => !baseLegal(a).length);
+  achados = prepararAchados(r.achados || []); LEI_SEL = ''; pintarLei();
+}
+function leiDoArtigo(id) { return achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido').filter(a => id === 'sem' ? !baseLegal(a).length : baseLegal(a).includes(id)); }
+function pintarLei() {
+  const cnt = l => ({ n: l.length, ctai: l.filter(ehParecerCtai).length, alta: l.filter(a => a.gravidade === 'alta').length, unid: new Set(l.map(a => a.unidade)).size });
+  const linha = (id, art, nome, texto) => { const c = cnt(leiDoArtigo(id)); return `<tr ${LEI_SEL === id ? 'style="background:var(--acento-claro)"' : ''}><td><b>${esc(art)}</b><br><span class="dica">${esc(nome)}</span></td><td style="max-width:380px">${esc(texto)}</td><td>${fmt(c.n - c.ctai)}</td><td>${fmt(c.ctai)}</td><td>${fmt(c.alta)}</td><td>${fmt(c.unid)}</td><td style="white-space:nowrap">${c.n ? `<button class="btn btn-sm ${LEI_SEL === id ? 'btn-principal' : 'btn-claro'}" onclick="LEI_SEL=LEI_SEL==='${id}'?'':'${id}';pintarLei()">${LEI_SEL === id ? 'Fechar lista' : 'Listar'}</button> <button class="btn btn-sm btn-claro" title="Abrir na aba Achados com filtros" onclick="irAchadosLei('${id}')"><i class="ti ti-external-link"></i></button>` : ''}</td></tr>`; };
+  let lista = '';
+  if (LEI_SEL) {
+    const l = leiDoArtigo(LEI_SEL).sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade])), ra = l.filter(a => !ehParecerCtai(a)), rc = l.filter(ehParecerCtai);
+    const nome = LEI_SEL === 'sem' ? 'Sem artigo indicado' : (() => { const x = LEI.find(k => k.id === LEI_SEL); return x.art + ' · ' + x.nome; })();
+    const grupo = (tit, g) => `<div class="bloco"><h3 style="margin:0 0 6px">${tit} <small>${fmt(g.length)}</small></h3>${g.slice(0, 100).map(a => cartao(a, false, true)).join('') || '<div class="vazio">Nenhum.</div>'}${g.length > 100 ? '<div class="dica">Mostrando 100. Use o botão de abrir na aba Achados para filtrar.</div>' : ''}</div>`;
+    lista = `<div class="bloco"><h2 style="margin:0">${esc(nome)}</h2></div>${grupo('Achados do Raio-X', ra)}${grupo('Achados dos pareceres da CTAI (lidos pela IA)', rc)}`;
+  }
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-scale"></i> Conformidade com a Lei 15.210/2013 <small>Organizações Sociais de Saúde de Pernambuco</small></h2>
-    <p class="dica">Cada achado é ligado ao artigo da lei que ele provavelmente toca, por palavras do próprio achado. É uma indicação para organizar o trabalho do jurídico, não uma conclusão. Passe o mouse sobre o artigo no cartão do achado para ler o resumo. Resumos feitos a partir do texto da lei com alterações até a Lei 16.771/2019; confira o texto oficial e eventuais mudanças posteriores. Achados já marcados como "resolvido" não entram na conta.</p>
-    <div class="rolagem"><table class="tabela"><thead><tr><th>Artigo</th><th>O que a lei exige</th><th>Achados</th><th>Gravidade alta</th><th>Unidades</th><th></th></tr></thead><tbody>
-    ${linhas.map(x => `<tr><td><b>${esc(x.l.art)}</b><br><span class="dica">${esc(x.l.nome)}</span></td><td style="max-width:420px">${esc(x.l.texto)}</td><td>${fmt(x.n)}</td><td>${fmt(x.alta)}</td><td>${fmt(x.unid)}</td><td>${x.n ? `<button class="btn btn-sm btn-claro" onclick="irAchadosLei('${x.l.id}')">Ver achados</button>` : ''}</td></tr>`).join('')}
-    <tr><td><b>Sem artigo indicado</b></td><td>Achados em que nenhuma palavra ligou a um artigo. Não quer dizer que não haja base legal: o jurídico avalia.</td><td>${fmt(sem.length)}</td><td>${fmt(sem.filter(a => a.gravidade === 'alta').length)}</td><td>${fmt(new Set(sem.map(a => a.unidade)).size)}</td><td>${sem.length ? `<button class="btn btn-sm btn-claro" onclick="irAchadosLei('sem')">Ver achados</button>` : ''}</td></tr>
-    </tbody></table></div></div>`;
+    <p class="dica">Cada achado, inclusive os tirados dos pareceres da CTAI, é ligado ao artigo da lei que ele provavelmente toca, por palavras do próprio achado. É uma indicação para organizar o trabalho do jurídico, não uma conclusão. Clique em "Listar" para ver os achados do artigo. Resumos feitos a partir do texto da lei com alterações até a Lei 16.771/2019; confira o texto oficial. Achados já marcados como "resolvido" não entram na conta.</p>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Artigo</th><th>O que a lei exige</th><th>Achados do Raio-X</th><th>Pareceres da CTAI</th><th>Gravidade alta</th><th>Unidades</th><th></th></tr></thead><tbody>
+    ${LEI.map(l => linha(l.id, l.art, l.nome, l.texto)).join('')}${linha('sem', 'Sem artigo indicado', '', 'Nenhuma palavra ligou o achado a um artigo. Não quer dizer que não haja base legal: o jurídico avalia.')}
+    </tbody></table></div></div>${lista}`;
+  if (LEI_SEL) { const el = document.querySelector('#conteudo > .bloco:nth-child(2)'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
 }
 function irAchadosLei(id) { filtroInicial = { lei: id }; abrirAba('achados'); }
 
