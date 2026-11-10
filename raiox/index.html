@@ -176,7 +176,7 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.37';
+const VERSAO_RAIOX = 'v0.38';
 const VERSAO_RAIOX_DATA = '10/11/2026 16:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
@@ -1135,15 +1135,22 @@ ${normas}
 
 ${blocos}
 
-Responda SOMENTE com um JSON válido, uma lista com um objeto por achado, na mesma ordem: [{"id":"...","artigos":["codigo"],"veredito":"descumpre|cumpre|falta_info|sem_base","motivo":"...","trecho":"...","confianca":"alta|media|baixa"}]`;
+Responda SOMENTE com um objeto JSON válido neste formato, com um item por achado, na mesma ordem: {"resultados":[{"id":"...","artigos":["codigo"],"veredito":"descumpre|cumpre|falta_info|sem_base","motivo":"...","trecho":"...","confianca":"alta|media|baixa"}]}`;
 }
 function promptVerifica(itens) {
   const m = t => docsMascarar_(String(t || '')).texto;
   return `Você é revisor jurídico independente. Para cada item abaixo, outra pessoa concluiu que o achado "parece descumprir" a norma indicada. Confira se o texto do achado, por si só, sustenta essa conclusão. Seja rigoroso: se o achado só indica possível falha, ausência de documento ou dado incompleto, NÃO confirme. Não use nenhuma norma além das citadas.
 ${itens.map(x => `ITEM id=${x.a.id}\nNorma(s): ${x.artigos.map(i => normaDe(i).art + ' — ' + normaDe(i).texto).join(' || ')}\nAchado: ${m(x.a.titulo)}. ${m(x.a.descricao)} ${m(x.a.impacto)}\nConclusão a conferir: ${m(x.motivo)}`).join('\n\n')}
-Responda SOMENTE com JSON: [{"id":"...","confirma":true|false,"motivo":"uma frase"}]`;
+Responda SOMENTE com um objeto JSON neste formato: {"resultados":[{"id":"...","confirma":true,"motivo":"uma frase"}]}`;
 }
-function lerJson(txt) { try { return JSON.parse(txt); } catch (e) { const m = /\[[\s\S]*\]/.exec(txt); if (!m) throw new Error('A IA respondeu fora do formato.'); return JSON.parse(m[0]); } }
+function lerJson(txt) {
+  let j; try { j = JSON.parse(txt); } catch (e) { const m = /[\[{][\s\S]*[\]}]/.exec(txt); if (!m) throw new Error('A IA respondeu fora do formato.'); j = JSON.parse(m[0]); }
+  if (Array.isArray(j)) return j;
+  const v = j && typeof j === 'object' ? Object.values(j).find(Array.isArray) : null;
+  if (v) return v;
+  if (j && j.id) return [j];
+  throw new Error('A IA respondeu fora do formato.');
+}
 async function diagnosticarLote(lote) {
   const bruto = await perguntarIA(promptDiag(lote), () => {});
   const arr = lerJson(bruto), ids = new Set(LEI_IDS()), saida = [];
