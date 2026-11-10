@@ -131,6 +131,12 @@
   .resumo .n1 { font-size:1.7rem; font-weight:600; line-height:1.15; color:var(--noite); } .resumo .n1 small { font-size:.95rem; font-weight:400; color:var(--mudo); }
   .resumo .n2 { font-size:.8rem; color:var(--texto); margin-top:2px; } .resumo .n3 { font-size:.74rem; color:var(--mudo); margin-top:4px; }
   .pbar { height:6px; background:#e3eaed; border-radius:4px; overflow:hidden; margin-top:8px; } .pbar i { display:block; height:100%; background:var(--acento); border-radius:4px; transition:width .3s; min-width:2px; }
+  .avisos { max-width:1200px; margin:12px auto 0; padding:0 24px; }
+  .avisos .av-caixa { background:#fff; border:1px solid var(--borda); border-radius:10px; overflow:hidden; }
+  .av-topo { display:flex; gap:8px; align-items:center; flex-wrap:wrap; padding:10px 16px; cursor:pointer; font-size:.9rem; }
+  .av-item { display:flex; gap:12px; align-items:center; justify-content:space-between; padding:10px 16px; border-top:1px solid var(--borda); border-left:4px solid #9fb0b8; }
+  .av-item.vermelho { border-left-color:var(--bordo); } .av-item.amarelo { border-left-color:var(--ambar); } .av-item.verde { border-left-color:var(--ok); } .av-item.azul { border-left-color:var(--acento); }
+  @media (max-width:640px) { .avisos { padding:0 14px; } .av-item { flex-wrap:wrap; } }
   .subabas { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
   .subabas button { display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border:1px solid var(--borda); background:#fff; color:var(--mudo); border-radius:20px; cursor:pointer; font-size:.86rem; font-weight:500; }
   .subabas button:hover { color:var(--texto); border-color:#b9c7ce; } .subabas button.ativa { background:var(--noite); color:#fff; border-color:var(--noite); }
@@ -161,6 +167,7 @@
     <div class="dir"><span id="quem"></span><button class="btn btn-sm" onclick="sair()"><i class="ti ti-logout"></i> Sair</button></div>
   </header>
   <nav class="abas" id="nav"></nav>
+  <div class="avisos" id="avisos"></div>
   <main id="conteudo"></main>
   <footer>© 2026 SES-PE — DGMCG/GGPCG. Desenvolvido por <strong>Cleuton Vieira</strong>.<br><span id="rodape-versao"></span></footer>
 </div>
@@ -169,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.33';
-const VERSAO_RAIOX_DATA = '10/11/2026 10:00';
+const VERSAO_RAIOX = 'v0.34';
+const VERSAO_RAIOX_DATA = '10/11/2026 13:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -221,7 +228,8 @@ async function entrar() {
   const eu = await api('raiox/eu', {});
   PAPEL = (eu && eu.ok && eu.papel) || '';
   if (!PAPEL) { $('nav').innerHTML = ''; $('conteudo').innerHTML = `<div class="erro">${esc((eu && eu.erro) || 'Você ainda não tem um papel no Raio-X. Peça ao administrador que cadastre você na aba Equipe.')}</div>`; return; }
-  if (PAPEL === 'admin') { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; }
+  try { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; } catch (e) { chaves = []; }
+  try { const c = await api('raiox/config-obter', {}); if (c && c.ok && c.config) CFG = Object.assign(CFG, c.config); } catch (e) {}
   montarNav();
   abrirAba(PAPEL === 'analista' ? 'minhas' : PAPEL === 'coordenacao' || PAPEL === 'admin' ? 'painel' : 'rodar');
 }
@@ -229,8 +237,8 @@ async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe'], ['chaves', 'Chaves de IA']],
-  coordenacao: [['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
+  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe'], ['chaves', 'Chaves de IA']],
+  coordenacao: [['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
   analista: [['minhas', 'Minhas distribuições']]
 };
 function montarNav() {
@@ -238,9 +246,9 @@ function montarNav() {
 }
 function abrirAba(a) {
   if (!(ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === a)) return;
-  abaAtual = a;
+  abaAtual = a; FATIA_VIS = false; atualizarAvisos();
   (ABAS_POR_PAPEL[PAPEL] || []).forEach(x => { const el = $('aba-' + x[0]); if (el) el.classList.toggle('ativa', x[0] === a); });
-  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres(); else if (a === 'painel') telaPainel(); else if (a === 'chaves') telaChaves();
+  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres(); else if (a === 'painel') telaPainel(); else if (a === 'chaves') telaChaves(); else if (a === 'lei') telaLei();
   else if (a === 'fatias' || a === 'minhas') telaFatias(); else if (a === 'equipe') telaEquipe();
 }
 const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
@@ -661,9 +669,57 @@ async function rodarEscopo(e) {
   const x = escopos.find(z => z.escopo === e.escopo); if (x && s.ok !== false) { x.estado = parcial ? 'parcial' : 'concluido'; x.n_achados = unicos.length; }
 }
 
+// ==================== AVISOS NA TELA (prazos das distribuições; regras definidas pelo coordenador) ====================
+let CFG = { avisos_ativos: 'sim', prazo_padrao_dias: '15', avisar_dias_antes: '5', parada_dias: '7' };
+const AV = { itens: [], aberto: true, t: 0 };
+const diasParada = () => parseInt(CFG.parada_dias, 10) || 7;
+function hojeIso(somar) { const d = new Date(); d.setDate(d.getDate() + (somar || 0)); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+function pnIso(f) { if (f.prazo) return f.prazo; const m = /^Prazo:\s*(\d{2})\/(\d{2})\/(\d{4})/.exec(f.mensagem || ''); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; }
+function pnPrazo(f) { const i = pnIso(f); if (!i) return null; const [y, m, d] = i.split('-').map(Number); return new Date(y, m - 1, d, 23, 59); }
+function pnDiasPara(f) { const p = pnPrazo(f); if (!p) return null; const h = new Date(); h.setHours(0, 0, 0, 0); const p0 = new Date(p); p0.setHours(0, 0, 0, 0); return Math.round((p0 - h) / 86400000); }
+function prazoTxt(f) { const p = pnPrazo(f); return p ? ' · prazo ' + p.toLocaleDateString('pt-BR') : ''; }
+function prazoChip(f) {
+  if (f.situacao === 'devolvida') return '';
+  const d = pnDiasPara(f); if (d === null) return '<span class="etq">sem prazo</span>';
+  const lim = parseInt(CFG.avisar_dias_antes, 10);
+  if (d < 0) return `<span class="etq vermelho">atrasada há ${-d} dia(s)</span>`;
+  if (d === 0) return '<span class="etq amarelo">vence hoje</span>';
+  return `<span class="etq ${d <= lim ? 'amarelo' : 'azul'}">${d <= lim ? 'vence em ' + d + ' dia(s)' : 'no prazo'}</span>`;
+}
+function calcAvisos(fs) {
+  const gestor = PAPEL !== 'analista', lim = parseInt(CFG.avisar_dias_antes, 10), out = [];
+  fs.forEach(f => {
+    const falta = (f.n_achados || 0) - (f.n_cobertos || 0), quem = gestor ? ' · ' + (f.atribuida_nome || '') : '';
+    if (f.situacao === 'devolvida') {
+      if (gestor && f.devolvida_em && pnDias(f.devolvida_em) <= 2) out.push({ tipo: 'devolvida', cor: 'verde', ord: 4, id: f.id, nome: f.nome + quem, txt: 'devolvida', det: 'Pronta para a sua conferência.' });
+      return;
+    }
+    const d = pnDiasPara(f);
+    if (d !== null && d < 0) out.push({ tipo: 'atrasada', cor: 'vermelho', ord: 0, id: f.id, nome: f.nome + quem, txt: `atrasada há ${-d} dia(s)`, det: falta ? `${fmt(falta)} achado(s) ainda sem parecer.` : 'Todos os achados têm parecer: falta devolver.' });
+    else if (d !== null && d <= lim) out.push({ tipo: 'breve', cor: 'amarelo', ord: 1, id: f.id, nome: f.nome + quem, txt: d === 0 ? 'vence hoje' : `vence em ${d} dia(s)`, det: falta ? `${fmt(falta)} achado(s) ainda sem parecer.` : 'Todos os achados têm parecer: falta devolver.' });
+    else if (gestor && !f.n_cobertos && pnDias(f.criada_em) > diasParada()) out.push({ tipo: 'parada', cor: 'amarelo', ord: 2, id: f.id, nome: f.nome + quem, txt: 'parada', det: `Sem nenhum parecer há ${pnDias(f.criada_em)} dias.` });
+    else if (!gestor && f.situacao === 'atribuida' && pnDias(f.criada_em) <= 2) out.push({ tipo: 'nova', cor: 'azul', ord: 3, id: f.id, nome: f.nome, txt: 'nova para você', det: `${fmt(f.n_achados)} achado(s)${prazoTxt(f)}.` });
+  });
+  return out.sort((x, y) => x.ord - y.ord);
+}
+async function atualizarAvisos(forcar) {
+  if (!PAPEL || (!forcar && Date.now() - AV.t < 15000)) { pintarAvisos(); return; }
+  AV.t = Date.now();
+  try { const r = await api('raiox/fatias-listar', {}); if (r && r.ok !== false) AV.itens = calcAvisos(r.fatias || []); } catch (e) {}
+  pintarAvisos();
+}
+const AV_ROT = { atrasada: ['vermelho', 'atrasada(s)'], breve: ['amarelo', 'vencendo'], parada: ['amarelo', 'parada(s)'], nova: ['azul', 'nova(s)'], devolvida: ['verde', 'devolvida(s)'] };
+function pintarAvisos() {
+  const el = $('avisos'); if (!el) return;
+  if (!PAPEL || CFG.avisos_ativos === 'nao' || !AV.itens.length) { el.innerHTML = ''; return; }
+  const resumo = Object.keys(AV_ROT).map(t => { const n = AV.itens.filter(i => i.tipo === t).length; return n ? `<span class="etq ${AV_ROT[t][0]}">${n} ${AV_ROT[t][1]}</span>` : ''; }).join(' ');
+  const mostrar = AV.itens.slice(0, 6);
+  el.innerHTML = `<div class="av-caixa"><div class="av-topo" onclick="AV.aberto=!AV.aberto;pintarAvisos()"><i class="ti ti-bell"></i><b>Avisos</b> ${resumo}<i class="ti ti-chevron-${AV.aberto ? 'up' : 'down'}" style="margin-left:auto"></i></div>
+    ${AV.aberto ? mostrar.map(i => `<div class="av-item ${i.cor}"><div><b>${esc(i.nome)}</b> <span class="etq ${i.cor}">${esc(i.txt)}</span><div class="dica" style="margin:2px 0 0">${esc(i.det)}</div></div><button class="btn btn-sm" onclick="abrirFatia('${esc(i.id)}')"><i class="ti ti-folder-open"></i> Abrir</button></div>`).join('') + (AV.itens.length > 6 ? `<div class="av-item"><span class="dica">e mais ${AV.itens.length - 6} aviso(s). Veja em "${PAPEL === 'analista' ? 'Minhas distribuições' : 'Acompanhar'}".</span></div>` : '') : ''}</div>`;
+}
+
 // ==================== TELA: PAINEL DO COORDENADOR (distribuir e acompanhar) ====================
 const PN = { sub: 'distribuir', agrupar: 'setor', sel: {}, q: '', mostrarDist: false, fatias: [], noFatia: {}, equipe: [], abertos: {} };
-const DIAS_PARADA = 7;           // distribuição sem nenhum parecer há mais que isto é marcada como "parada"
 const ROT_AGRUPAR = { setor: 'Gerência / setor', unidade: 'Unidade', gravidade: 'Gravidade', origem: 'Origem', contrato: 'Contrato ou processo' };
 const PN_ORIGEM = { codigo: 'Conferência automática', gaocg: 'GAOCG', ia: 'Lido pela IA' };
 function pnGrupo(a) {
@@ -675,20 +731,19 @@ function pnGrupo(a) {
     default: return a.contrato ? 'Contrato ' + a.contrato : a.processo ? 'Processo ' + a.processo : 'Sem contrato identificado';
   }
 }
-function pnPrazo(f) { const m = /^Prazo:\s*(\d{2})\/(\d{2})\/(\d{4})/.exec(f.mensagem || ''); return m ? new Date(+m[3], +m[2] - 1, +m[1], 23, 59) : null; }
 function pnDias(iso) { const t = Date.parse(iso); return isNaN(t) ? 0 : Math.floor((Date.now() - t) / 86400000); }
 function pnEstado(f) {
   if (f.situacao === 'devolvida') return ['devolvida', 'verde'];
-  const pr = pnPrazo(f); if (pr && pr < new Date()) return ['atrasada', 'vermelho'];
-  if (!f.n_cobertos && pnDias(f.criada_em) > DIAS_PARADA) return ['parada', 'amarelo'];
+  const dp = pnDiasPara(f); if (dp !== null && dp < 0) return ['atrasada', 'vermelho'];
+  if (!f.n_cobertos && pnDias(f.criada_em) > diasParada()) return ['parada', 'amarelo'];
   return [f.situacao === 'em_analise' ? 'em análise' : 'aguardando início', 'azul'];
 }
 async function telaPainel(manter) {
   if (!manter) $('conteudo').innerHTML = carregando('Carregando o painel...');
-  const [ra, rf, re] = await Promise.all([api('raiox/achados', {}), api('raiox/fatias-listar', {}), api('raiox/perfis-listar', {})]);
+  const [ra, rf, re] = await Promise.all([api('raiox/achados', {}), api('raiox/fatias-listar', {}), api('raiox/equipe', {})]);
   if (ra.ok === false || rf.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc((ra.erro || rf.erro) || 'Erro')}</div>`; return; }
   achados = prepararAchados(ra.achados || []); PN.fatias = rf.fatias || [];
-  PN.equipe = (re.ok === false ? [] : re.perfis || []).filter(p => p.ativo !== 'nao' && p.papel !== 'admin' || p.papel === 'admin' && PAPEL === 'admin');
+  PN.equipe = re.ok === false ? [] : (re.pessoas || []);
   // quais achados já estão em distribuição aberta
   PN.noFatia = {};
   const abertas = PN.fatias.filter(f => f.situacao !== 'devolvida');
@@ -698,28 +753,65 @@ async function telaPainel(manter) {
   pnDesenhar();
 }
 function pnTiles() {
-  const vis = achados.filter(visivel), semDist = vis.filter(a => !PN.noFatia[a.id]).length, ab = PN.fatias.filter(f => f.situacao !== 'devolvida');
+  const vis = achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido'), semDist = vis.filter(a => !PN.noFatia[a.id]).length, ab = PN.fatias.filter(f => f.situacao !== 'devolvida');
   const par = ab.filter(f => pnEstado(f)[0] === 'parada').length, atr = ab.filter(f => pnEstado(f)[0] === 'atrasada').length;
   return `<div class="tiles">
     <div class="tile"><h3>Achados a tratar</h3><div class="grande">${fmt(vis.length)}</div></div>
     <div class="tile" style="cursor:pointer" onclick="pnSub('distribuir')"><h3>Sem distribuição</h3><div class="grande">${fmt(semDist)}</div></div>
     <div class="tile" style="cursor:pointer" onclick="pnSub('acompanhar')"><h3>Distribuições abertas</h3><div class="grande">${fmt(ab.length)}</div></div>
     ${atr ? `<div class="tile"><h3>Atrasadas</h3><div class="grande" style="color:var(--bordo)">${fmt(atr)}</div></div>` : ''}
-    ${par ? `<div class="tile"><h3>Paradas (+${DIAS_PARADA} dias sem parecer)</h3><div class="grande">${fmt(par)}</div></div>` : ''}
+    ${par ? `<div class="tile"><h3>Paradas (+${diasParada()} dias sem parecer)</h3><div class="grande">${fmt(par)}</div></div>` : ''}
     <div class="tile"><h3>Devolvidas</h3><div class="grande">${fmt(PN.fatias.filter(f => f.situacao === 'devolvida').length)}</div></div></div>`;
 }
 function pnSub(n) { PN.sub = n; pnDesenhar(); }
 function pnDesenhar() {
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-layout-dashboard"></i> Painel do coordenador <small>distribuir os achados e acompanhar quem está tratando</small></h2>${pnTiles()}
     <div class="subabas"><button class="${PN.sub === 'distribuir' ? 'ativa' : ''}" onclick="pnSub('distribuir')"><i class="ti ti-send"></i> Distribuir achados</button>
-    <button class="${PN.sub === 'acompanhar' ? 'ativa' : ''}" onclick="pnSub('acompanhar')"><i class="ti ti-chart-bar"></i> Acompanhar</button></div></div>
+    <button class="${PN.sub === 'acompanhar' ? 'ativa' : ''}" onclick="pnSub('acompanhar')"><i class="ti ti-chart-bar"></i> Acompanhar</button>
+    <button class="${PN.sub === 'config' ? 'ativa' : ''}" onclick="pnSub('config')"><i class="ti ti-settings"></i> Configurações</button></div></div>
     <div id="pn-corpo"></div>`;
-  PN.sub === 'distribuir' ? pnDistribuir() : pnAcompanhar();
+  PN.sub === 'distribuir' ? pnDistribuir() : PN.sub === 'config' ? pnConfig() : pnAcompanhar();
 }
+// ---------- Configurações (definidas pelo coordenador) ----------
+function pnConfig() {
+  const c = CFG;
+  $('pn-corpo').innerHTML = `<div class="bloco"><h3 style="margin:0 0 6px">Configurações de prazo e avisos</h3>
+    <p class="dica">Estas regras valem para todas as pessoas. Os avisos aparecem na tela de cada uma, no cartão "Avisos" logo abaixo do menu. Nenhum e-mail é enviado.</p>
+    <label class="auto"><input type="checkbox" id="cfg-ativo" ${c.avisos_ativos === 'nao' ? '' : 'checked'} oninput="pnConfigEx()"> Mostrar os avisos de prazo na tela</label>
+    <div class="filtros" style="margin-top:10px">
+      <div><label>Prazo padrão de uma nova distribuição (dias)</label><input id="cfg-prazo" type="number" min="1" max="365" value="${esc(c.prazo_padrao_dias)}" oninput="pnConfigEx()"></div>
+      <div><label>Começar a avisar quando faltarem (dias)</label><input id="cfg-antes" type="number" min="0" max="60" value="${esc(c.avisar_dias_antes)}" oninput="pnConfigEx()"></div>
+      <div><label>Avisar que uma distribuição está parada após (dias sem nenhum parecer)</label><input id="cfg-parada" type="number" min="1" max="90" value="${esc(c.parada_dias)}" oninput="pnConfigEx()"></div></div>
+    <div class="dica" id="cfg-ex" style="margin-top:8px"></div>
+    <div class="acoes"><button class="btn btn-principal" onclick="pnConfigSalvar()"><i class="ti ti-device-floppy"></i> Salvar configurações</button></div><div id="cfg-msg" class="dica"></div></div>`;
+  pnConfigEx();
+}
+function pnConfigEx() {
+  const n = id => parseInt(($(id) || {}).value, 10), pz = n('cfg-prazo') || 15, ant = isNaN(n('cfg-antes')) ? 5 : n('cfg-antes'), par = n('cfg-parada') || 7, fmtB = i => i.split('-').reverse().join('/');
+  const el = $('cfg-ex'); if (!el) return;
+  el.innerHTML = ($('cfg-ativo').checked ? `Exemplo: uma distribuição criada hoje terá prazo em <b>${fmtB(hojeIso(pz))}</b>. O aviso amarelo começa em <b>${fmtB(hojeIso(pz - ant))}</b> e o vermelho (atrasada) no dia seguinte ao prazo. Sem nenhum parecer após ${par} dias, a coordenação vê o aviso "parada". O prazo de cada distribuição pode ser mudado na aba Acompanhar.` : 'Os avisos ficam desligados: ninguém vê o cartão "Avisos". Os prazos continuam valendo e aparecem nas distribuições.');
+}
+async function pnConfigSalvar() {
+  const v = id => $(id).value;
+  const r = await api('raiox/config-salvar', { config: { avisos_ativos: $('cfg-ativo').checked ? 'sim' : 'nao', prazo_padrao_dias: v('cfg-prazo'), avisar_dias_antes: v('cfg-antes'), parada_dias: v('cfg-parada') } });
+  if (r.ok === false) { $('cfg-msg').innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
+  CFG = Object.assign(CFG, r.config); AV.t = 0; await atualizarAvisos(true); pnConfig(); $('cfg-msg').innerHTML = '<span class="ok-msg">Configurações salvas.</span>';
+}
+async function salvarPrazo(id) {
+  const el = $('pz-' + id); if (!el) return;
+  const r = await api('raiox/fatia-prazo', { id, prazo: el.value });
+  if (r.ok === false) { alert(r.erro); return; }
+  const f = (PN.fatias || []).find(x => x.id === id); if (f) f.prazo = el.value;
+  if (FATIA && FATIA.fatia && FATIA.fatia.id === id) FATIA.fatia.prazo = el.value;
+  atualizarAvisos(true);
+  if (FATIA_VIS) pintarFatia(); else if (abaAtual === 'painel') pnDesenhar();
+}
+const prazoEditor = f => `<span style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap"><span class="dica" style="margin:0">Prazo</span><input type="date" id="pz-${esc(f.id)}" value="${esc(pnIso(f))}" style="width:auto"><button class="btn btn-sm btn-claro" onclick="salvarPrazo('${esc(f.id)}')">Salvar prazo</button></span>`;
+
 // ---------- Distribuir ----------
 function pnLista() {
   const q = normT(PN.q);
-  return achados.filter(visivel).filter(a => PN.mostrarDist || !PN.noFatia[a.id])
+  return achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido').filter(a => PN.mostrarDist || !PN.noFatia[a.id])
     .filter(a => !q || normT([a.titulo, a.unidade, a.contrato, a.processo, a.setor, a.documentos].join(' ')).includes(q));
 }
 function pnDistribuir() {
@@ -737,7 +829,7 @@ function pnDistribuir() {
     <div class="bloco" id="pn-barra" style="position:sticky;bottom:0;border-top:3px solid var(--bordo)">
       <b>${fmt(nSel)} ${nSel === 1 ? 'achado selecionado' : 'achados selecionados'}</b>
       <div class="filtros" style="margin-top:8px"><div><label>Entregar para</label><select id="pn-para" multiple size="3" style="min-width:230px">${pessoas}</select><div class="dica">Mais de uma pessoa: o lote é dividido entre elas, mantendo cada grupo junto.</div></div>
-        <div><label>Prazo</label><input id="pn-prazo" type="date"></div>
+        <div><label>Prazo</label><input id="pn-prazo" type="date" value="${esc(PN.semPrazo ? '' : (PN.prazo === undefined ? hojeIso(parseInt(CFG.prazo_padrao_dias, 10) || 15) : PN.prazo))}" ${PN.semPrazo ? 'disabled' : ''} oninput="PN.prazo=this.value"><label class="auto" style="margin-top:4px"><input type="checkbox" ${PN.semPrazo ? 'checked' : ''} onchange="PN.semPrazo=this.checked;pnDistribuir()"> sem prazo</label></div>
         <div style="flex:2;min-width:220px"><label>Nome da distribuição</label><input id="pn-nome" placeholder="ex.: Aditivos sem parecer — jan/2026"></div>
         <div style="flex:2;min-width:220px"><label>Orientação ao analista</label><input id="pn-msg" placeholder="o que se espera: conferir, fundamentar, propor correção..."></div></div>
       <div class="acoes"><button class="btn btn-principal" onclick="pnEnviar()" ${nSel ? '' : 'disabled'}><i class="ti ti-send"></i> Distribuir</button>
@@ -761,7 +853,7 @@ function pnMarcarGrupo(gi, on) {
 }
 function pnAtualizaBarra() { const n = Object.keys(PN.sel).length, b = $('pn-barra'); if (b) { b.querySelector('b').textContent = fmt(n) + (n === 1 ? ' achado selecionado' : ' achados selecionados'); const btn = b.querySelector('.btn-principal'); if (btn) btn.disabled = !n; } }
 async function pnEnviar() {
-  const ids = Object.keys(PN.sel), para = [...$('pn-para').selectedOptions].map(o => o.value), nome = $('pn-nome').value.trim(), prazo = $('pn-prazo').value, msg = $('pn-msg').value.trim();
+  const ids = Object.keys(PN.sel), para = [...$('pn-para').selectedOptions].map(o => o.value), nome = $('pn-nome').value.trim(), prazo = PN.semPrazo ? '' : ($('pn-prazo').value || ''), msg = $('pn-msg').value.trim();
   const res = t => { $('pn-msg-res').innerHTML = t; };
   if (!ids.length) { res('Marque os achados.'); return; }
   if (!para.length) { res('Escolha para quem entregar.'); return; }
@@ -769,15 +861,15 @@ async function pnEnviar() {
   // divide em partes mantendo cada grupo junto (balanceia pelo tamanho)
   const porGrupo = {}; ids.forEach(id => { const a = achados.find(x => x.id === id); (porGrupo[a ? pnGrupo(a) : '?'] = porGrupo[a ? pnGrupo(a) : '?'] || []).push(id); });
   const partes = para.map(() => []); Object.values(porGrupo).sort((x, y) => y.length - x.length).forEach(g => { partes.reduce((m, p) => p.length < m.length ? p : m).push(...g); });
-  const dataBr = prazo ? prazo.split('-').reverse().join('/') : '', texto = (dataBr ? 'Prazo: ' + dataBr + '. ' : '') + msg;
+  const texto = msg;
   res('<span class="spinner"></span>Distribuindo...'); let tot = 0, falhas = [];
   for (let i = 0; i < para.length; i++) {
     if (!partes[i].length) continue;
-    const r = await api('raiox/fatia-criar', { nome: para.length > 1 ? nome + ' (parte ' + (i + 1) + ' de ' + para.length + ')' : nome, atribuida_a: para[i], mensagem: texto, ids: partes[i], filtro: 'painel do coordenador — agrupado por ' + ROT_AGRUPAR[PN.agrupar] });
+    const r = await api('raiox/fatia-criar', { nome: para.length > 1 ? nome + ' (parte ' + (i + 1) + ' de ' + para.length + ')' : nome, atribuida_a: para[i], mensagem: texto, prazo, ids: partes[i], filtro: 'painel do coordenador — agrupado por ' + ROT_AGRUPAR[PN.agrupar] });
     if (r.ok === false) falhas.push(r.erro); else tot += r.n;
   }
   if (falhas.length) { res(`<span style="color:var(--bordo)">${esc(falhas.join(' | '))}</span> (${fmt(tot)} achados já distribuídos)`); }
-  PN.sel = {}; await telaPainel(true);
+  PN.sel = {}; AV.t = 0; atualizarAvisos(true); await telaPainel(true);
   if (!falhas.length) { PN.sub = 'acompanhar'; pnDesenhar(); }
 }
 // ---------- Acompanhar ----------
@@ -789,11 +881,11 @@ function pnAcompanhar() {
     <div class="bloco"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Distribuições</h3><button class="btn btn-sm btn-claro" onclick="pnCsv()"><i class="ti ti-file-spreadsheet"></i> Baixar acompanhamento (CSV)</button></div>
     ${fs.map(f => { const [est, cor] = pnEstado(f), pr = pnPrazo(f); return `<div style="border-top:1px solid var(--borda);padding:10px 0"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><b style="flex:1;min-width:200px">${esc(f.nome)}</b><span class="etq ${cor}">${est}</span></div>
       <div class="dica">Para ${esc(f.atribuida_nome)} · criada há ${pnDias(f.criada_em)} dia(s)${pr ? ' · prazo ' + pr.toLocaleDateString('pt-BR') : ''} · ${fmt(f.n_cobertos)} de ${fmt(f.n_achados)} achados com parecer</div>${barra(f.n_cobertos, f.n_achados)}
-      <div class="acoes" style="margin-top:6px"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>${f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`; }).join('') || '<div class="vazio">Nenhuma distribuição ainda. Use "Distribuir achados".</div>'}</div>`;
+      <div class="acoes" style="margin-top:6px"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>${f.situacao !== 'devolvida' ? prazoEditor(f) : ''}${f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`; }).join('') || '<div class="vazio">Nenhuma distribuição ainda. Use "Distribuir achados".</div>'}</div>`;
 }
 function pnCsv() {
   const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
-  const linhas = [['Distribuição', 'Para', 'Situação', 'Criada em', 'Prazo', 'Achados', 'Com parecer', 'Estado'].map(q).join(';')].concat(PN.fatias.map(f => [f.nome, f.atribuida_nome, f.situacao, f.criada_em, pnPrazo(f) ? pnPrazo(f).toLocaleDateString('pt-BR') : '', f.n_achados, f.n_cobertos, pnEstado(f)[0]].map(q).join(';')));
+  const linhas = [['Distribuição', 'Para', 'Situação', 'Criada em', 'Prazo', 'Achados', 'Com parecer', 'Estado'].map(q).join(';')].concat(PN.fatias.map(f => [f.nome, f.atribuida_nome, f.situacao, f.criada_em, pnPrazo(f) ? pnPrazo(f).toLocaleDateString('pt-BR') : 'sem prazo', f.n_achados, f.n_cobertos, pnEstado(f)[0]].map(q).join(';')));
   const b = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'raiox_acompanhamento_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
 }
 
@@ -936,6 +1028,50 @@ function parTelaDoc() {
     ${l.map(a => cartao(a, PAPEL === 'admin', true)).join('') || '<div class="vazio">Sem achados.</div>'}`;
 }
 
+// ==================== LEI ESTADUAL 15.210/2013 (OSS de saúde): base legal provável de cada achado ====================
+// Indicação automática por palavras do próprio achado. É uma ajuda para o jurídico: quem decide é a pessoa que analisa.
+// Os resumos seguem o texto da lei (com alterações até a Lei 16.771/2019). Confira o texto oficial antes de citar.
+const LEI = [
+  { id: 'art4', art: 'art. 4º', nome: 'Renovação da titulação', texto: 'A cada dois anos a OSS renova a titulação, com relatório dos dois últimos exercícios, balanços aprovados e certidões de regularidade.', re: /titula[çc]|qualifica[çc][aã]o d[aeo]s? (oss|organiza)|renova[çc][aã]o da (titula|qualifica)/i },
+  { id: 'art10x', art: 'art. 10, X', nome: 'Vigência do contrato', texto: 'Vigência de até 2 anos, renovável por períodos sucessivos até o limite de 10 anos, desde que demonstradas a vantajosidade e o cumprimento das metas.', re: /vig[eê]ncia|prorroga[çc]|prazo m[aá]ximo|\b10 ?\(?dez\)? anos|dez anos/i, tipo: 'vigencia' },
+  { id: 'art10p2', art: 'art. 10, § 2º', nome: 'Análise da PGE e publicação do extrato', texto: 'A regularidade jurídico-formal do contrato é analisada antes pela Procuradoria Geral do Estado, e a SES publica o extrato na imprensa oficial.', re: /extrato|procuradoria|\bpge\b|regularidade jur[ií]dico/i },
+  { id: 'art10a', art: 'art. 10-A', nome: 'Custos indiretos (até 3%)', texto: 'Os custos indiretos da administração central da OSS devem estar discriminados na proposta e limitados a 3% do valor do contrato.', re: /custos? indireto|administra[çc][aã]o central|\b3 ?%|tr[eê]s por cento/i },
+  { id: 'art11', art: 'art. 11', nome: 'Termo aditivo e pareceres das comissões', texto: 'Prorrogação de vigência, repactuação de metas, renegociação e reequilíbrio só valem por termo aditivo fundado em pareceres favoráveis da Comissão Técnica de Acompanhamento Interno e da Comissão Mista de Avaliação (ratificados pela maioria de seus membros) e aprovado pela autoridade máxima da SES.', re: /aditivo|repactua|renegocia|reequil[ií]brio/i },
+  { id: 'art12', art: 'art. 12', nome: 'Ressarcimento por déficit', texto: 'Prejuízo por déficit orçamentário só é ressarcido por Termo de Ressarcimento, após processo administrativo específico, declaração de regularidade da SCGE e análise da PGE.', re: /ressarcimento|d[eé]ficit or[çc]ament/i },
+  { id: 'art14', art: 'art. 14', nome: 'Prestação de contas da OSS', texto: 'A OSS presta contas todo mês (com certidões negativas), todo trimestre (metas x resultados) e todo ano (também ao TCE-PE). Os documentos ficam guardados por 5 anos e são publicados em meio eletrônico.', re: /presta[çc][aã]o de contas|certid[aã]o|certid[oõ]es|relat[oó]rio (mensal|trimestral|gerencial)/i },
+  { id: 'art15', art: 'art. 15', nome: 'Acompanhamento pela SES (Comissão Técnica)', texto: 'A SES acompanha, fiscaliza e supervisiona o contrato. A Comissão Técnica de Acompanhamento Interno analisa os relatórios mensais, a execução orçamentária e as metas, e faz a análise técnica trimestral.', re: /comiss[aã]o t[eé]cnica|acompanhamento interno|\bctai\b|an[aá]lise t[eé]cnica trimestral/i },
+  { id: 'art15a', art: 'art. 15-A', nome: 'Meta abaixo de 85%', texto: 'Se a OSS não atinge 85% das metas no trimestre, a Comissão a notifica; ela compensa nos dois trimestres seguintes com produção acima de 115%, sob pena de desconto. Sem compensação, restitui os valores por processo administrativo.', re: /\b85 ?%|\b115 ?%|produ[çc][aã]o excedente|metas? (n[aã]o )?(atingid|pactuad|cumprid)|desconto/i },
+  { id: 'art16', art: 'art. 16', nome: 'Comissão Mista de Avaliação', texto: 'A Comissão Mista emite parecer conclusivo sobre os relatórios trimestrais até o último dia do mês seguinte, publicado no Portal da Transparência e enviado à SES e à SCGE. O relatório anual vai ao Núcleo de Gestão, ao TCE-PE, à Alepe e ao Conselho Estadual de Saúde.', re: /comiss[aã]o mista|parecer conclusivo/i },
+  { id: 'art17', art: 'art. 17', nome: 'Intervenção', texto: 'Havendo risco ao cumprimento das obrigações, o Estado pode intervir por decreto motivado, com contraditório e ampla defesa, em até 180 dias.', re: /interven[çc]/i },
+  { id: 'art18', art: 'arts. 18 a 20', nome: 'Sanções e desqualificação', texto: 'Aviso de correção, advertência, multa, rescisão e desqualificação, por procedimento com ampla defesa. O Secretário aplica as três primeiras; a desqualificação é do Governador.', re: /san[çc][oõ]es|advert[eê]ncia|desqualifica|aviso de corre/i }
+];
+function baseLegal(a) {
+  if (a._lei) return a._lei;
+  const txt = [a.titulo, a.descricao, a.impacto, a.risco_controle].join(' ');
+  a._lei = LEI.filter(l => l.re.test(txt) || (l.tipo && a.tipo === l.tipo)).map(l => l.id);
+  return a._lei;
+}
+function leiChips(a) {
+  const ids = baseLegal(a); if (!ids.length) return '';
+  return `<div class="dica" style="margin:2px 0 6px"><b>Base legal provável (Lei estadual 15.210/2013):</b> ${ids.map(id => { const l = LEI.find(x => x.id === id); return `<span class="etq azul" title="${esc(l.texto)}">${esc(l.art)} · ${esc(l.nome)}</span>`; }).join(' ')}</div>`;
+}
+async function telaLei() {
+  $('conteudo').innerHTML = carregando('Carregando...');
+  const r = await api('raiox/achados', {});
+  if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
+  achados = prepararAchados(r.achados || []);
+  const vis = achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido');
+  const linhas = LEI.map(l => { const x = vis.filter(a => baseLegal(a).includes(l.id)); return { l, n: x.length, alta: x.filter(a => a.gravidade === 'alta').length, unid: new Set(x.map(a => a.unidade)).size }; });
+  const sem = vis.filter(a => !baseLegal(a).length);
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-scale"></i> Conformidade com a Lei 15.210/2013 <small>Organizações Sociais de Saúde de Pernambuco</small></h2>
+    <p class="dica">Cada achado é ligado ao artigo da lei que ele provavelmente toca, por palavras do próprio achado. É uma indicação para organizar o trabalho do jurídico, não uma conclusão. Passe o mouse sobre o artigo no cartão do achado para ler o resumo. Resumos feitos a partir do texto da lei com alterações até a Lei 16.771/2019; confira o texto oficial e eventuais mudanças posteriores. Achados já marcados como "resolvido" não entram na conta.</p>
+    <div class="rolagem"><table class="tabela"><thead><tr><th>Artigo</th><th>O que a lei exige</th><th>Achados</th><th>Gravidade alta</th><th>Unidades</th><th></th></tr></thead><tbody>
+    ${linhas.map(x => `<tr><td><b>${esc(x.l.art)}</b><br><span class="dica">${esc(x.l.nome)}</span></td><td style="max-width:420px">${esc(x.l.texto)}</td><td>${fmt(x.n)}</td><td>${fmt(x.alta)}</td><td>${fmt(x.unid)}</td><td>${x.n ? `<button class="btn btn-sm btn-claro" onclick="irAchadosLei('${x.l.id}')">Ver achados</button>` : ''}</td></tr>`).join('')}
+    <tr><td><b>Sem artigo indicado</b></td><td>Achados em que nenhuma palavra ligou a um artigo. Não quer dizer que não haja base legal: o jurídico avalia.</td><td>${fmt(sem.length)}</td><td>${fmt(sem.filter(a => a.gravidade === 'alta').length)}</td><td>${fmt(new Set(sem.map(a => a.unidade)).size)}</td><td>${sem.length ? `<button class="btn btn-sm btn-claro" onclick="irAchadosLei('sem')">Ver achados</button>` : ''}</td></tr>
+    </tbody></table></div></div>`;
+}
+function irAchadosLei(id) { filtroInicial = { lei: id }; abrirAba('achados'); }
+
 // ==================== TELA: ACHADOS ====================
 async function telaAchados() {
   $('conteudo').innerHTML = carregando('Carregando os achados...');
@@ -953,10 +1089,11 @@ async function telaAchados() {
         <div><label>Gravidade</label><select id="f-grav" onchange="pintarAchados()"><option value="">Todas</option><option>alta</option><option>media</option><option>baixa</option></select></div>
         ${temConf() ? `<div><label>Conferência</label><select id="f-conf" onchange="pintarAchados()"><option value="">Todas</option><option value="sim">Conferido: sim</option><option value="nao">Conferido: não (não procede)</option><option value="pend">A conferir</option></select></div>` : ''}
       </div>
-      <details class="mais-filtros"><summary>Mais filtros (unidade, órgão, tipo, TCE-PE, contratos anteriores)</summary>
+      <details class="mais-filtros"><summary>Mais filtros (unidade, órgão, artigo da lei, tipo, TCE-PE, contratos anteriores)</summary>
         <div class="filtros" style="margin-top:10px">
           <div><label>Unidade</label><select id="f-unidade" onchange="pintarAchados()"><option value="">Todas</option>${opt('unidade')}</select></div>
           ${temOrgao() ? `<div><label>Órgão</label><select id="f-orgao" onchange="pintarAchados()"><option value="">Todos</option>${ORGAOS.filter(o => achados.some(a => lerOrgaos(a).includes(o))).map(o => `<option>${esc(o)}</option>`).join('')}</select></div>` : ''}
+          <div><label>Artigo da Lei 15.210</label><select id="f-lei" onchange="pintarAchados()"><option value="">Todos</option>${LEI.map(l => `<option value="${l.id}">${esc(l.art)} · ${esc(l.nome)}</option>`).join('')}<option value="sem">Sem artigo indicado</option></select></div>
           <div><label>Tipo</label><select id="f-tipo" onchange="pintarAchados()"><option value="">Todos</option>${opt('tipo')}</select></div>
           <div><label>Referência TCE-PE</label><select id="f-tce" onchange="pintarAchados()"><option value="">Todas</option><option value="25100813-7">Proc. 25100813-7 (UPAs)</option><option value="24100082-8">Proc. 24100082-8 (HPS)</option><option value="aud">Contrato auditado pelo TCE</option><option value="risco">Mesmo tipo de risco, outro contrato</option><option value="pers">Possível persistência após o TCE-PE</option><option value="sem">Sem referência</option></select></div>
           <div><label>Anteriores e estendidos</label><label class="auto" style="margin:0;"><input type="checkbox" id="f-ocultos" onchange="pintarAchados()"> mostrar também os sem ligação ao passado</label></div>
@@ -978,6 +1115,7 @@ async function telaAchados() {
     if (f.setor && $('f-setor')) $('f-setor').value = f.setor === 'Sem setor' ? '__sem' : f.setor;
     if (f.orgao && $('f-orgao')) $('f-orgao').value = f.orgao;
     if (f.unidade && $('f-unidade')) $('f-unidade').value = f.unidade;
+    if (f.lei && $('f-lei')) { $('f-lei').value = f.lei; const dt = document.querySelector('.mais-filtros'); if (dt) dt.open = true; }
   }
   pintarAchados();
 }
@@ -1018,12 +1156,12 @@ function filtrados() {
   const q = normT(v('f-q'));
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
   return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && origemOk(a, v('f-orig')) &&
-    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
+    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-lei') || (v('f-lei') === 'sem' ? !baseLegal(a).length : baseLegal(a).includes(v('f-lei')))) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!v('f-tce') || (v('f-tce') === 'sem' ? !a.tce_ref : v('f-tce') === 'aud' ? a.tce_relacao === 'mesmo tema em contrato auditado' : v('f-tce') === 'pers' ? !!a.tce_persist : v('f-tce') === 'risco' ? a.tce_relacao === 'mesmo tipo de risco em outro contrato' : (a.tce_processos || '').includes(v('f-tce')))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
 }
-const ROT_F = { 'f-q': 'busca', 'f-orig': 'origem', 'f-setor': 'setor', 'f-grav': 'gravidade', 'f-conf': 'conferência', 'f-unidade': 'unidade', 'f-orgao': 'órgão', 'f-tipo': 'tipo', 'f-tce': 'TCE-PE' };
+const ROT_F = { 'f-q': 'busca', 'f-orig': 'origem', 'f-setor': 'setor', 'f-grav': 'gravidade', 'f-conf': 'conferência', 'f-unidade': 'unidade', 'f-orgao': 'órgão', 'f-tipo': 'tipo', 'f-tce': 'TCE-PE', 'f-lei': 'artigo da lei' };
 function limparCampo(id) { if ($(id)) $(id).value = ''; pintarAchados(); }
 function limparTudoAchados() { Object.keys(ROT_F).forEach(id => { if ($(id)) $(id).value = ''; }); if ($('f-ocultos')) $('f-ocultos').checked = false; pintarAchados(); }
 function atalhoAch(k) {
@@ -1124,25 +1262,47 @@ function mesmoAchado(a) {
   if (!outros.length) return '';
   return `<div class="rot">O mesmo achado também aparece em ${outros.length} ${outros.length === 1 ? 'outro contrato/processo' : 'outros contratos/processos'}</div><p>${esc(outros.slice(0, 10).join('; '))}${outros.length > 10 ? ' e mais ' + (outros.length - 10) : ''}</p>`;
 }
-function cartao(a, comBotoes, compacto) {
-  const conf = a.conferido === 'sim' ? '<span class="etq verde">conferido: procede</span>' : a.conferido === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '';
+function cartao(a, comBotoes, compacto, podeConf) {
+  const ce = a.conf_estado || a.conferido || '';
+  const conf = ce === 'resolvido' ? '<span class="etq verde">resolvido</span>' : ce === 'sim' ? '<span class="etq verde">conferido: procede</span>' : ce === 'nao' ? '<span class="etq vermelho">conferido: não procede</span>' : '';
   const trechoAviso = a.origem === 'ia' && a.trecho_confere === 'nao' ? ' <span class="etq vermelho">o trecho citado não foi achado no texto</span>' : '';
   return `<div class="card-ach ${esc(a.gravidade)}" id="ach-${esc(a.id)}">
     <div><span class="sev ${esc(a.gravidade)}">${esc(a.gravidade)}</span> <span class="etq">${esc(ehParecerCtai(a) ? 'parecer da CTAI lido pela IA' : (ORIGEM_ROT[a.origem] || a.origem))}</span> <span class="etq azul">${esc(TIPO_ROT[a.tipo] || a.tipo)}</span> ${conf}${trechoAviso}${a.papel === 'anterior' ? ' <span class="etq azul">contrato anterior</span>' : a.papel === 'estendido' ? ' <span class="etq amarelo">prazo vencido, contrato ainda em funcionamento</span>' : ''}${a.liga_passado === 'sim' ? ' <span class="etq verde">ligado a contrato anterior</span>' : ''}</div>
     <div class="dica" style="margin:4px 0 0">${esc(a.unidade)}${a.contrato ? ' · Contrato de Gestão nº ' + esc(a.contrato) : ''}${a.processo ? ' · processo ' + esc(a.processo) : ''}</div>
     <h3>${esc(tituloClaro(a))}</h3>
     <div class="dica" style="margin:-4px 0 6px">${esc(GRAV_FRASE[a.gravidade] || '')}</div>
+    ${leiChips(a)}
     ${compacto ? `<p>${esc((a.descricao || '').length > 260 ? a.descricao.slice(0, 260) + '…' : (a.descricao || ''))}</p>` : ''}
     ${compacto ? '<details class="det"><summary>Ver detalhes completos</summary>' : ''}
     ${corpoAchado(a, 'rot', false)}
     ${compacto ? mesmoAchado(a) : ''}
     ${comBotoes ? `<div class="rot">Quem resolve</div><select style="max-width:220px" onchange="mudarSetor('${esc(a.id)}', this.value)"><option value="">Sem setor</option>${nomesSetores().map(n => `<option ${a.setor === n ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>` : (a.setor ? `<div class="rot">Quem resolve</div><p>${esc(a.setor)}</p>` : '')}
     ${compacto ? '</details>' : ''}
-    ${comBotoes ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','sim')"><i class="ti ti-check"></i> Procede</button>
-      <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','nao')"><i class="ti ti-x"></i> Não procede</button>
-      <button class="btn btn-sm btn-claro" onclick="conferir('${esc(a.id)}','')">Limpar</button></div>` : ''}
+    ${comBotoes || podeConf || PAPEL !== 'analista' ? confHtml(a) : confInfo(a)}
   </div>`;
 }
+function confInfo(a) {
+  if (!a.conf_estado || !(a.conf_por || a.conf_em)) return '';
+  return `<div class="dica">Conferido por ${esc(a.conf_por || '')} em ${esc(fmtData(a.conf_em))}${a.conf_motivo ? ' — ' + esc(a.conf_motivo) : ''}</div>`;
+}
+function confHtml(a) {
+  const e = a.conf_estado || '', id = esc(a.id), bt = (est, ic, rot) => `<button class="btn btn-sm ${e === est ? 'btn-principal' : 'btn-claro'}" onclick="confAbrir('${id}','${est}')"><i class="ti ti-${ic}"></i> ${rot}</button>`;
+  return `${confInfo(a)}<div class="acoes">${bt('sim', 'check', 'Procede')} ${bt('nao', 'x', 'Não procede')} ${bt('resolvido', 'circle-check', 'Resolvido')}${e ? ` <button class="btn btn-sm btn-claro" onclick="confAbrir('${id}','')">Limpar</button>` : ''}</div><div id="cf-${id}"></div>`;
+}
+function confAbrir(id, estado) {
+  if (estado === 'sim' || estado === '') { confGravar(id, estado, ''); return; }
+  const rot = estado === 'nao' ? 'Por que não procede? (obrigatório, mínimo 10 letras)' : 'O que foi feito para resolver? (obrigatório, mínimo 10 letras)';
+  $('cf-' + id).innerHTML = `<div style="margin-top:8px"><label>${rot}</label><textarea id="cft-${id}" rows="3" maxlength="600"></textarea>
+    <div class="acoes"><button class="btn btn-sm btn-principal" onclick="confGravar('${id}','${estado}',$('cft-${id}').value)">Salvar</button> <button class="btn btn-sm btn-claro" onclick="$('cf-${id}').innerHTML=''">Cancelar</button></div><div class="dica" id="cfm-${id}"></div></div>`;
+}
+async function confGravar(id, estado, motivo) {
+  const r = await api('raiox/conferir-achado', { id, estado, motivo });
+  if (r.ok === false) { const m = $('cfm-' + id); if (m) m.innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; else alert(r.erro); return; }
+  const campos = { conf_estado: r.conf_estado || '', conf_motivo: r.conf_motivo || '', conf_por: r.conf_por || '', conf_em: r.conf_em || '', conferido: estado === 'resolvido' ? 'sim' : estado };
+  [achados, (FATIA && FATIA.achados) || []].forEach(l => { const a = l.find(x => x.id === id); if (a) Object.assign(a, campos); });
+  repintar();
+}
+function repintar() { if (FATIA_VIS) pintarFatia(); else if (abaAtual === 'achados' || abaAtual === 'pareceres') pintarAchados(); }
 async function mudarSetor(id, setor) {
   const r = await api('raiox/conferir', { id, setor });
   if (r.ok === false) { alert(r.erro); return; }
@@ -1174,6 +1334,7 @@ async function abrirFormFatia() {
     <p class="dica">Esta distribuição terá <strong>${lista.length}</strong> achado(s) (os que aparecem no filtro agora, inclusive além dos 300 mostrados).</p>
     <label>Nome da distribuição</label><input id="ft-nome" maxlength="120" placeholder="ex.: Prazos e vigência — contratos de OS">
     <label>Quem vai analisar</label><select id="ft-para">${r.pessoas.map(p => `<option value="${esc(p.email)}">${esc(p.nome || p.email)} (${esc(NOME_PAPEL[p.papel] || p.papel)})</option>`).join('')}</select>
+    <label>Prazo (apague a data para ficar sem prazo)</label><input id="ft-prazo" type="date" value="${hojeIso(parseInt(CFG.prazo_padrao_dias, 10) || 15)}" style="max-width:200px">
     <label>Recado para quem vai analisar (opcional)</label><textarea id="ft-msg" rows="3" maxlength="800"></textarea>
     <div class="acoes"><button class="btn btn-principal btn-sm" onclick="criarFatia()"><i class="ti ti-send"></i> Criar e enviar</button> <button class="btn btn-sm btn-claro" onclick="$('form-fatia').innerHTML=''">Cancelar</button></div></div>`;
 }
@@ -1181,10 +1342,11 @@ async function criarFatia() {
   const lista = filtrados();
   const f = id => (($(id) || {}).value || '');
   const filtro = ['f-unidade', 'f-grav', 'f-orig', 'f-setor', 'f-orgao', 'f-tipo', 'f-conf', 'f-q'].map(i => f(i) ? i.slice(2) + '=' + f(i) : '').filter(Boolean).join('; ');
-  const r = await api('raiox/fatia-criar', { nome: f('ft-nome'), atribuida_a: f('ft-para'), mensagem: f('ft-msg'), ids: lista.map(a => a.id), filtro });
+  const r = await api('raiox/fatia-criar', { nome: f('ft-nome'), atribuida_a: f('ft-para'), mensagem: f('ft-msg'), prazo: f('ft-prazo'), ids: lista.map(a => a.id), filtro });
   if (!r.ok) { alert(r.erro); return; }
   alert('Distribuição criada com ' + r.n + ' achado(s).' + (r.ja_em_outra_fatia ? '\n' + r.ja_em_outra_fatia + ' deles já estão em outra distribuição aberta.' : '') + (r.ignorados ? '\n' + r.ignorados + ' não foram encontrados.' : ''));
   $('form-fatia').innerHTML = '';
+  AV.t = 0;
   abrirAba('fatias');
 }
 
@@ -1194,16 +1356,20 @@ async function telaFatias() {
   const r = await api('raiox/fatias-listar', {});
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
   const gestor = PAPEL !== 'analista';
-  const linhas = r.fatias.map(f => `<div class="bloco"><div><strong>${esc(f.nome)}</strong> <span class="etq ${f.situacao === 'devolvida' ? 'verde' : f.situacao === 'em_analise' ? 'amarelo' : 'azul'}">${esc(NOME_SIT[f.situacao] || f.situacao)}</span></div>
-    <p class="dica">${gestor ? 'Para: ' + esc(f.atribuida_nome) + ' · ' : ''}criada ${esc(fmtData(f.criada_em))}${f.devolvida_em ? ' · devolvida ' + esc(fmtData(f.devolvida_em)) : ''} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer · ${f.n_pareceres} parecer(es)</p>
+  const ordPz = f => f.situacao === 'devolvida' ? 9e9 : (pnPrazo(f) ? pnPrazo(f).getTime() : 8e9);
+  r.fatias.sort((x, y) => ordPz(x) - ordPz(y));
+  const linhas = r.fatias.map(f => `<div class="bloco"><div><strong>${esc(f.nome)}</strong> <span class="etq ${f.situacao === 'devolvida' ? 'verde' : f.situacao === 'em_analise' ? 'amarelo' : 'azul'}">${esc(NOME_SIT[f.situacao] || f.situacao)}</span> ${prazoChip(f)}</div>
+    <p class="dica">${gestor ? 'Para: ' + esc(f.atribuida_nome) + ' · ' : ''}criada ${esc(fmtData(f.criada_em))}${prazoTxt(f)}${f.devolvida_em ? ' · devolvida ' + esc(fmtData(f.devolvida_em)) : ''} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer · ${f.n_pareceres} parecer(es)</p>
     ${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
-    <div class="acoes"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>
+    <div class="pbar"><i style="width:${f.n_achados ? Math.round(100 * f.n_cobertos / f.n_achados) : 0}%"></i></div>
+    <div class="acoes"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>${gestor && f.situacao !== 'devolvida' ? prazoEditor(f) : ''}
     ${gestor && f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`).join('');
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-cut"></i> ${gestor ? 'Distribuições e pareceres' : 'Minhas distribuições'}</h2>
     ${gestor ? '<p class="dica">Para criar uma distribuição, vá em Achados, filtre o que quer enviar e use "Criar distribuição com os achados filtrados".</p>' : '<p class="dica">Estas são as distribuições de achados que a coordenação enviou para você analisar.</p>'}</div>
     ${linhas || '<div class="vazio">Nenhuma distribuição ainda.</div>'}
     ${gestor ? '<div id="visao-par"></div>' : ''}`;
   if (gestor) visaoPareceres();
+  AV.t = 0; atualizarAvisos();
 }
 async function reabrirFatia(id) { const r = await api('raiox/fatia-reabrir', { id }); if (!r.ok) { alert(r.erro); return; } telaFatias(); }
 
@@ -1223,7 +1389,7 @@ async function visaoPareceres() {
 }
 
 // ---- uma fatia aberta ----
-let FATIA = null, SEL = new Set(), PAR_EDIT = null, FILTRO_FATIA = { q: '', cob: '' };
+let FATIA_VIS = false, FATIA = null, SEL = new Set(), PAR_EDIT = null, FILTRO_FATIA = { q: '', cob: '' };
 async function abrirFatia(id) {
   $('conteudo').innerHTML = carregando('Abrindo a distribuição...');
   const r = await api('raiox/fatia-obter', { id }, 180000);
@@ -1233,6 +1399,7 @@ async function abrirFatia(id) {
 }
 function coberturaFatia() { const c = {}; FATIA.pareceres.forEach(p => p.ids_achados.forEach(i => { (c[i] = c[i] || []).push(p.parecer_id); })); return c; }
 function pintarFatia() {
+  FATIA_VIS = true;
   const f = FATIA.fatia, aberta = f.situacao !== 'devolvida' || PAPEL !== 'analista';
   const cob = coberturaFatia();
   const q = normT(FILTRO_FATIA.q);
@@ -1244,7 +1411,9 @@ function pintarFatia() {
     <div class="acoes">${aberta ? `<button class="btn btn-sm" onclick="editarParecer('${esc(p.parecer_id)}')">Editar (gera nova versão)</button>` : ''}${p.n_versoes > 1 ? `<button class="btn btn-sm btn-claro" onclick="verVersoes('${esc(p.parecer_id)}')">Ver ${p.n_versoes} versões</button>` : ''}</div><div id="vers-${esc(p.parecer_id)}"></div></div>`).join('');
   $('conteudo').innerHTML = `<div class="bloco"><button class="btn btn-sm btn-claro" onclick="abrirAba(abaAtual)"><i class="ti ti-arrow-left"></i> Voltar</button>
     <h2>${esc(f.nome)} <small>${esc(NOME_SIT[f.situacao] || f.situacao)}</small></h2>
-    <p class="dica">Para: ${esc(f.atribuida_nome)} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer</p>${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
+    <p class="dica">Para: ${esc(f.atribuida_nome)}${prazoTxt(f)} · ${f.n_achados} achado(s) · ${f.n_cobertos} com parecer · ${FATIA.achados.filter(a => a.conf_estado || a.conferido).length} conferido(s)</p>
+    <div>${prazoChip(f)}</div><div class="pbar"><i style="width:${f.n_achados ? Math.round(100 * f.n_cobertos / f.n_achados) : 0}%"></i></div>
+    ${PAPEL !== 'analista' && f.situacao !== 'devolvida' ? `<div style="margin-top:8px">${prazoEditor(f)}</div>` : ''}${f.mensagem ? `<p>${esc(f.mensagem)}</p>` : ''}
     ${f.situacao !== 'devolvida' ? `<div class="acoes"><button class="btn btn-principal btn-sm" onclick="devolverFatia()"><i class="ti ti-arrow-back-up"></i> Devolver distribuição pronta</button></div>` : '<p class="dica">Distribuição devolvida.</p>'}</div>
     <div class="bloco"><h2>Pareceres</h2>${par || '<p class="dica">Nenhum parecer ainda. Marque os achados abaixo e preencha o formulário.</p>'}</div>
     ${aberta ? `<div class="bloco" id="form-par"></div>` : ''}
@@ -1252,7 +1421,7 @@ function pintarFatia() {
       <div class="filtros"><div><label>Parecer</label><select onchange="FILTRO_FATIA.cob=this.value;pintarFatia()"><option value="">Todos</option><option value="sem" ${FILTRO_FATIA.cob === 'sem' ? 'selected' : ''}>Sem parecer</option><option value="com" ${FILTRO_FATIA.cob === 'com' ? 'selected' : ''}>Com parecer</option></select></div>
       <div><label>Busca</label><input value="${esc(FILTRO_FATIA.q)}" onchange="FILTRO_FATIA.q=this.value;pintarFatia()" placeholder="palavra"></div></div>
       ${aberta ? `<div class="acoes"><button class="btn btn-sm btn-claro" onclick="selTodosFatia(true)">Marcar todos os listados</button> <button class="btn btn-sm btn-claro" onclick="selTodosFatia(false)">Desmarcar</button> <span class="dica" id="cont-sel"></span></div>` : ''}</div>
-    ${lista.slice(0, 200).map(a => `<div style="display:flex;gap:8px;align-items:flex-start">${aberta ? `<input type="checkbox" style="margin-top:14px" ${SEL.has(a.id) ? 'checked' : ''} onchange="selUm('${esc(a.id)}',this.checked)">` : ''}<div style="flex:1">${cartao(a, false)}${cob[a.id] ? '<span class="etq verde">com parecer</span>' : '<span class="etq amarelo">sem parecer</span>'}</div></div>`).join('')}
+    ${lista.slice(0, 200).map(a => `<div style="display:flex;gap:8px;align-items:flex-start">${aberta ? `<input type="checkbox" style="margin-top:14px" ${SEL.has(a.id) ? 'checked' : ''} onchange="selUm('${esc(a.id)}',this.checked)">` : ''}<div style="flex:1">${cartao(a, false, false, aberta)}${cob[a.id] ? '<span class="etq verde">com parecer</span>' : '<span class="etq amarelo">sem parecer</span>'}</div></div>`).join('')}
     ${lista.length > 200 ? '<div class="dica">Mostrando os 200 primeiros. Use a busca ou "Marcar todos os listados" (marca todos os da lista, não só os 200).</div>' : ''}`;
   if (aberta) pintarFormParecer();
   contarSel();
@@ -1268,7 +1437,35 @@ function pintarFormParecer() {
     <p class="dica">Este parecer cobre <strong id="par-n">${SEL.size}</strong> achado(s) marcado(s). Para cada área (setor, diretoria, Secretaria Executiva, SES), diga: há impacto, não há impacto, ou diligência necessária (precisa pesquisar mais). Escreva sempre o motivo. Você pode fazer vários pareceres na mesma distribuição, um para cada resposta. Antes de devolver, todos os achados precisam ter parecer.</p>
     <div class="filtros">${ALVOS_IMP.map(([c, n]) => `<div><label>${esc(n)}</label>${selImp(c)}</div>`).join('')}</div>
     <label>Justificativa (obrigatória, inclusive quando não há impacto)</label><textarea id="pf-just" rows="6" maxlength="4000">${esc(p ? p.justificativa : '')}</textarea>
+    <div class="acoes"><button class="btn btn-sm btn-claro" onclick="minutaIA()" id="bt-minuta"><i class="ti ti-sparkles"></i> Sugerir minuta com IA</button><span class="dica">A IA só usa os dados dos achados marcados e os artigos da Lei 15.210 mostrados nos cartões. É rascunho: leia, corrija e assuma o texto.</span></div><div id="pf-ia" class="dica"></div>
     <div class="acoes"><button class="btn btn-principal btn-sm" onclick="salvarParecer()"><i class="ti ti-device-floppy"></i> Salvar parecer</button>${p ? ' <button class="btn btn-sm btn-claro" onclick="PAR_EDIT=null;pintarFormParecer()">Cancelar edição</button>' : ''}</div><div id="pf-msg" class="dica"></div>`;
+}
+async function minutaIA() {
+  const msg = t => { $('pf-ia').innerHTML = t; };
+  const sel = FATIA.achados.filter(a => SEL.has(a.id)).slice(0, 12);
+  if (!sel.length) { msg('Marque antes os achados que este parecer vai cobrir.'); return; }
+  if (!chaves.length) { msg('Nenhuma chave de IA liberada para o seu usuário. Peça ao administrador.'); return; }
+  const ids = new Set(); sel.forEach(a => baseLegal(a).forEach(i => ids.add(i)));
+  const leis = [...ids].map(i => LEI.find(l => l.id === i)).map(l => `- ${l.art} (${l.nome}): ${l.texto}`).join('\n') || '(nenhum artigo foi indicado automaticamente; não cite artigo de lei)';
+  const dados = sel.map((a, i) => `ACHADO ${i + 1}\nUnidade: ${a.unidade || ''}\nContrato: ${a.contrato || ''}\nGravidade: ${a.gravidade || ''}\nTítulo: ${a.titulo || ''}\nDescrição: ${a.descricao || ''}\nImpacto: ${a.impacto || ''}\nTrecho do documento: ${a.trecho || ''}\nConferência: ${a.conf_estado ? a.conf_estado + (a.conf_motivo ? ' — ' + a.conf_motivo : '') : 'ainda não conferido'}`).join('\n\n');
+  const prompt = `Você ajuda a equipe jurídica de uma secretaria estadual de saúde a redigir a minuta de resposta a achados de auditoria de contratos de gestão com Organizações Sociais.
+REGRAS: use somente os dados dos achados e os artigos listados abaixo. Não invente fatos, números, datas, jurisprudência, pareceres nem artigos. Se faltar informação, diga que é necessária diligência e diga qual. Texto claro, em português, 3 a 6 parágrafos curtos, sem enfeite. Cite artigo de lei somente se ele estiver na lista. Os achados são indícios feitos por leitura automática: trate-os como ponto a verificar, não como prova.
+ARTIGOS DA LEI ESTADUAL 15.210/2013 (resumo):
+${leis}
+
+${dados}
+
+Responda SOMENTE com JSON válido neste formato: {"minuta":"texto da minuta","pontos_a_verificar":["o que o jurídico precisa confirmar antes de assinar"]}`;
+  $('bt-minuta').disabled = true; msg('<span class="spinner"></span>Pedindo o rascunho à IA...');
+  try {
+    const bruto = await perguntarIA(docsMascarar_(prompt).texto, () => {});
+    let j; try { j = JSON.parse(bruto); } catch (e) { const m = /\{[\s\S]*\}/.exec(bruto); j = m ? JSON.parse(m[0]) : null; }
+    if (!j || !j.minuta) throw new Error('A IA respondeu fora do formato. Tente de novo.');
+    const ta = $('pf-just'); if (ta.value.trim() && !confirm('O campo de justificativa já tem texto. Substituir pelo rascunho da IA?')) { msg(''); return; }
+    ta.value = '[RASCUNHO DA IA — revise antes de salvar]\n\n' + String(j.minuta).slice(0, 3800);
+    msg('Rascunho colocado na justificativa. ' + (Array.isArray(j.pontos_a_verificar) && j.pontos_a_verificar.length ? '<br><b>Confirmar antes de assinar:</b><ul style="margin:4px 0 0 18px">' + j.pontos_a_verificar.slice(0, 8).map(x => `<li>${esc(x)}</li>`).join('') + '</ul>' : ''));
+  } catch (e) { msg(`<span style="color:var(--bordo)">${esc(e.message)}</span>`); }
+  finally { const b = $('bt-minuta'); if (b) b.disabled = false; }
 }
 function editarParecer(id) {
   const p = FATIA.pareceres.find(x => x.parecer_id === id); if (!p) return;
@@ -1291,6 +1488,7 @@ async function devolverFatia() {
   if (!confirm('Devolver esta distribuição? Depois de devolver, você não poderá mudar os pareceres, a menos que a coordenação reabra a distribuição.')) return;
   const r = await api('raiox/fatia-devolver', { id: FATIA.fatia.id });
   if (!r.ok) { alert(r.erro); return; }
+  AV.t = 0;
   abrirAba(abaAtual);
 }
 
