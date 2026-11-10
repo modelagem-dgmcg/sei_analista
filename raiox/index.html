@@ -176,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.39';
-const VERSAO_RAIOX_DATA = '10/11/2026 16:00';
+const VERSAO_RAIOX = 'v0.40';
+const VERSAO_RAIOX_DATA = '10/11/2026 18:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -231,15 +231,15 @@ async function entrar() {
   try { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; } catch (e) { chaves = []; }
   try { const c = await api('raiox/config-obter', {}); if (c && c.ok && c.config) CFG = Object.assign(CFG, c.config); } catch (e) {}
   montarNav();
-  abrirAba(PAPEL === 'analista' ? 'minhas' : PAPEL === 'coordenacao' || PAPEL === 'admin' ? 'painel' : 'rodar');
+  abrirAba('entrada');
 }
 async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN = null; location.reload(); }
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Usuários'], ['chaves', 'Chaves de IA']],
-  coordenacao: [['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
-  analista: [['minhas', 'Minhas distribuições']]
+  admin: [['entrada', 'Entrada'], ['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Usuários'], ['chaves', 'Chaves de IA']],
+  coordenacao: [['entrada', 'Entrada'], ['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
+  analista: [['entrada', 'Entrada'], ['minhas', 'Minhas distribuições']]
 };
 function montarNav() {
   $('nav').innerHTML = (ABAS_POR_PAPEL[PAPEL] || []).map(x => `<a href="#" id="aba-${x[0]}" onclick="abrirAba('${x[0]}'); return false;">${esc(x[1])}</a>`).join('');
@@ -248,8 +248,51 @@ function abrirAba(a) {
   if (!(ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === a)) return;
   abaAtual = a; FATIA_VIS = false; atualizarAvisos();
   (ABAS_POR_PAPEL[PAPEL] || []).forEach(x => { const el = $('aba-' + x[0]); if (el) el.classList.toggle('ativa', x[0] === a); });
-  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres(); else if (a === 'painel') telaPainel(); else if (a === 'chaves') telaChaves(); else if (a === 'lei') telaLei();
+  if (a === 'entrada') telaEntrada(); else if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres(); else if (a === 'painel') telaPainel(); else if (a === 'chaves') telaChaves(); else if (a === 'lei') telaLei();
   else if (a === 'fatias' || a === 'minhas') telaFatias(); else if (a === 'equipe') telaEquipe();
+}
+
+// ==================== ENTRADA (tela inicial) ====================
+async function telaEntrada() {
+  $('conteudo').innerHTML = carregando('Carregando...');
+  const nome = (($('quem') || {}).textContent || '').split(' ')[0];
+  const gestor = PAPEL !== 'analista';
+  const [ra, rf] = await Promise.all([gestor ? api('raiox/achados', {}) : Promise.resolve({ ok: false }), api('raiox/fatias-listar', {})]);
+  if (abaAtual !== 'entrada') return;
+  const fs = (rf && rf.ok !== false && rf.fatias) || [];
+  const abertas = fs.filter(f => f.situacao !== 'devolvida');
+  let tiles = '';
+  if (gestor && ra && ra.ok !== false) {
+    achados = prepararAchados(ra.achados || []);
+    const vis = achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido');
+    const atr = abertas.filter(f => pnIso(f) && pnIso(f) < hojeIso(0)).length;
+    tiles = `<div class="tiles">
+      <div class="tile"><h3>Achados a tratar</h3><div class="grande">${fmt(vis.length)}</div></div>
+      <div class="tile"><h3>Distribuições abertas</h3><div class="grande">${fmt(abertas.length)}</div></div>
+      ${atr ? `<div class="tile"><h3>Com prazo vencido</h3><div class="grande" style="color:var(--bordo)">${fmt(atr)}</div></div>` : ''}</div>`;
+  } else {
+    tiles = `<div class="tiles"><div class="tile"><h3>Distribuições com você</h3><div class="grande">${fmt(abertas.length)}</div></div></div>`;
+  }
+  const atalho = (aba, icone, titulo, texto) => (ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === aba) ? `<div class="tile" style="cursor:pointer" onclick="abrirAba('${aba}')"><h3><i class="ti ${icone}"></i> ${esc(titulo)}</h3><div class="dica" style="font-size:.88rem">${esc(texto)}</div></div>` : '';
+  const atalhos = PAPEL === 'analista'
+    ? atalho('minhas', 'ti-inbox', 'Minhas distribuições', 'Abra o lote que recebeu, confira cada achado e responda: Procede, Não procede ou Resolvido.')
+    : atalho('painel', 'ti-layout-dashboard', 'Painel do coordenador', 'Distribuir achados com prazo, acompanhar quem está tratando e definir as regras de aviso.')
+      + atalho('achados', 'ti-list-search', 'Achados', 'Todos os pontos encontrados nos contratos, com filtros por setor, órgão e tema.')
+      + atalho('lei', 'ti-scale', 'Lei 15.210', 'Diagnóstico jurídico dos achados e dos pareceres da CTAI, com revisão pelo jurídico.')
+      + atalho('pareceres', 'ti-file-text', 'Pareceres da CTAI', 'Os pareceres lidos e os achados que vieram deles.')
+      + atalho('fatias', 'ti-send', 'Distribuições e pareceres', 'O que foi enviado, os pareceres recebidos e as devoluções.')
+      + atalho('rodar', 'ti-player-play', 'Rodar a leitura', 'Lê os documentos e gera novos achados.')
+      + atalho('equipe', 'ti-users', 'Usuários', 'Cadastrar pessoas, definir papéis e senhas.')
+      + atalho('chaves', 'ti-key', 'Chaves de IA', 'Guardar as chaves usadas na leitura e no diagnóstico.');
+  const primeiro = PAPEL === 'analista'
+    ? 'Abra "Minhas distribuições", escolha um lote e confira os achados um a um. Dê sempre o motivo ao marcar Resolvido.'
+    : 'Abra o Painel, veja os avisos de prazo e distribua os achados que ainda estão sem distribuição. Depois acompanhe as respostas e revise o diagnóstico da Lei 15.210 pelos que parecem descumprir.';
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-home"></i> Olá${nome ? ', ' + esc(nome) : ''} <small>Raio-X dos contratos de gestão</small></h2>
+    <p style="margin:6px 0">O Raio-X lê os documentos dos contratos de gestão e aponta pontos que merecem conferência: valores que não batem, prazos contraditórios, anexos que faltam. Também compara com a Lei estadual 15.210/2013 e com o que o TCE-PE já cobrou.</p>
+    <p class="dica">Cada ponto é um indício feito por leitura automática. Quem decide é a equipe: ninguém é acusado por este sistema.</p></div>
+    <div class="bloco">${tiles}</div>
+    <div class="bloco"><h3 style="margin:0 0 8px">Por onde começar</h3><p>${esc(primeiro)}</p></div>
+    <div class="bloco"><h3 style="margin:0 0 8px">Atalhos</h3><div class="tiles">${atalhos}</div></div>`;
 }
 const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
 
