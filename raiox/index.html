@@ -169,8 +169,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.32';
-const VERSAO_RAIOX_DATA = '06/11/2026 18:00';
+const VERSAO_RAIOX = 'v0.33';
+const VERSAO_RAIOX_DATA = '10/11/2026 10:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -223,14 +223,14 @@ async function entrar() {
   if (!PAPEL) { $('nav').innerHTML = ''; $('conteudo').innerHTML = `<div class="erro">${esc((eu && eu.erro) || 'Você ainda não tem um papel no Raio-X. Peça ao administrador que cadastre você na aba Equipe.')}</div>`; return; }
   if (PAPEL === 'admin') { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; }
   montarNav();
-  abrirAba(PAPEL === 'analista' ? 'minhas' : PAPEL === 'coordenacao' ? 'fatias' : 'rodar');
+  abrirAba(PAPEL === 'analista' ? 'minhas' : PAPEL === 'coordenacao' || PAPEL === 'admin' ? 'painel' : 'rodar');
 }
 async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN = null; location.reload(); }
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe']],
-  coordenacao: [['achados', 'Achados'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
+  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe'], ['chaves', 'Chaves de IA']],
+  coordenacao: [['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
   analista: [['minhas', 'Minhas distribuições']]
 };
 function montarNav() {
@@ -240,7 +240,7 @@ function abrirAba(a) {
   if (!(ABAS_POR_PAPEL[PAPEL] || []).some(x => x[0] === a)) return;
   abaAtual = a;
   (ABAS_POR_PAPEL[PAPEL] || []).forEach(x => { const el = $('aba-' + x[0]); if (el) el.classList.toggle('ativa', x[0] === a); });
-  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres();
+  if (a === 'rodar') telaRodar(); else if (a === 'achados') telaAchados(); else if (a === 'rx') telaRx(); else if (a === 'pareceres') telaPareceres(); else if (a === 'painel') telaPainel(); else if (a === 'chaves') telaChaves();
   else if (a === 'fatias' || a === 'minhas') telaFatias(); else if (a === 'equipe') telaEquipe();
 }
 const carregando = t => `<div class="vazio"><span class="spinner"></span>${esc(t || 'Carregando...')}</div>`;
@@ -661,6 +661,176 @@ async function rodarEscopo(e) {
   const x = escopos.find(z => z.escopo === e.escopo); if (x && s.ok !== false) { x.estado = parcial ? 'parcial' : 'concluido'; x.n_achados = unicos.length; }
 }
 
+// ==================== TELA: PAINEL DO COORDENADOR (distribuir e acompanhar) ====================
+const PN = { sub: 'distribuir', agrupar: 'setor', sel: {}, q: '', mostrarDist: false, fatias: [], noFatia: {}, equipe: [], abertos: {} };
+const DIAS_PARADA = 7;           // distribuição sem nenhum parecer há mais que isto é marcada como "parada"
+const ROT_AGRUPAR = { setor: 'Gerência / setor', unidade: 'Unidade', gravidade: 'Gravidade', origem: 'Origem', contrato: 'Contrato ou processo' };
+const PN_ORIGEM = { codigo: 'Conferência automática', gaocg: 'GAOCG', ia: 'Lido pela IA' };
+function pnGrupo(a) {
+  switch (PN.agrupar) {
+    case 'setor': return a.setor || 'Sem setor definido';
+    case 'unidade': return a.unidade || 'Sem unidade';
+    case 'gravidade': return ({ alta: 'Gravidade alta', media: 'Gravidade média', baixa: 'Gravidade baixa' })[a.gravidade] || 'Sem gravidade';
+    case 'origem': return ehParecerCtai(a) ? 'Pareceres da CTAI (lidos pela IA)' : (PN_ORIGEM[a.origem] || a.origem || 'Outra');
+    default: return a.contrato ? 'Contrato ' + a.contrato : a.processo ? 'Processo ' + a.processo : 'Sem contrato identificado';
+  }
+}
+function pnPrazo(f) { const m = /^Prazo:\s*(\d{2})\/(\d{2})\/(\d{4})/.exec(f.mensagem || ''); return m ? new Date(+m[3], +m[2] - 1, +m[1], 23, 59) : null; }
+function pnDias(iso) { const t = Date.parse(iso); return isNaN(t) ? 0 : Math.floor((Date.now() - t) / 86400000); }
+function pnEstado(f) {
+  if (f.situacao === 'devolvida') return ['devolvida', 'verde'];
+  const pr = pnPrazo(f); if (pr && pr < new Date()) return ['atrasada', 'vermelho'];
+  if (!f.n_cobertos && pnDias(f.criada_em) > DIAS_PARADA) return ['parada', 'amarelo'];
+  return [f.situacao === 'em_analise' ? 'em análise' : 'aguardando início', 'azul'];
+}
+async function telaPainel(manter) {
+  if (!manter) $('conteudo').innerHTML = carregando('Carregando o painel...');
+  const [ra, rf, re] = await Promise.all([api('raiox/achados', {}), api('raiox/fatias-listar', {}), api('raiox/perfis-listar', {})]);
+  if (ra.ok === false || rf.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc((ra.erro || rf.erro) || 'Erro')}</div>`; return; }
+  achados = prepararAchados(ra.achados || []); PN.fatias = rf.fatias || [];
+  PN.equipe = (re.ok === false ? [] : re.perfis || []).filter(p => p.ativo !== 'nao' && p.papel !== 'admin' || p.papel === 'admin' && PAPEL === 'admin');
+  // quais achados já estão em distribuição aberta
+  PN.noFatia = {};
+  const abertas = PN.fatias.filter(f => f.situacao !== 'devolvida');
+  const dets = await Promise.all(abertas.map(f => f.ids ? { ids: f.ids } : api('raiox/fatia-obter', { id: f.id }).then(x => ({ ids: (x.achados || []).map(a => a.id) }))));
+  dets.forEach((d, i) => (d.ids || []).forEach(id => { PN.noFatia[id] = abertas[i].nome; }));
+  if (!manter) { PN.sel = {}; PN.q = ''; }
+  pnDesenhar();
+}
+function pnTiles() {
+  const vis = achados.filter(visivel), semDist = vis.filter(a => !PN.noFatia[a.id]).length, ab = PN.fatias.filter(f => f.situacao !== 'devolvida');
+  const par = ab.filter(f => pnEstado(f)[0] === 'parada').length, atr = ab.filter(f => pnEstado(f)[0] === 'atrasada').length;
+  return `<div class="tiles">
+    <div class="tile"><h3>Achados a tratar</h3><div class="grande">${fmt(vis.length)}</div></div>
+    <div class="tile" style="cursor:pointer" onclick="pnSub('distribuir')"><h3>Sem distribuição</h3><div class="grande">${fmt(semDist)}</div></div>
+    <div class="tile" style="cursor:pointer" onclick="pnSub('acompanhar')"><h3>Distribuições abertas</h3><div class="grande">${fmt(ab.length)}</div></div>
+    ${atr ? `<div class="tile"><h3>Atrasadas</h3><div class="grande" style="color:var(--bordo)">${fmt(atr)}</div></div>` : ''}
+    ${par ? `<div class="tile"><h3>Paradas (+${DIAS_PARADA} dias sem parecer)</h3><div class="grande">${fmt(par)}</div></div>` : ''}
+    <div class="tile"><h3>Devolvidas</h3><div class="grande">${fmt(PN.fatias.filter(f => f.situacao === 'devolvida').length)}</div></div></div>`;
+}
+function pnSub(n) { PN.sub = n; pnDesenhar(); }
+function pnDesenhar() {
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-layout-dashboard"></i> Painel do coordenador <small>distribuir os achados e acompanhar quem está tratando</small></h2>${pnTiles()}
+    <div class="subabas"><button class="${PN.sub === 'distribuir' ? 'ativa' : ''}" onclick="pnSub('distribuir')"><i class="ti ti-send"></i> Distribuir achados</button>
+    <button class="${PN.sub === 'acompanhar' ? 'ativa' : ''}" onclick="pnSub('acompanhar')"><i class="ti ti-chart-bar"></i> Acompanhar</button></div></div>
+    <div id="pn-corpo"></div>`;
+  PN.sub === 'distribuir' ? pnDistribuir() : pnAcompanhar();
+}
+// ---------- Distribuir ----------
+function pnLista() {
+  const q = normT(PN.q);
+  return achados.filter(visivel).filter(a => PN.mostrarDist || !PN.noFatia[a.id])
+    .filter(a => !q || normT([a.titulo, a.unidade, a.contrato, a.processo, a.setor, a.documentos].join(' ')).includes(q));
+}
+function pnDistribuir() {
+  const lista = pnLista(), grupos = {};
+  lista.forEach(a => { (grupos[pnGrupo(a)] = grupos[pnGrupo(a)] || []).push(a); });
+  const nomes = Object.keys(grupos).sort((x, y) => grupos[y].length - grupos[x].length);
+  const nSel = Object.keys(PN.sel).length;
+  const pessoas = PN.equipe.map(p => `<option value="${esc(p.email)}">${esc(p.nome || p.email)} (${esc(p.papel)})</option>`).join('');
+  $('pn-corpo').innerHTML = `<div class="bloco">
+    <div class="filtros"><div><label>Agrupar por</label><select onchange="PN.agrupar=this.value;pnDistribuir()">${Object.keys(ROT_AGRUPAR).map(k => `<option value="${k}" ${PN.agrupar === k ? 'selected' : ''}>${ROT_AGRUPAR[k]}</option>`).join('')}</select></div>
+      <div style="flex:2;min-width:220px"><label>Buscar</label><input id="pn-q" value="${esc(PN.q)}" placeholder="título, unidade, contrato..." oninput="PN.q=this.value;pnBuscar()"></div>
+      <div><label class="auto" style="margin-top:22px"><input type="checkbox" ${PN.mostrarDist ? 'checked' : ''} onchange="PN.mostrarDist=this.checked;pnDistribuir()"> mostrar os já distribuídos</label></div></div>
+    <div class="dica">${fmt(lista.length)} achados em ${fmt(nomes.length)} grupos. Marque o grupo inteiro (distribuição em bloco) ou abra o grupo e marque achado por achado.</div></div>
+    <div id="pn-grupos">${nomes.map((n, gi) => pnGrupoHtml(n, grupos[n], gi)).join('') || '<div class="bloco vazio">Nada para distribuir com esse filtro.</div>'}</div>
+    <div class="bloco" id="pn-barra" style="position:sticky;bottom:0;border-top:3px solid var(--bordo)">
+      <b>${fmt(nSel)} ${nSel === 1 ? 'achado selecionado' : 'achados selecionados'}</b>
+      <div class="filtros" style="margin-top:8px"><div><label>Entregar para</label><select id="pn-para" multiple size="3" style="min-width:230px">${pessoas}</select><div class="dica">Mais de uma pessoa: o lote é dividido entre elas, mantendo cada grupo junto.</div></div>
+        <div><label>Prazo</label><input id="pn-prazo" type="date"></div>
+        <div style="flex:2;min-width:220px"><label>Nome da distribuição</label><input id="pn-nome" placeholder="ex.: Aditivos sem parecer — jan/2026"></div>
+        <div style="flex:2;min-width:220px"><label>Orientação ao analista</label><input id="pn-msg" placeholder="o que se espera: conferir, fundamentar, propor correção..."></div></div>
+      <div class="acoes"><button class="btn btn-principal" onclick="pnEnviar()" ${nSel ? '' : 'disabled'}><i class="ti ti-send"></i> Distribuir</button>
+        <button class="btn btn-sm btn-claro" onclick="PN.sel={};pnDistribuir()">Limpar seleção</button></div><div id="pn-msg-res" class="dica"></div></div>`;
+}
+function pnBuscar() { const p = $('pn-q').selectionStart; pnDistribuir(); const e = $('pn-q'); e.focus(); e.setSelectionRange(p, p); }
+function pnGrupoHtml(nome, l, gi) {
+  const marc = l.filter(a => PN.sel[a.id]).length, todos = marc === l.length, alta = l.filter(a => a.gravidade === 'alta').length, aberto = PN.abertos[nome];
+  return `<div class="bloco" style="padding:10px 14px"><div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <input type="checkbox" ${todos ? 'checked' : ''} onchange="pnMarcarGrupo(${gi}, this.checked)" title="Marcar o grupo inteiro">
+    <b style="flex:1;min-width:180px">${esc(nome)}</b><span class="dica">${fmt(l.length)} achados${alta ? ` · ${fmt(alta)} de gravidade alta` : ''}${marc && !todos ? ` · ${marc} marcados` : ''}</span>
+    <button class="btn btn-sm btn-claro" onclick="PN.abertos[${JSON.stringify(nome).replace(/"/g, '&quot;')}]=!PN.abertos[${JSON.stringify(nome).replace(/"/g, '&quot;')}];pnDistribuir()">${aberto ? 'Fechar' : 'Ver achados'}</button></div>
+    ${aberto ? `<div style="margin-top:8px">${l.sort((x, y) => ordemGrav[x.gravidade] - ordemGrav[y.gravidade]).slice(0, 300).map(a => `<label class="auto" style="display:flex;gap:8px;padding:4px 0;border-top:1px solid var(--borda)"><input type="checkbox" ${PN.sel[a.id] ? 'checked' : ''} onchange="pnMarcar('${esc(a.id)}', this.checked)"><span><span class="etq ${a.gravidade === 'alta' ? 'vermelho' : a.gravidade === 'media' ? 'amarelo' : 'azul'}">${esc(a.gravidade || '')}</span> ${esc(a.titulo)} <span class="dica">· ${esc(a.unidade || '')}${a.contrato ? ' · contrato ' + esc(a.contrato) : ''}${PN.noFatia[a.id] ? ' · já em "' + esc(PN.noFatia[a.id]) + '"' : ''}</span></span></label>`).join('')}${l.length > 300 ? `<div class="dica">Mostrando 300 de ${l.length}. Use a busca para afinar, ou marque o grupo inteiro.</div>` : ''}</div>` : ''}</div>`;
+}
+function pnMarcar(id, on) { if (on) PN.sel[id] = 1; else delete PN.sel[id]; pnAtualizaBarra(); }
+function pnMarcarGrupo(gi, on) {
+  const g = {}; pnLista().forEach(a => { (g[pnGrupo(a)] = g[pnGrupo(a)] || []).push(a); });
+  const nomes = Object.keys(g).sort((x, y) => g[y].length - g[x].length);
+  (g[nomes[gi]] || []).forEach(a => { if (on) PN.sel[a.id] = 1; else delete PN.sel[a.id]; });
+  pnDistribuir();
+}
+function pnAtualizaBarra() { const n = Object.keys(PN.sel).length, b = $('pn-barra'); if (b) { b.querySelector('b').textContent = fmt(n) + (n === 1 ? ' achado selecionado' : ' achados selecionados'); const btn = b.querySelector('.btn-principal'); if (btn) btn.disabled = !n; } }
+async function pnEnviar() {
+  const ids = Object.keys(PN.sel), para = [...$('pn-para').selectedOptions].map(o => o.value), nome = $('pn-nome').value.trim(), prazo = $('pn-prazo').value, msg = $('pn-msg').value.trim();
+  const res = t => { $('pn-msg-res').innerHTML = t; };
+  if (!ids.length) { res('Marque os achados.'); return; }
+  if (!para.length) { res('Escolha para quem entregar.'); return; }
+  if (!nome) { res('Dê um nome à distribuição.'); return; }
+  // divide em partes mantendo cada grupo junto (balanceia pelo tamanho)
+  const porGrupo = {}; ids.forEach(id => { const a = achados.find(x => x.id === id); (porGrupo[a ? pnGrupo(a) : '?'] = porGrupo[a ? pnGrupo(a) : '?'] || []).push(id); });
+  const partes = para.map(() => []); Object.values(porGrupo).sort((x, y) => y.length - x.length).forEach(g => { partes.reduce((m, p) => p.length < m.length ? p : m).push(...g); });
+  const dataBr = prazo ? prazo.split('-').reverse().join('/') : '', texto = (dataBr ? 'Prazo: ' + dataBr + '. ' : '') + msg;
+  res('<span class="spinner"></span>Distribuindo...'); let tot = 0, falhas = [];
+  for (let i = 0; i < para.length; i++) {
+    if (!partes[i].length) continue;
+    const r = await api('raiox/fatia-criar', { nome: para.length > 1 ? nome + ' (parte ' + (i + 1) + ' de ' + para.length + ')' : nome, atribuida_a: para[i], mensagem: texto, ids: partes[i], filtro: 'painel do coordenador — agrupado por ' + ROT_AGRUPAR[PN.agrupar] });
+    if (r.ok === false) falhas.push(r.erro); else tot += r.n;
+  }
+  if (falhas.length) { res(`<span style="color:var(--bordo)">${esc(falhas.join(' | '))}</span> (${fmt(tot)} achados já distribuídos)`); }
+  PN.sel = {}; await telaPainel(true);
+  if (!falhas.length) { PN.sub = 'acompanhar'; pnDesenhar(); }
+}
+// ---------- Acompanhar ----------
+function pnAcompanhar() {
+  const fs = PN.fatias.slice().sort((x, y) => (pnEstado(x)[0] === 'atrasada' ? 0 : pnEstado(x)[0] === 'parada' ? 1 : x.situacao === 'devolvida' ? 3 : 2) - (pnEstado(y)[0] === 'atrasada' ? 0 : pnEstado(y)[0] === 'parada' ? 1 : y.situacao === 'devolvida' ? 3 : 2));
+  const carga = {}; fs.filter(f => f.situacao !== 'devolvida').forEach(f => { const c = carga[f.atribuida_nome] = carga[f.atribuida_nome] || { n: 0, a: 0, ok: 0 }; c.n++; c.a += f.n_achados; c.ok += f.n_cobertos; });
+  const barra = (a, b) => `<div class="pbar"><i style="width:${b ? Math.round(100 * a / b) : 0}%"></i></div>`;
+  $('pn-corpo').innerHTML = `<div class="bloco"><h3 style="margin:0 0 8px">Carga por pessoa</h3>${Object.keys(carga).length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Pessoa</th><th>Distribuições abertas</th><th>Achados</th><th>Com parecer</th></tr></thead><tbody>${Object.keys(carga).map(n => `<tr><td>${esc(n)}</td><td>${carga[n].n}</td><td>${fmt(carga[n].a)}</td><td>${fmt(carga[n].ok)} (${carga[n].a ? Math.round(100 * carga[n].ok / carga[n].a) : 0}%)</td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhuma distribuição aberta.</div>'}</div>
+    <div class="bloco"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><h3 style="margin:0">Distribuições</h3><button class="btn btn-sm btn-claro" onclick="pnCsv()"><i class="ti ti-file-spreadsheet"></i> Baixar acompanhamento (CSV)</button></div>
+    ${fs.map(f => { const [est, cor] = pnEstado(f), pr = pnPrazo(f); return `<div style="border-top:1px solid var(--borda);padding:10px 0"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><b style="flex:1;min-width:200px">${esc(f.nome)}</b><span class="etq ${cor}">${est}</span></div>
+      <div class="dica">Para ${esc(f.atribuida_nome)} · criada há ${pnDias(f.criada_em)} dia(s)${pr ? ' · prazo ' + pr.toLocaleDateString('pt-BR') : ''} · ${fmt(f.n_cobertos)} de ${fmt(f.n_achados)} achados com parecer</div>${barra(f.n_cobertos, f.n_achados)}
+      <div class="acoes" style="margin-top:6px"><button class="btn btn-sm" onclick="abrirFatia('${esc(f.id)}')"><i class="ti ti-folder-open"></i> Abrir</button>${f.situacao === 'devolvida' ? `<button class="btn btn-sm btn-claro" onclick="reabrirFatia('${esc(f.id)}')">Reabrir</button>` : ''}</div></div>`; }).join('') || '<div class="vazio">Nenhuma distribuição ainda. Use "Distribuir achados".</div>'}</div>`;
+}
+function pnCsv() {
+  const q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const linhas = [['Distribuição', 'Para', 'Situação', 'Criada em', 'Prazo', 'Achados', 'Com parecer', 'Estado'].map(q).join(';')].concat(PN.fatias.map(f => [f.nome, f.atribuida_nome, f.situacao, f.criada_em, pnPrazo(f) ? pnPrazo(f).toLocaleDateString('pt-BR') : '', f.n_achados, f.n_cobertos, pnEstado(f)[0]].map(q).join(';')));
+  const b = new Blob(['﻿' + linhas.join('\n')], { type: 'text/csv;charset=utf-8' }), a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = 'raiox_acompanhamento_' + new Date().toISOString().slice(0, 10) + '.csv'; a.click();
+}
+
+// ==================== TELA: CHAVES DE IA (só administrador) ====================
+const CH = { lista: [], servicos: {}, usuarios: [], edit: null };
+async function telaChaves() {
+  $('conteudo').innerHTML = carregando('Carregando as chaves...');
+  const r = await api('adm/chaves-listar', {});
+  if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Sem permissão. Só o administrador da Gestão vê as chaves.')}</div>`; return; }
+  CH.lista = r.chaves || []; CH.servicos = r.servicos || {}; CH.usuarios = r.usuarios || []; CH.edit = null; chDesenhar();
+}
+function chDesenhar() {
+  const e = CH.lista.find(x => x.id === CH.edit) || {}, paraTodos = e.para === '*' || (!e.id);
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-key"></i> Chaves de IA <small>até duas por serviço: a 1ª é a principal, a 2ª entra se a primeira falhar</small></h2>
+    <p class="dica">A chave fica guardada só no servidor. Depois de salva, ela nunca mais aparece inteira: só os 4 últimos caracteres.</p>
+    ${CH.lista.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Nome</th><th>Serviço</th><th>Chave</th><th>Ordem</th><th>Vale para</th><th>Situação</th><th></th></tr></thead><tbody>${CH.lista.map(c => `<tr><td>${esc(c.rotulo)}</td><td>${esc(CH.servicos[c.servico] || c.servico)}</td><td>••••${esc(c.final || '')}</td><td>${esc(c.ordem)}</td><td>${c.para === '*' ? 'Todos' : (c.para || []).length + ' pessoa(s)'}</td><td>${c.ativa === false ? 'desligada' : 'ativa'}</td><td><button class="btn btn-sm btn-claro" onclick="CH.edit='${esc(c.id)}';chDesenhar()">Editar</button> <button class="btn btn-sm btn-perigo" onclick="chRemover('${esc(c.id)}')">Remover</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhuma chave cadastrada.</div>'}</div>
+    <div class="bloco"><h3 style="margin:0 0 8px">${e.id ? 'Editar chave' : 'Nova chave'}</h3><div class="filtros">
+      <div><label>Serviço</label><select id="ch-serv">${Object.keys(CH.servicos).map(k => `<option value="${esc(k)}" ${e.servico === k ? 'selected' : ''}>${esc(CH.servicos[k])}</option>`).join('')}</select></div>
+      <div><label>Nome (para você reconhecer)</label><input id="ch-rot" value="${esc(e.rotulo || '')}" placeholder="ex.: Gemini principal"></div>
+      <div><label>${e.id ? 'Trocar a chave (deixe vazio para manter)' : 'Chave'}</label><input id="ch-chave" type="password" autocomplete="off" placeholder="cole aqui"></div>
+      <div><label>Ordem</label><select id="ch-ordem"><option value="1" ${e.ordem == 1 || !e.id ? 'selected' : ''}>1 — principal</option><option value="2" ${e.ordem == 2 ? 'selected' : ''}>2 — reserva</option></select></div>
+      <div><label>Vale para</label><select id="ch-para" onchange="$('ch-pess').style.display=this.value==='*'?'none':''"><option value="*" ${paraTodos ? 'selected' : ''}>Todos</option><option value="p" ${!paraTodos ? 'selected' : ''}>Só pessoas escolhidas</option></select></div>
+      <div id="ch-pess" style="${paraTodos ? 'display:none' : ''}"><label>Pessoas</label><select id="ch-pessoas" multiple size="4">${CH.usuarios.map(u => `<option value="${esc(u.email)}" ${Array.isArray(e.para) && e.para.includes(u.email) ? 'selected' : ''}>${esc(u.nome || u.email)}</option>`).join('')}</select></div>
+      <div><label class="auto" style="margin-top:22px"><input type="checkbox" id="ch-ativa" ${e.ativa === false ? '' : 'checked'}> ativa</label></div></div>
+    <div class="acoes"><button class="btn btn-principal" onclick="chSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>${e.id ? '<button class="btn btn-sm btn-claro" onclick="CH.edit=null;chDesenhar()">Cancelar edição</button>' : ''}</div><div id="ch-msg" class="dica"></div></div>`;
+}
+async function chSalvar() {
+  const v = id => $(id).value, e = CH.lista.find(x => x.id === CH.edit);
+  const para = v('ch-para') === '*' ? '*' : [...$('ch-pessoas').selectedOptions].map(o => o.value);
+  const r = await api('adm/chaves-salvar', { id: e ? e.id : undefined, servico: v('ch-serv'), rotulo: v('ch-rot'), chave: v('ch-chave'), ordem: v('ch-ordem'), para, ativa: $('ch-ativa').checked });
+  if (r.ok === false) { $('ch-msg').innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
+  const rc = await api('ia/minhas-chaves', {}); chaves = (rc && rc.ok !== false && rc.chaves) || chaves;
+  await telaChaves(); $('ch-msg').innerHTML = '<span class="ok-msg">Chave salva.</span>';
+}
+async function chRemover(id) { if (!confirm('Remover esta chave? Quem a usa deixa de ter IA até cadastrar outra.')) return; const r = await api('adm/chaves-remover', { id }); if (r.ok === false) { alert(r.erro); return; } await telaChaves(); }
+
+
 // ==================== TELA: PARECERES DA CTAI (por ano, por pasta, por parecer) ====================
 const PAR = { ano: null, doc: null, q: '', docs: [], sub: 'ver' };
 function redesenhar() { if (abaAtual === 'pareceres') desenharPar(); else desenharRodar(escopos.reduce((t, e) => t + e.n_docs, 0)); }
@@ -873,6 +1043,7 @@ function atalhosEChips() {
 }
 function pintarAchados() {
   if (abaAtual === 'pareceres') { parPintar(); return; }
+  if (!$('lista-ach')) return;
   guardarFiltro('f-');
   atalhosEChips();
   const lista = filtrados(), nOc = achados.filter(a => a.oculto_passado).length; $('cont-ach').textContent = `${lista.length} de ${achados.length}` + (nOc && !($('f-ocultos') || {}).checked ? ` · ${nOc} escondidos (anterior/estendido sem ligação ao passado)` : '');
