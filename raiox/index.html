@@ -176,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.36';
-const VERSAO_RAIOX_DATA = '10/11/2026 14:00';
+const VERSAO_RAIOX = 'v0.37';
+const VERSAO_RAIOX_DATA = '10/11/2026 16:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -1052,40 +1052,191 @@ const LEI = [
   { id: 'art17', art: 'art. 17', nome: 'Intervenção', texto: 'Havendo risco ao cumprimento das obrigações, o Estado pode intervir por decreto motivado, com contraditório e ampla defesa, em até 180 dias.', re: /interven[çc]/i },
   { id: 'art18', art: 'arts. 18 a 20', nome: 'Sanções e desqualificação', texto: 'Aviso de correção, advertência, multa, rescisão e desqualificação, por procedimento com ampla defesa. O Secretário aplica as três primeiras; a desqualificação é do Governador.', re: /san[çc][oõ]es|advert[eê]ncia|desqualifica|aviso de corre/i }
 ];
+LEI.forEach(l => { l.grupo = 'Lei estadual 15.210/2013'; l.verif = 'texto da lei conferido (PDF enviado, com alterações até a Lei 16.771/2019)'; });
+// Normas correlatas. Só entram aqui as que foram encontradas em fonte pública nesta consulta. O texto é resumo da fonte indicada:
+// o jurídico deve conferir o texto oficial antes de citar. Estas normas só são indicadas pela IA (não por palavras).
+[
+  { id: 'adi1923', art: 'STF, ADI 1923', nome: 'Organizações sociais: critérios objetivos e controle', texto: 'Em abril de 2015 o STF deu interpretação conforme à Constituição à lei federal das OS (Lei 9.637/1998): a qualificação da OS e a celebração do contrato de gestão devem ser públicas, objetivas e impessoais (art. 37, caput, da Constituição); as contratações da OS com terceiros e a seleção de pessoal seguem critérios objetivos e impessoais, com publicidade e regulamento próprio; e não pode ser afastado o controle do Ministério Público e do Tribunal de Contas sobre o dinheiro público.', fonte: 'Informativo STF 781 (resumo não oficial; confirmar no acórdão publicado)' },
+  { id: 'dec37271', art: 'Decreto estadual 37.271/2011', nome: 'Análise da PGE antes do contrato', texto: 'Trata da análise da Procuradoria Geral do Estado sobre a celebração do contrato de gestão.', fonte: 'Manual de Contrato de Gestão (Saúde) da SCGE-PE, 2014' },
+  { id: 'port55', art: 'Portaria SCGE 55/2013', nome: 'Chamamento público e qualificação', texto: 'Trata do chamamento público e da qualificação das organizações sociais.', fonte: 'Manual de Contrato de Gestão (Saúde) da SCGE-PE, 2014' },
+  { id: 'lc141', art: 'Lei Complementar estadual 141/2009', nome: 'Núcleo de Gestão do Poder Executivo', texto: 'Instituiu o Núcleo de Gestão do Poder Executivo, que dá parecer favorável à qualificação e à desqualificação das OS.', fonte: 'Manual de Contrato de Gestão (Saúde) da SCGE-PE, 2014' },
+  { id: 'res20', art: 'Resolução TC 20/2005 (TCE-PE)', nome: 'Prestação de contas das OS', texto: 'Regula a prestação de contas das organizações sociais ao ente repassador, sujeita ao controle do TCE-PE.', fonte: 'Manual SCGE 2014 e Representação MPCO 14/2021' },
+  { id: 'res15', art: 'Resolução TC 15/2013 (TCE-PE)', nome: 'Documentos da prestação de contas das OS', texto: 'Define os documentos que compõem a prestação de contas das organizações sociais.', fonte: 'Manual de Contrato de Gestão (Saúde) da SCGE-PE, 2014' },
+  { id: 'tcetransp', art: 'Transparência perante o TCE-PE', nome: 'Transparência das OS (norma a confirmar)', texto: 'O app já usava a Resolução TC 154/2021 para o tema de transparência; a Representação do MPCO 14/2021 cita a Resolução TC 58/2019 (transparência ativa). Falta confirmar qual está em vigor e qual se aplica às OS.', fonte: 'Representação MPCO 14/2021; referência interna do app' },
+  { id: 'lai14804', art: 'Lei estadual 14.804/2012', nome: 'Acesso à informação no Executivo estadual', texto: 'Regula o acesso à informação no Poder Executivo de Pernambuco. A Recomendação 07/2017 do MPF (que é recomendação, não lei) pede portais de transparência das OS, com contratos de gestão, valores repassados, comissões, pareceres trimestrais e prestações de contas.', fonte: 'Recomendação MPF 07/2017 (Procuradoria da República em Pernambuco)' },
+  { id: 'lrf', art: 'Lei Complementar 101/2000, arts. 48, 48-A e 73-B', nome: 'Transparência da gestão fiscal', texto: 'Dispositivos de transparência da gestão fiscal citados pelo MPF para exigir informações sobre repasses às OS.', fonte: 'Recomendação MPF 07/2017' },
+  { id: 'imp', art: 'Lei 8.429/1992, arts. 11 e 12', nome: 'Improbidade administrativa (redação atual a confirmar)', texto: 'Citada pelo MPF como consequência possível do descumprimento. A lei foi alterada pela Lei 14.230/2021: confirmar a redação atual antes de citar.', fonte: 'Recomendação MPF 07/2017; alteração de 2021 conhecida, a confirmar' },
+  { id: 'regimelic', art: 'Lei 8.666/1993 e Lei 14.133/2021', nome: 'Regime de licitações aplicável (atenção)', texto: 'O Manual da SCGE (2014) cita a Lei 8.666/1993 como subsidiária. Essa lei foi substituída pela Lei 14.133/2021: o jurídico deve confirmar qual regime vale para cada contrato e para cada data.', fonte: 'Manual SCGE 2014; revogação conhecida, a confirmar' }
+].forEach(n => { n.grupo = 'Normas correlatas (conferir o texto oficial)'; n.verif = n.fonte; n.re = null; LEI.push(n); });
+const LEI_IDS = () => LEI.map(l => l.id);
+const normaDe = id => LEI.find(l => l.id === id);
 function baseLegal(a) {
   if (a._lei) return a._lei;
   const txt = [a.titulo, a.descricao, a.impacto, a.risco_controle].join(' ');
-  a._lei = LEI.filter(l => l.re.test(txt) || (l.tipo && a.tipo === l.tipo)).map(l => l.id);
+  a._lei = LEI.filter(l => (l.re && l.re.test(txt)) || (l.tipo && a.tipo === l.tipo)).map(l => l.id);
   return a._lei;
 }
+// artigos que valem para o achado: o que o jurídico corrigiu, senão o da IA, senão o das palavras
+function artigosDe(a) { const d = a.lei_diag; if (d) { if (d.rev_estado === 'corrigido' && d.rev_artigos) return d.rev_artigos.split(';').filter(Boolean); return (d.artigos || '').split(';').filter(Boolean); } return baseLegal(a); }
+const VER_ROT = { descumpre: ['vermelho', 'parece descumprir'], falta_info: ['amarelo', 'faltam informações'], cumpre: ['verde', 'parece cumprir'], sem_base: ['', 'sem artigo na lista'] };
+function veredNo(a) { return a.lei_diag ? a.lei_diag.veredito : 'pendente'; }
 function leiChips(a) {
-  const ids = baseLegal(a); if (!ids.length) return '';
-  return `<div class="dica" style="margin:2px 0 6px"><b>Base legal provável (Lei estadual 15.210/2013):</b> ${ids.map(id => { const l = LEI.find(x => x.id === id); return `<span class="etq azul" title="${esc(l.texto)}">${esc(l.art)} · ${esc(l.nome)}</span>`; }).join(' ')}</div>`;
+  const ids = artigosDe(a); if (!ids.length && !a.lei_diag) return '';
+  const chips = ids.map(id => { const l = normaDe(id); return l ? `<span class="etq azul" title="${esc(l.texto)}">${esc(l.art)} · ${esc(l.nome)}</span>` : ''; }).join(' ');
+  return `<div class="dica" style="margin:2px 0 6px"><b>${a.lei_diag ? 'Diagnóstico jurídico (indício da IA)' : 'Base legal provável, por palavras (ainda sem diagnóstico)'}:</b> ${chips || '<span class="etq">nenhum artigo</span>'}${a.lei_diag ? ` <span class="etq ${VER_ROT[a.lei_diag.veredito][0]}">${esc(VER_ROT[a.lei_diag.veredito][1])}</span>` : ''}</div>${a.lei_diag ? diagHtml(a) : ''}`;
 }
+function diagHtml(a) {
+  const d = a.lei_diag, e = esc(a.id);
+  const rev = d.rev_estado ? `<div class="dica"><b>${d.rev_estado === 'confirmado' ? 'Confirmado' : 'Corrigido'} pelo jurídico</b> (${esc(d.rev_por)}, ${esc(fmtData(d.rev_em))})${d.rev_estado === 'corrigido' ? ': artigos ' + esc((d.rev_artigos || '').split(';').map(i => (normaDe(i) || { art: i }).art).join('; ')) + ' — ' + esc(d.rev_motivo) : ''}</div>` : '';
+  return `<div style="border-left:3px solid var(--acento);padding:4px 10px;margin:4px 0 8px;background:#f7fafb">
+    <div class="dica" style="margin:0"><b>Por quê:</b> ${esc(d.motivo || '(sem motivo)')}</div>
+    ${d.trecho ? `<div class="dica" style="margin:2px 0 0"><b>Trecho do achado que sustenta:</b> “${esc(d.trecho)}” ${d.trecho_confere === 'nao' ? '<span class="etq vermelho">trecho não encontrado no texto do achado</span>' : '<span class="etq verde">trecho conferido</span>'}</div>` : ''}
+    <div class="dica" style="margin:2px 0 0">Confiança da IA: <b>${esc(d.confianca)}</b> · ${esc(d.modelo || '')}</div>${rev}
+    <div class="acoes"><button class="btn btn-sm ${d.rev_estado === 'confirmado' ? 'btn-principal' : 'btn-claro'}" onclick="leiRev('${e}','confirmado')"><i class="ti ti-check"></i> Confirmo</button>
+      <button class="btn btn-sm ${d.rev_estado === 'corrigido' ? 'btn-principal' : 'btn-claro'}" onclick="leiRevForm('${e}')"><i class="ti ti-pencil"></i> Corrigir artigos</button>${d.rev_estado ? ` <button class="btn btn-sm btn-claro" onclick="leiRev('${e}','')">Limpar revisão</button>` : ''}</div><div id="lr-${e}"></div></div>`;
+}
+function leiRevForm(id) {
+  const a = achados.find(x => x.id === id), atuais = new Set(artigosDe(a));
+  $('lr-' + id).innerHTML = `<div style="margin-top:6px"><label>Artigos que se aplicam (marque)</label><div style="max-height:170px;overflow:auto;border:1px solid var(--borda);border-radius:6px;padding:6px">${LEI.map(l => `<label class="auto" style="display:flex;gap:6px;padding:2px 0"><input type="checkbox" name="lrk-${esc(id)}" value="${l.id}" ${atuais.has(l.id) ? 'checked' : ''}> ${esc(l.art)} · ${esc(l.nome)}</label>`).join('')}</div>
+    <label>Por que corrigiu? (obrigatório, mínimo 10 letras)</label><textarea id="lrt-${esc(id)}" rows="2" maxlength="600"></textarea>
+    <div class="acoes"><button class="btn btn-sm btn-principal" onclick="leiRev('${esc(id)}','corrigido')">Salvar correção</button> <button class="btn btn-sm btn-claro" onclick="$('lr-${esc(id)}').innerHTML=''">Cancelar</button></div><div class="dica" id="lrm-${esc(id)}"></div></div>`;
+}
+async function leiRev(id, estado) {
+  const corpo = { id, estado };
+  if (estado === 'corrigido') { corpo.artigos = [...document.querySelectorAll(`input[name="lrk-${id}"]:checked`)].map(i => i.value); corpo.motivo = ($('lrt-' + id) || {}).value || ''; }
+  const r = await api('raiox/lei-revisar', corpo);
+  if (r.ok === false) { const m = $('lrm-' + id); if (m) m.innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; else alert(r.erro); return; }
+  const a = achados.find(x => x.id === id); if (a && a.lei_diag) Object.assign(a.lei_diag, { rev_estado: r.rev_estado, rev_artigos: r.rev_artigos, rev_motivo: r.rev_motivo, rev_por: r.rev_por, rev_em: r.rev_em });
+  pintarLei();
+}
+
+// ---------- diagnóstico pela IA (roda no navegador, em lotes; grava no servidor a cada lote) ----------
+const LD = { rodando: false, parar: false, msg: '', filtro: '' };
+const textoAchado = a => [a.titulo, a.descricao, a.impacto, a.trecho].filter(Boolean).join(' ');
+function tceDoAchado(a) {
+  const ks = String(a.tce_temas || '').split(';').map(x => x.trim().slice(0, 2)).filter(x => /^T\d$/.test(x));
+  return ks.length ? ks.map(k => `${k}: ${TCE_TEMAS[k]}`).join(' | ') + (a.tce_relacao ? ` (${a.tce_relacao})` : '') : '';
+}
+function promptDiag(lote) {
+  const m = t => docsMascarar_(String(t || '')).texto;
+  const normas = LEI.map(l => `[${l.id}] ${l.art} — ${l.nome}. ${l.texto} (${l.grupo}${l.grupo.startsWith('Normas') ? '; fonte: ' + l.fonte : ''})`).join('\n');
+  const blocos = lote.map(a => `ACHADO id=${a.id}\nUnidade: ${m(a.unidade)}\nContrato: ${m(a.contrato)}\nTipo: ${a.tipo || ''}\nGravidade: ${a.gravidade || ''}\nTítulo: ${m(a.titulo)}\nDescrição: ${m(a.descricao)}\nImpacto: ${m(a.impacto)}\nTrecho do documento: ${m(a.trecho)}\nReferência do TCE-PE (já calculada pelo sistema): ${tceDoAchado(a) || 'nenhuma'}`).join('\n\n');
+  return `Você é parecerista jurídico de uma secretaria estadual de saúde e faz o escrutínio de achados de auditoria de contratos de gestão com Organizações Sociais de Saúde. Os achados foram produzidos por leitura automática de documentos (contratos, aditivos, pareceres da CTAI): são INDÍCIOS, não provas.
+Para cada achado, diga quais normas da LISTA se aplicam e se o fato descrito parece descumprir, cumprir ou se faltam informações.
+REGRAS OBRIGATÓRIAS:
+1. Use SOMENTE as normas da lista abaixo, pelo código entre colchetes. Não cite artigo, lei, súmula, acórdão ou jurisprudência que não esteja na lista. Se nenhuma norma da lista servir, use "sem_base" e artigos vazio.
+2. Não invente fatos, números, datas nem nomes. Só use o que está escrito no achado.
+3. "descumpre" só se o texto do achado descreve um fato que contraria de forma clara uma exigência da norma. Se o achado só aponta possível falha ou ausência de documento, use "falta_info". "cumpre" só se o achado mostra que a exigência foi atendida.
+4. "trecho" deve ser cópia LITERAL, de até 200 caracteres, de uma frase do próprio achado (título, descrição, impacto ou trecho) que sustenta sua conclusão. Sem trecho, use texto vazio.
+5. "confianca": "alta" só quando o achado afirma o fato com clareza e a norma é explícita; senão "media" ou "baixa". Normas do grupo "Normas correlatas" nunca justificam confiança "alta".
+6. "motivo": no máximo duas frases, em português simples, dizendo o fato e qual exigência da norma ele toca.
+NORMAS DISPONÍVEIS:
+${normas}
+
+${blocos}
+
+Responda SOMENTE com um JSON válido, uma lista com um objeto por achado, na mesma ordem: [{"id":"...","artigos":["codigo"],"veredito":"descumpre|cumpre|falta_info|sem_base","motivo":"...","trecho":"...","confianca":"alta|media|baixa"}]`;
+}
+function promptVerifica(itens) {
+  const m = t => docsMascarar_(String(t || '')).texto;
+  return `Você é revisor jurídico independente. Para cada item abaixo, outra pessoa concluiu que o achado "parece descumprir" a norma indicada. Confira se o texto do achado, por si só, sustenta essa conclusão. Seja rigoroso: se o achado só indica possível falha, ausência de documento ou dado incompleto, NÃO confirme. Não use nenhuma norma além das citadas.
+${itens.map(x => `ITEM id=${x.a.id}\nNorma(s): ${x.artigos.map(i => normaDe(i).art + ' — ' + normaDe(i).texto).join(' || ')}\nAchado: ${m(x.a.titulo)}. ${m(x.a.descricao)} ${m(x.a.impacto)}\nConclusão a conferir: ${m(x.motivo)}`).join('\n\n')}
+Responda SOMENTE com JSON: [{"id":"...","confirma":true|false,"motivo":"uma frase"}]`;
+}
+function lerJson(txt) { try { return JSON.parse(txt); } catch (e) { const m = /\[[\s\S]*\]/.exec(txt); if (!m) throw new Error('A IA respondeu fora do formato.'); return JSON.parse(m[0]); } }
+async function diagnosticarLote(lote) {
+  const bruto = await perguntarIA(promptDiag(lote), () => {});
+  const arr = lerJson(bruto), ids = new Set(LEI_IDS()), saida = [];
+  lote.forEach(a => {
+    const x = (arr || []).find(y => String(y.id) === String(a.id)); if (!x) return;
+    let arts = (Array.isArray(x.artigos) ? x.artigos : []).map(String).filter(i => ids.has(i));
+    let ver = ['descumpre', 'cumpre', 'falta_info', 'sem_base'].includes(x.veredito) ? x.veredito : 'falta_info', mot = String(x.motivo || '').slice(0, 700);
+    if (!arts.length && ver !== 'sem_base') { ver = 'sem_base'; mot = (mot ? mot + ' ' : '') + '(A IA não indicou artigo válido da lista.)'; }
+    if (ver === 'sem_base') arts = [];
+    const tr = String(x.trecho || '').slice(0, 400), alvo = normT(docsMascarar_(textoAchado(a)).texto + ' ' + textoAchado(a));
+    const confere = !tr || normT(tr).length < 8 ? (tr ? 'nao' : 'sim') : (alvo.includes(normT(tr)) ? 'sim' : 'nao');
+    let conf = ['alta', 'media', 'baixa'].includes(x.confianca) ? x.confianca : 'baixa';
+    if (confere === 'nao') conf = 'baixa';
+    if (conf === 'alta' && arts.some(i => normaDe(i).grupo.startsWith('Normas'))) conf = 'media';
+    if (ver === 'descumpre' && confere === 'nao') { ver = 'falta_info'; mot += ' (Rebaixado: o trecho citado não foi encontrado no achado.)'; conf = 'baixa'; }
+    saida.push({ a, id: a.id, artigos: arts, veredito: ver, motivo: mot, trecho: tr, trecho_confere: confere, confianca: conf, modelo: _provedorAtual || '' });
+  });
+  // segunda leitura (revisor independente) só para os que "parecem descumprir"
+  const desc = saida.filter(s => s.veredito === 'descumpre');
+  if (desc.length) {
+    try {
+      const v = lerJson(await perguntarIA(promptVerifica(desc.map(s => ({ a: s.a, artigos: s.artigos, motivo: s.motivo }))), () => {}));
+      desc.forEach(s => { const y = (v || []).find(z => String(z.id) === String(s.id)); if (y && y.confirma === false) { s.veredito = 'falta_info'; s.confianca = 'baixa'; s.motivo = 'A segunda leitura não confirmou o descumprimento: ' + String(y.motivo || '').slice(0, 300) + ' | Leitura inicial: ' + s.motivo; } else if (y && y.confirma === true) s.motivo += ' (Confirmado por segunda leitura.)'; });
+    } catch (e) { desc.forEach(s => { s.veredito = 'falta_info'; s.confianca = 'baixa'; s.motivo += ' (Segunda leitura não concluída: tratado como "faltam informações".)'; }); }
+  }
+  return saida;
+}
+async function diagnosticarTudo() {
+  if (LD.rodando) return;
+  const pend = achados.filter(visivel).filter(a => !a.lei_diag);
+  if (!pend.length) { LD.msg = 'Todos os achados já têm diagnóstico.'; pintarLei(); return; }
+  if (!chaves.length) { LD.msg = 'Nenhuma chave de IA liberada para o seu usuário. Peça ao administrador.'; pintarLei(); return; }
+  LD.rodando = true; LD.parar = false; let feitos = 0;
+  try {
+    for (let i = 0; i < pend.length && !LD.parar; i += 8) {
+      LD.msg = `Diagnosticando ${fmt(feitos)} de ${fmt(pend.length)}...`; pintarLeiProgresso();
+      const lote = pend.slice(i, i + 8), res = await diagnosticarLote(lote);
+      const r = await api('raiox/lei-salvar', { itens: res.map(({ a, ...s }) => s) });
+      if (r.ok === false) throw new Error(r.erro || 'Não foi possível gravar.');
+      res.forEach(s => { s.a.lei_diag = { artigos: s.artigos.join(';'), veredito: s.veredito, motivo: s.motivo, trecho: s.trecho, trecho_confere: s.trecho_confere, confianca: s.confianca, modelo: s.modelo, rev_estado: '', rev_artigos: '', rev_motivo: '', rev_por: '', rev_em: '' }; });
+      feitos += lote.length;
+    }
+    LD.msg = LD.parar ? `Pausado em ${fmt(feitos)} de ${fmt(pend.length)}. Clique em continuar quando quiser.` : `Pronto: ${fmt(feitos)} achado(s) diagnosticado(s).`;
+  } catch (e) { LD.msg = 'Parou: ' + e.message + ` (${fmt(feitos)} já gravados; clique em continuar para retomar.)`; }
+  LD.rodando = false; pintarLei();
+}
+function pintarLeiProgresso() { const el = $('ld-msg'); if (el) el.innerHTML = '<span class="spinner"></span>' + esc(LD.msg); }
+
+// ---------- tela ----------
 let LEI_SEL = '';
 async function telaLei() {
   $('conteudo').innerHTML = carregando('Carregando...');
-  const r = await api('raiox/achados', {});
+  const [r, d] = await Promise.all([api('raiox/achados', {}), api('raiox/lei-obter', {})]);
   if (r.ok === false) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro || 'Erro')}</div>`; return; }
-  achados = prepararAchados(r.achados || []); LEI_SEL = ''; pintarLei();
+  achados = prepararAchados(r.achados || []); LEI_SEL = ''; LD.msg = '';
+  const mapa = {}; ((d && d.ok !== false && d.itens) || []).forEach(i => { mapa[i.id] = i; });
+  achados.forEach(a => { a.lei_diag = mapa[a.id] || null; });
+  pintarLei();
 }
-function leiDoArtigo(id) { return achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido').filter(a => id === 'sem' ? !baseLegal(a).length : baseLegal(a).includes(id)); }
+function leiDoArtigo(id) { return achados.filter(visivel).filter(a => id === 'sem' ? !artigosDe(a).length : artigosDe(a).includes(id)); }
 function pintarLei() {
-  const cnt = l => ({ n: l.length, ctai: l.filter(ehParecerCtai).length, alta: l.filter(a => a.gravidade === 'alta').length, unid: new Set(l.map(a => a.unidade)).size });
-  const linha = (id, art, nome, texto) => { const c = cnt(leiDoArtigo(id)); return `<tr ${LEI_SEL === id ? 'style="background:var(--acento-claro)"' : ''}><td><b>${esc(art)}</b><br><span class="dica">${esc(nome)}</span></td><td style="max-width:380px">${esc(texto)}</td><td>${fmt(c.n - c.ctai)}</td><td>${fmt(c.ctai)}</td><td>${fmt(c.alta)}</td><td>${fmt(c.unid)}</td><td style="white-space:nowrap">${c.n ? `<button class="btn btn-sm ${LEI_SEL === id ? 'btn-principal' : 'btn-claro'}" onclick="LEI_SEL=LEI_SEL==='${id}'?'':'${id}';pintarLei()">${LEI_SEL === id ? 'Fechar lista' : 'Listar'}</button> <button class="btn btn-sm btn-claro" title="Abrir na aba Achados com filtros" onclick="irAchadosLei('${id}')"><i class="ti ti-external-link"></i></button>` : ''}</td></tr>`; };
+  const vis = achados.filter(visivel), pend = vis.filter(a => !a.lei_diag).length, feitos = vis.length - pend;
+  const nDesc = vis.filter(a => a.lei_diag && a.lei_diag.veredito === 'descumpre').length, nRev = vis.filter(a => a.lei_diag && a.lei_diag.rev_estado).length;
+  const c3 = l => ['descumpre', 'falta_info', 'cumpre'].map(v => l.filter(a => a.lei_diag && a.lei_diag.veredito === v).length);
+  const cel = (n, cor) => `<td ${n && cor ? `style="color:${cor};font-weight:600"` : ''}>${fmt(n)}</td>`;
+  const linha = l => {
+    const todos = leiDoArtigo(l.id), rx = todos.filter(a => !ehParecerCtai(a)), ct = todos.filter(ehParecerCtai), x = c3(rx), y = c3(ct), tce = todos.filter(a => a.tce_temas).length, pe = todos.filter(a => !a.lei_diag).length;
+    return `<tr ${LEI_SEL === l.id ? 'style="background:var(--acento-claro)"' : ''}><td><b>${esc(l.art)}</b><br><span class="dica">${esc(l.nome)}</span></td>${cel(x[0], 'var(--bordo)')}${cel(x[1])}${cel(x[2])}${cel(y[0], 'var(--bordo)')}${cel(y[1])}${cel(y[2])}<td>${fmt(tce)}</td><td>${pe ? fmt(pe) : ''}</td>
+      <td style="white-space:nowrap">${todos.length ? `<button class="btn btn-sm ${LEI_SEL === l.id ? 'btn-principal' : 'btn-claro'}" onclick="LEI_SEL=LEI_SEL==='${l.id}'?'':'${l.id}';pintarLei()">${LEI_SEL === l.id ? 'Fechar' : 'Listar'}</button>` : ''}</td></tr>`;
+  };
+  const grupos = [...new Set(LEI.map(l => l.grupo))];
   let lista = '';
   if (LEI_SEL) {
-    const l = leiDoArtigo(LEI_SEL).sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade])), ra = l.filter(a => !ehParecerCtai(a)), rc = l.filter(ehParecerCtai);
-    const nome = LEI_SEL === 'sem' ? 'Sem artigo indicado' : (() => { const x = LEI.find(k => k.id === LEI_SEL); return x.art + ' · ' + x.nome; })();
-    const grupo = (tit, g) => `<div class="bloco"><h3 style="margin:0 0 6px">${tit} <small>${fmt(g.length)}</small></h3>${g.slice(0, 100).map(a => cartao(a, false, true)).join('') || '<div class="vazio">Nenhum.</div>'}${g.length > 100 ? '<div class="dica">Mostrando 100. Use o botão de abrir na aba Achados para filtrar.</div>' : ''}</div>`;
-    lista = `<div class="bloco"><h2 style="margin:0">${esc(nome)}</h2></div>${grupo('Achados do Raio-X', ra)}${grupo('Achados dos pareceres da CTAI (lidos pela IA)', rc)}`;
+    const n = LEI_SEL === 'sem' ? { art: 'Sem norma indicada', nome: '', texto: 'Achados em que nenhuma norma da lista se aplica (ou que ainda não têm diagnóstico nem palavra que os ligue a uma norma).', verif: '—' } : normaDe(LEI_SEL), todos = leiDoArtigo(LEI_SEL).filter(a => !LD.filtro || (LD.filtro === 'pendente' ? !a.lei_diag : LD.filtro === 'revisado' ? a.lei_diag && a.lei_diag.rev_estado : a.lei_diag && a.lei_diag.veredito === LD.filtro))
+      .sort((x, y) => ({ descumpre: 0, falta_info: 1, cumpre: 2, sem_base: 3 }[veredNo(x)] ?? 4) - ({ descumpre: 0, falta_info: 1, cumpre: 2, sem_base: 3 }[veredNo(y)] ?? 4) || (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]));
+    const grupo = (tit, g) => `<div class="bloco"><h3 style="margin:0 0 6px">${tit} <small>${fmt(g.length)}</small></h3>${g.slice(0, 80).map(a => cartao(a, false, true)).join('') || '<div class="vazio">Nenhum.</div>'}${g.length > 80 ? '<div class="dica">Mostrando 80. Use o filtro acima.</div>' : ''}</div>`;
+    lista = `<div class="bloco" id="lei-lista"><h2 style="margin:0">${esc(n.art)} · ${esc(n.nome)}</h2><p class="dica">${esc(n.texto)}<br><b>Fonte:</b> ${esc(n.verif)}</p>
+      <div class="filtros"><div><label>Mostrar</label><select onchange="LD.filtro=this.value;pintarLei()">${[['', 'Todos'], ['descumpre', 'Parecem descumprir'], ['falta_info', 'Faltam informações'], ['cumpre', 'Parecem cumprir'], ['sem_base', 'Sem artigo na lista'], ['pendente', 'Ainda sem diagnóstico'], ['revisado', 'Já revisados pelo jurídico']].map(o => `<option value="${o[0]}" ${LD.filtro === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('')}</select></div></div></div>
+      ${grupo('Achados do Raio-X', todos.filter(a => !ehParecerCtai(a)))}${grupo('Achados dos pareceres da CTAI (lidos pela IA)', todos.filter(ehParecerCtai))}`;
   }
-  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-scale"></i> Conformidade com a Lei 15.210/2013 <small>Organizações Sociais de Saúde de Pernambuco</small></h2>
-    <p class="dica">Cada achado, inclusive os tirados dos pareceres da CTAI, é ligado ao artigo da lei que ele provavelmente toca, por palavras do próprio achado. É uma indicação para organizar o trabalho do jurídico, não uma conclusão. Clique em "Listar" para ver os achados do artigo. Resumos feitos a partir do texto da lei com alterações até a Lei 16.771/2019; confira o texto oficial. Achados já marcados como "resolvido" não entram na conta.</p>
-    <div class="rolagem"><table class="tabela"><thead><tr><th>Artigo</th><th>O que a lei exige</th><th>Achados do Raio-X</th><th>Pareceres da CTAI</th><th>Gravidade alta</th><th>Unidades</th><th></th></tr></thead><tbody>
-    ${LEI.map(l => linha(l.id, l.art, l.nome, l.texto)).join('')}${linha('sem', 'Sem artigo indicado', '', 'Nenhuma palavra ligou o achado a um artigo. Não quer dizer que não haja base legal: o jurídico avalia.')}
+  const semArt = leiDoArtigo('sem');
+  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-scale"></i> Diagnóstico jurídico: Lei 15.210/2013 e normas correlatas <small>Raio-X e pareceres da CTAI, lado a lado</small></h2>
+    <p class="dica">A IA lê cada achado e diz quais normas da lista se aplicam e se o fato parece descumprir, cumprir ou se faltam informações. Cada conclusão traz o motivo e o trecho do achado que a sustenta; o sistema confere se o trecho existe mesmo e, para "parece descumprir", uma segunda leitura independente tenta derrubar a conclusão. <b>É indício para o jurídico, não conclusão jurídica</b>: quem confirma ou corrige é o jurídico (botões em cada achado).</p>
+    <div class="tiles"><div class="tile"><h3>Achados a analisar</h3><div class="grande">${fmt(vis.length)}</div></div><div class="tile"><h3>Já diagnosticados</h3><div class="grande">${fmt(feitos)}</div></div>
+      <div class="tile"><h3>Parecem descumprir</h3><div class="grande" style="color:var(--bordo)">${fmt(nDesc)}</div></div><div class="tile"><h3>Revisados pelo jurídico</h3><div class="grande">${fmt(nRev)}</div></div></div>
+    <div class="acoes"><button class="btn btn-principal" onclick="diagnosticarTudo()" ${LD.rodando || !pend ? 'disabled' : ''}><i class="ti ti-sparkles"></i> ${!pend ? 'Diagnóstico completo' : (feitos ? 'Continuar o diagnóstico' : 'Rodar o diagnóstico') + ' (' + fmt(pend) + ' pendentes)'}</button>${LD.rodando ? ' <button class="btn btn-sm btn-claro" onclick="LD.parar=true">Pausar</button>' : ''}</div><div class="dica" id="ld-msg">${LD.rodando ? '<span class="spinner"></span>' : ''}${esc(LD.msg)}</div>
+    <div class="dica">Os achados ainda sem diagnóstico aparecem na tabela pela ligação por palavras (menos precisa). "TCE-PE" conta os achados que têm referência dos processos do Tribunal de Contas já mapeados no sistema.</div>
+    <div class="rolagem"><table class="tabela"><thead><tr><th rowspan="2">Norma</th><th colspan="3" style="text-align:center">Achados do Raio-X</th><th colspan="3" style="text-align:center">Pareceres da CTAI</th><th rowspan="2">Com referência TCE-PE</th><th rowspan="2">Sem diagnóstico</th><th rowspan="2"></th></tr>
+      <tr><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th></tr></thead><tbody>
+      ${grupos.map(g => `<tr><td colspan="10" style="background:#eef3f5"><b>${esc(g)}</b></td></tr>${LEI.filter(l => l.grupo === g).map(linha).join('')}`).join('')}
+      <tr><td><b>Sem norma indicada</b><br><span class="dica">Nenhuma norma da lista se aplica</span></td><td colspan="6">${fmt(semArt.length)} achado(s)</td><td>${fmt(semArt.filter(a => a.tce_temas).length)}</td><td>${fmt(semArt.filter(a => !a.lei_diag).length)}</td><td>${semArt.length ? `<button class="btn btn-sm btn-claro" onclick="LEI_SEL=LEI_SEL==='sem'?'':'sem';pintarLei()">Listar</button>` : ''}</td></tr>
     </tbody></table></div></div>${lista}`;
-  if (LEI_SEL) { const el = document.querySelector('#conteudo > .bloco:nth-child(2)'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
+  if (LEI_SEL && !LD.rodando) { const el = $('lei-lista'); if (el) el.scrollIntoView({ behavior: 'smooth' }); }
 }
 function irAchadosLei(id) { filtroInicial = { lei: id }; abrirAba('achados'); }
 
@@ -1173,7 +1324,7 @@ function filtrados() {
   const q = normT(v('f-q'));
   const verOcultos = !!($('f-ocultos') && $('f-ocultos').checked);
   return achados.filter(a => (verOcultos || !a.oculto_passado) && (!v('f-unidade') || a.unidade === v('f-unidade')) && (!v('f-grav') || a.gravidade === v('f-grav')) && origemOk(a, v('f-orig')) &&
-    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-lei') || (v('f-lei') === 'sem' ? !baseLegal(a).length : baseLegal(a).includes(v('f-lei')))) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
+    (!v('f-setor') || (v('f-setor') === '__sem' ? !a.setor : a.setor === v('f-setor'))) && (!v('f-orgao') || lerOrgaos(a).includes(v('f-orgao'))) && (!v('f-tipo') || a.tipo === v('f-tipo')) && (!v('f-lei') || (v('f-lei') === 'sem' ? !artigosDe(a).length : artigosDe(a).includes(v('f-lei')))) && (!v('f-conf') || (v('f-conf') === 'pend' ? !a.conferido : a.conferido === v('f-conf'))) &&
     (!v('f-tce') || (v('f-tce') === 'sem' ? !a.tce_ref : v('f-tce') === 'aud' ? a.tce_relacao === 'mesmo tema em contrato auditado' : v('f-tce') === 'pers' ? !!a.tce_persist : v('f-tce') === 'risco' ? a.tce_relacao === 'mesmo tipo de risco em outro contrato' : (a.tce_processos || '').includes(v('f-tce')))) &&
     (!q || normT([a.titulo, a.descricao, a.unidade, a.contrato, a.documentos].join(' ')).includes(q)))
     .sort((x, y) => (ordemGrav[x.gravidade] - ordemGrav[y.gravidade]) || String(x.unidade).localeCompare(String(y.unidade), 'pt-BR'));
