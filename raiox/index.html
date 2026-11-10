@@ -176,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.34';
-const VERSAO_RAIOX_DATA = '10/11/2026 13:00';
+const VERSAO_RAIOX = 'v0.35';
+const VERSAO_RAIOX_DATA = '10/11/2026 14:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -227,7 +227,7 @@ async function entrar() {
   $('rodape-versao').textContent = `Raio-X ${VERSAO_RAIOX} · ${VERSAO_RAIOX_DATA} — Servidor ${res.versao_backend || 'sem versão'}`;
   const eu = await api('raiox/eu', {});
   PAPEL = (eu && eu.ok && eu.papel) || '';
-  if (!PAPEL) { $('nav').innerHTML = ''; $('conteudo').innerHTML = `<div class="erro">${esc((eu && eu.erro) || 'Você ainda não tem um papel no Raio-X. Peça ao administrador que cadastre você na aba Equipe.')}</div>`; return; }
+  if (!PAPEL) { $('nav').innerHTML = ''; $('conteudo').innerHTML = `<div class="erro">${esc((eu && eu.erro) || 'Você ainda não tem um papel no Raio-X. Peça ao administrador que cadastre você na aba Usuários.')}</div>`; return; }
   try { const r = await api('ia/minhas-chaves', {}); chaves = (r && r.ok && r.chaves) || []; } catch (e) { chaves = []; }
   try { const c = await api('raiox/config-obter', {}); if (c && c.ok && c.config) CFG = Object.assign(CFG, c.config); } catch (e) {}
   montarNav();
@@ -237,7 +237,7 @@ async function sair() { try { await api('auth/logout', {}); } catch (e) {} TOKEN
 
 // ==================== ABAS ====================
 const ABAS_POR_PAPEL = {
-  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Equipe'], ['chaves', 'Chaves de IA']],
+  admin: [['painel', 'Painel do coordenador'], ['rodar', 'Rodar a leitura'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['rx', 'Imprimir ou criar documento'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres'], ['equipe', 'Usuários'], ['chaves', 'Chaves de IA']],
   coordenacao: [['painel', 'Painel do coordenador'], ['achados', 'Achados'], ['lei', 'Lei 15.210'], ['pareceres', 'Pareceres da CTAI'], ['fatias', 'Distribuições e pareceres']],
   analista: [['minhas', 'Minhas distribuições']]
 };
@@ -901,6 +901,7 @@ function chDesenhar() {
   const e = CH.lista.find(x => x.id === CH.edit) || {}, paraTodos = e.para === '*' || (!e.id);
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-key"></i> Chaves de IA <small>até duas por serviço: a 1ª é a principal, a 2ª entra se a primeira falhar</small></h2>
     <p class="dica">A chave fica guardada só no servidor. Depois de salva, ela nunca mais aparece inteira: só os 4 últimos caracteres.</p>
+    ${CH.lista.some(c => c.para !== '*') ? `<div class="acoes"><button class="btn btn-sm btn-perigo" onclick="chRemoverIndividuais()"><i class="ti ti-trash"></i> Remover as chaves que não são gerais (${CH.lista.filter(c => c.para !== '*').length}) e deixar só as gerais</button></div>` : ''}
     ${CH.lista.length ? `<div class="rolagem"><table class="tabela"><thead><tr><th>Nome</th><th>Serviço</th><th>Chave</th><th>Ordem</th><th>Vale para</th><th>Situação</th><th></th></tr></thead><tbody>${CH.lista.map(c => `<tr><td>${esc(c.rotulo)}</td><td>${esc(CH.servicos[c.servico] || c.servico)}</td><td>••••${esc(c.final || '')}</td><td>${esc(c.ordem)}</td><td>${c.para === '*' ? 'Todos' : (c.para || []).length + ' pessoa(s)'}</td><td>${c.ativa === false ? 'desligada' : 'ativa'}</td><td><button class="btn btn-sm btn-claro" onclick="CH.edit='${esc(c.id)}';chDesenhar()">Editar</button> <button class="btn btn-sm btn-perigo" onclick="chRemover('${esc(c.id)}')">Remover</button></td></tr>`).join('')}</tbody></table></div>` : '<div class="vazio">Nenhuma chave cadastrada.</div>'}</div>
     <div class="bloco"><h3 style="margin:0 0 8px">${e.id ? 'Editar chave' : 'Nova chave'}</h3><div class="filtros">
       <div><label>Serviço</label><select id="ch-serv">${Object.keys(CH.servicos).map(k => `<option value="${esc(k)}" ${e.servico === k ? 'selected' : ''}>${esc(CH.servicos[k])}</option>`).join('')}</select></div>
@@ -919,6 +920,12 @@ async function chSalvar() {
   if (r.ok === false) { $('ch-msg').innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
   const rc = await api('ia/minhas-chaves', {}); chaves = (rc && rc.ok !== false && rc.chaves) || chaves;
   await telaChaves(); $('ch-msg').innerHTML = '<span class="ok-msg">Chave salva.</span>';
+}
+async function chRemoverIndividuais() {
+  const l = CH.lista.filter(c => c.para !== '*');
+  if (!confirm(`Remover ${l.length} chave(s) de uso individual? As chaves gerais ficam. Não dá para desfazer.`)) return;
+  for (const c of l) { const r = await api('adm/chaves-remover', { id: c.id }); if (r.ok === false) { alert(r.erro); break; } }
+  const rc = await api('ia/minhas-chaves', {}); chaves = (rc && rc.ok !== false && rc.chaves) || chaves; await telaChaves();
 }
 async function chRemover(id) { if (!confirm('Remover esta chave? Quem a usa deixa de ter IA até cadastrar outra.')) return; const r = await api('adm/chaves-remover', { id }); if (r.ok === false) { alert(r.erro); return; } await telaChaves(); }
 
@@ -1329,7 +1336,7 @@ async function abrirFormFatia() {
   if (!lista.length) { alert('Nenhum achado no filtro atual.'); return; }
   const r = await api('raiox/equipe', {});
   if (!r.ok) { alert(r.erro); return; }
-  if (!r.pessoas.length) { alert('Cadastre as pessoas na aba Equipe antes de criar distribuições.'); return; }
+  if (!r.pessoas.length) { alert('Cadastre as pessoas na aba Usuários antes de criar distribuições.'); return; }
   $('form-fatia').innerHTML = `<div style="margin-top:10px">
     <p class="dica">Esta distribuição terá <strong>${lista.length}</strong> achado(s) (os que aparecem no filtro agora, inclusive além dos 300 mostrados).</p>
     <label>Nome da distribuição</label><input id="ft-nome" maxlength="120" placeholder="ex.: Prazos e vigência — contratos de OS">
@@ -1494,36 +1501,66 @@ async function devolverFatia() {
 
 // ---- equipe (administrador) ----
 async function telaEquipe() {
-  $('conteudo').innerHTML = carregando('Carregando a equipe...');
-  const r = await api('raiox/perfis-listar', {});
+  $('conteudo').innerHTML = carregando('Carregando os usuários...');
+  const [r, g] = await Promise.all([api('raiox/perfis-listar', {}), api('adm/usuarios-listar', {})]);
   if (!r.ok) { $('conteudo').innerHTML = `<div class="erro">${esc(r.erro)}</div>`; return; }
-  const papelDe = {}; r.perfis.forEach(p => { if (p.ativo !== 'nao') papelDe[p.email.toLowerCase()] = p.papel; });
-  $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-users"></i> Equipe do Raio-X</h2>
-    <p class="dica">Escolha o papel de cada pessoa. <strong>Administrador:</strong> faz tudo, inclusive rodar a leitura e gerar relatórios. <strong>Coordenação:</strong> vê todos os achados, cria as distribuições e lê os pareceres. <strong>Analista:</strong> vê só as distribuições que receber e responde com parecer. Quem não tem perfil não entra.</p>
-    <details class="mais-filtros" id="eq-novo"><summary><b>+ Cadastrar uma pessoa nova</b></summary>
-      <div class="filtros" style="margin-top:10px"><div><label>Nome</label><input id="nu-nome" placeholder="Nome e sobrenome"></div><div><label>Usuário (login)</label><input id="nu-login" placeholder="ex.: maria.silva" autocapitalize="none"></div><div><label>Gerência / setor</label><input id="nu-ger" placeholder="opcional"></div><div><label>Senha inicial</label><input id="nu-senha" type="password" autocomplete="new-password" placeholder="mín. 8 caracteres"></div><div><label>Papel no Raio-X</label><select id="nu-papel"><option value="analista">Analista</option><option value="coordenacao">Coordenação</option><option value="admin">Administrador</option></select></div></div>
+  const papelDe = {}; (r.perfis || []).forEach(p => { if (p.ativo !== 'nao') papelDe[String(p.email).toLowerCase()] = p.papel; });
+  const gm = {}; ((g && g.ok !== false && g.usuarios) || []).forEach(u => { gm[String(u.login).toLowerCase()] = u; });
+  window._EQ = { usuarios: (r.usuarios || []).map(u => Object.assign({}, u, { g: gm[u.email] || null })), papelDe, aviso: window._EQ ? window._EQ.aviso : '' };
+  const comAcesso = Object.keys(papelDe).filter(k => papelDe[k]).length;
+  $('conteudo').innerHTML = `${window._EQ.aviso ? `<div class="ok-msg">${esc(window._EQ.aviso)}</div>` : ''}<div class="bloco">
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px"><h2 style="margin:0"><i class="ti ti-users"></i> Usuários <small>${comAcesso} com acesso ao Raio-X de ${window._EQ.usuarios.length}</small></h2>
+      <button class="btn btn-escuro" style="margin-left:auto" onclick="$('eq-novo').open=!$('eq-novo').open"><i class="ti ti-user-plus"></i> Novo usuário</button></div>
+    <details class="mais-filtros" id="eq-novo"><summary style="display:none"></summary>
+      <div class="filtros" style="margin:6px 0 10px"><div><label>Nome</label><input id="nu-nome" placeholder="Nome e sobrenome"></div><div><label>Usuário (login)</label><input id="nu-login" placeholder="ex.: maria.silva" autocapitalize="none"></div><div><label>Gerência / setor</label><input id="nu-ger" placeholder="opcional"></div><div><label>Senha inicial</label><input id="nu-senha" type="text" autocomplete="off" placeholder="mínimo 8 caracteres"></div><div><label>Papel no Raio-X</label><select id="nu-papel"><option value="analista">Analista</option><option value="coordenacao">Coordenação</option><option value="admin">Administrador</option></select></div></div>
       <div class="acoes"><button class="btn btn-principal" onclick="cadastrarPessoa()"><i class="ti ti-user-plus"></i> Cadastrar</button></div><div id="nu-msg" class="dica"></div></details>
-    <label>Buscar pessoa</label><input id="eq-q" oninput="pintarEquipe()" placeholder="nome ou e-mail"></div><div id="eq-lista"></div>`;
-  window._EQ = { usuarios: r.usuarios, papelDe }; pintarEquipe();
+    <div class="filtros"><div style="flex:2;min-width:220px"><label>Buscar</label><input id="eq-q" oninput="pintarEquipe()" placeholder="nome, usuário ou gerência"></div>
+      <div><label class="auto" style="margin-top:22px"><input type="checkbox" id="eq-so" onchange="pintarEquipe()"> só quem tem acesso ao Raio-X</label></div></div>
+    <div class="dica" style="margin:6px 0"><b>Administrador:</b> faz tudo, inclusive rodar a leitura e gerar relatórios. <b>Coordenação:</b> vê todos os achados, cria as distribuições, define prazos e lê os pareceres. <b>Analista:</b> vê só as distribuições que receber e responde com parecer. Quem está em "Sem acesso" não entra no Raio-X.</div>
+    <div class="rolagem" id="eq-lista"></div></div>`;
+  window._EQ.aviso = ''; pintarEquipe();
 }
 function pintarEquipe() {
-  const q = normT(($('eq-q') || {}).value || '');
-  const us = window._EQ.usuarios.filter(u => !q || normT(u.nome + ' ' + u.email).includes(q)).sort((a, b) => (window._EQ.papelDe[b.email] ? 1 : 0) - (window._EQ.papelDe[a.email] ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
-  $('eq-lista').innerHTML = us.slice(0, 80).map(u => `<div class="bloco" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><div style="flex:1;min-width:200px"><strong>${esc(u.nome)}</strong><div class="dica">Usuário: <b>${esc(u.email)}</b>${u.gerencia ? ' · ' + esc(u.gerencia) : ''}${window._EQ.papelDe[u.email] ? '' : ' · sem acesso ao Raio-X'}</div></div>
-    <select onchange="salvarPapel('${esc(u.email)}',this.value)"><option value="">Sem papel</option>${['admin', 'coordenacao', 'analista'].map(p => `<option value="${p}" ${window._EQ.papelDe[u.email] === p ? 'selected' : ''}>${esc(NOME_PAPEL[p])}</option>`).join('')}</select></div>`).join('') + (us.length > 80 ? '<div class="dica">Mostrando 80. Use a busca.</div>' : '');
+  const q = normT(($('eq-q') || {}).value || ''), so = !!($('eq-so') || {}).checked;
+  const us = window._EQ.usuarios.filter(u => (!q || normT(u.nome + ' ' + u.email + ' ' + (u.gerencia || '')).includes(q)) && (!so || window._EQ.papelDe[u.email]))
+    .sort((a, b) => (window._EQ.papelDe[b.email] ? 1 : 0) - (window._EQ.papelDe[a.email] ? 1 : 0) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  const sit = u => !u.g ? '' : u.g.bloqueado ? '<span class="etq vermelho">Bloqueado por senha errada</span>' : '<span class="etq verde">Ativo</span>';
+  $('eq-lista').innerHTML = `<table class="tabela"><thead><tr><th>Nome</th><th>Usuário</th><th>Gerência</th><th>Papel no Raio-X</th><th>Situação</th><th></th></tr></thead><tbody>` + us.slice(0, 120).map(u => {
+    const e = esc(u.email);
+    return `<tr><td><b>${esc(u.nome)}</b></td><td>${e}</td><td>${esc(u.gerencia || '')}</td>
+      <td><select onchange="salvarPapel('${e}',this.value)"><option value="">Sem acesso</option>${['admin', 'coordenacao', 'analista'].map(p => `<option value="${p}" ${window._EQ.papelDe[u.email] === p ? 'selected' : ''}>${esc(NOME_PAPEL[p])}</option>`).join('')}</select></td>
+      <td>${sit(u)}</td><td style="white-space:nowrap">${u.g ? `<button class="btn btn-sm btn-claro" title="Redefinir a senha" onclick="novaSenha('${e}')"><i class="ti ti-key"></i></button>` : ''}${u.g && u.g.bloqueado ? ` <button class="btn btn-sm btn-claro" title="Liberar o login" onclick="liberarLogin('${e}')"><i class="ti ti-lock-open"></i></button>` : ''}</td></tr>`; }).join('') + `</tbody></table>` + (us.length > 120 ? '<div class="dica">Mostrando 120. Use a busca.</div>' : '');
+}
+async function novaSenha(email) {
+  const u = window._EQ.usuarios.find(x => x.email === email); if (!u || !u.g) return;
+  const nova = prompt(`Nova senha para ${u.nome} (${email}). Mínimo 8 caracteres:`, '');
+  if (nova === null) return;
+  if (nova.length < 8) { alert('A senha precisa de pelo menos 8 caracteres.'); return; }
+  const r = await api('adm/usuarios-senha', { id_usuario: u.g.id, senha_hash_usuario: await sha256(nova) });
+  if (r.ok === false) { alert('A senha NÃO foi trocada: ' + (r.erro || '')); return; }
+  window._EQ.aviso = `Senha de ${email} redefinida.` + (r.sessoes_encerradas ? ' A pessoa estava logada e vai precisar entrar de novo.' : ''); telaEquipe();
+}
+async function liberarLogin(email) {
+  const u = window._EQ.usuarios.find(x => x.email === email); if (!u || !u.g) return;
+  const r = await api('adm/usuarios-desbloquear', { id_usuario: u.g.id });
+  if (r.ok === false) { alert(r.erro); return; }
+  window._EQ.aviso = `Login de ${email} liberado.`; telaEquipe();
 }
 async function cadastrarPessoa() {
   const v = id => ($(id) || {}).value.trim(), nome = v('nu-nome'), login = v('nu-login').toLowerCase(), senha = $('nu-senha').value, papel = v('nu-papel');
   const msg = t => { $('nu-msg').innerHTML = t; };
   if (!nome || !login) { msg('<span style="color:var(--bordo)">Informe o nome e o usuário.</span>'); return; }
-  if (senha.length < 8) { msg('<span style="color:var(--bordo)">A senha inicial precisa de pelo menos 8 caracteres. Combine com a pessoa para trocá-la no primeiro acesso.</span>'); return; }
-  msg('<span class="spinner"></span>Cadastrando...');
-  const r = await api('adm/usuarios-salvar', { nome_usuario: nome, login_usuario: login, gerencia_usuario: v('nu-ger'), senha_hash_usuario: await sha256(senha), perfil_usuario: papel === 'admin' ? 'admin' : 'usuario', apps_usuario: ['raiox'].concat(papel === 'admin' ? ['gestao'] : []), ativo_usuario: true });
-  if (r.ok === false) { msg(`<span style="color:var(--bordo)">${esc(r.erro || 'Não foi possível cadastrar.')}</span>`); return; }
+  const jaExiste = window._EQ.usuarios.some(u => u.email === login);
+  if (!jaExiste) {
+    if (senha.length < 8) { msg('<span style="color:var(--bordo)">A senha inicial precisa de pelo menos 8 caracteres.</span>'); return; }
+    msg('<span class="spinner"></span>Cadastrando...');
+    const r = await api('adm/usuarios-salvar', { nome_usuario: nome, login_usuario: login, gerencia_usuario: v('nu-ger'), senha_hash_usuario: await sha256(senha), perfil_usuario: papel === 'admin' ? 'admin' : 'usuario', apps_usuario: ['raiox'].concat(papel === 'admin' ? ['gestao'] : []), ativo_usuario: true });
+    if (r.ok === false) { msg(`<span style="color:var(--bordo)">${esc(r.erro || 'Não foi possível cadastrar.')}</span>`); return; }
+  }
   const r2 = await api('raiox/perfis-salvar', { email: login, papel });
-  if (r2.ok === false) { msg(`<span style="color:var(--bordo)">Pessoa criada, mas o papel não foi salvo: ${esc(r2.erro)}</span>`); return; }
+  if (r2.ok === false) { msg(`<span style="color:var(--bordo)">${esc(r2.erro)}</span>`); return; }
+  window._EQ.aviso = jaExiste ? `${nome} já existia: o papel foi definido. Para trocar a senha, use a chave na linha dela.` : `${nome} cadastrado(a) com o usuário ${login}.`;
   await telaEquipe();
-  $('nu-msg').innerHTML = `<span class="ok-msg">${esc(nome)} cadastrada(o) com o usuário ${esc(login)}.</span>`;
 }
 async function salvarPapel(email, papel) {
   const r = await api('raiox/perfis-salvar', { email, papel });
