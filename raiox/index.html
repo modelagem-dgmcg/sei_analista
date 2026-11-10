@@ -176,7 +176,7 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.38';
+const VERSAO_RAIOX = 'v0.39';
 const VERSAO_RAIOX_DATA = '10/11/2026 16:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
@@ -1178,24 +1178,41 @@ async function diagnosticarLote(lote) {
   }
   return saida;
 }
+async function comRetentativa(fn, vezes) {
+  let ult;
+  for (let i = 0; i < (vezes || 3); i++) {
+    try { const r = await fn(); if (r && r.ok === false && /demorou|Sem conexão|inesperado/.test(r.erro || '')) { ult = new Error(r.erro); } else return r; }
+    catch (e) { ult = e; }
+    LD.msg = `Falhou (${(ult.message || '').slice(0, 80)}). Tentando de novo (${i + 2} de ${vezes || 3})...`; pintarLeiProgresso();
+    await new Promise(res => setTimeout(res, 3000 * (i + 1)));
+  }
+  throw ult;
+}
 async function diagnosticarTudo() {
   if (LD.rodando) return;
-  const pend = achados.filter(visivel).filter(a => !a.lei_diag);
+  let pend = achados.filter(visivel).filter(a => !a.lei_diag);
   if (!pend.length) { LD.msg = 'Todos os achados já têm diagnóstico.'; pintarLei(); return; }
   if (!chaves.length) { LD.msg = 'Nenhuma chave de IA liberada para o seu usuário. Peça ao administrador.'; pintarLei(); return; }
-  LD.rodando = true; LD.parar = false; let feitos = 0;
+  // intercala pareceres da CTAI e achados do Raio-X, para os dois grupos andarem juntos
+  const ct = pend.filter(ehParecerCtai), rx = pend.filter(a => !ehParecerCtai(a)); pend = [];
+  for (let i = 0; i < Math.max(ct.length, rx.length); i++) { if (rx[i]) pend.push(rx[i]); if (ct[i]) pend.push(ct[i]); }
+  const lim = parseInt(($('ld-lim') || {}).value, 10); if (lim > 0) pend = pend.slice(0, lim);
+  LD.rodando = true; LD.parar = false; let feitos = 0, trava = null;
+  window.onbeforeunload = () => 'O diagnóstico está rodando. Se sair, ele para (o que já foi gravado fica salvo).';
+  try { if (navigator.wakeLock) trava = await navigator.wakeLock.request('screen'); } catch (e) {}
   try {
     for (let i = 0; i < pend.length && !LD.parar; i += 8) {
-      LD.msg = `Diagnosticando ${fmt(feitos)} de ${fmt(pend.length)}...`; pintarLeiProgresso();
-      const lote = pend.slice(i, i + 8), res = await diagnosticarLote(lote);
-      const r = await api('raiox/lei-salvar', { itens: res.map(({ a, ...s }) => s) });
+      LD.msg = `Diagnosticando ${fmt(feitos)} de ${fmt(pend.length)}... (mantenha esta aba aberta)`; pintarLeiProgresso();
+      const lote = pend.slice(i, i + 8), res = await comRetentativa(() => diagnosticarLote(lote), 2);
+      const r = await comRetentativa(() => api('raiox/lei-salvar', { itens: res.map(({ a, ...s }) => s) }, 240000), 3);
       if (r.ok === false) throw new Error(r.erro || 'Não foi possível gravar.');
       res.forEach(s => { s.a.lei_diag = { artigos: s.artigos.join(';'), veredito: s.veredito, motivo: s.motivo, trecho: s.trecho, trecho_confere: s.trecho_confere, confianca: s.confianca, modelo: s.modelo, rev_estado: '', rev_artigos: '', rev_motivo: '', rev_por: '', rev_em: '' }; });
       feitos += lote.length;
     }
-    LD.msg = LD.parar ? `Pausado em ${fmt(feitos)} de ${fmt(pend.length)}. Clique em continuar quando quiser.` : `Pronto: ${fmt(feitos)} achado(s) diagnosticado(s).`;
-  } catch (e) { LD.msg = 'Parou: ' + e.message + ` (${fmt(feitos)} já gravados; clique em continuar para retomar.)`; }
-  LD.rodando = false; pintarLei();
+    LD.msg = LD.parar ? `Pausado em ${fmt(feitos)} de ${fmt(pend.length)}. Clique em continuar quando quiser.` : `Pronto: ${fmt(feitos)} achado(s) diagnosticado(s) nesta rodada.`;
+  } catch (e) { LD.msg = 'Parou: ' + e.message + ` (${fmt(feitos)} desta rodada já gravados; clique em continuar para retomar.)`; }
+  LD.rodando = false; window.onbeforeunload = null; try { if (trava) trava.release(); } catch (e) {}
+  pintarLei();
 }
 function pintarLeiProgresso() { const el = $('ld-msg'); if (el) el.innerHTML = '<span class="spinner"></span>' + esc(LD.msg); }
 
@@ -1236,7 +1253,7 @@ function pintarLei() {
     <p class="dica">A IA lê cada achado e diz quais normas da lista se aplicam e se o fato parece descumprir, cumprir ou se faltam informações. Cada conclusão traz o motivo e o trecho do achado que a sustenta; o sistema confere se o trecho existe mesmo e, para "parece descumprir", uma segunda leitura independente tenta derrubar a conclusão. <b>É indício para o jurídico, não conclusão jurídica</b>: quem confirma ou corrige é o jurídico (botões em cada achado).</p>
     <div class="tiles"><div class="tile"><h3>Achados a analisar</h3><div class="grande">${fmt(vis.length)}</div></div><div class="tile"><h3>Já diagnosticados</h3><div class="grande">${fmt(feitos)}</div></div>
       <div class="tile"><h3>Parecem descumprir</h3><div class="grande" style="color:var(--bordo)">${fmt(nDesc)}</div></div><div class="tile"><h3>Revisados pelo jurídico</h3><div class="grande">${fmt(nRev)}</div></div></div>
-    <div class="acoes"><button class="btn btn-principal" onclick="diagnosticarTudo()" ${LD.rodando || !pend ? 'disabled' : ''}><i class="ti ti-sparkles"></i> ${!pend ? 'Diagnóstico completo' : (feitos ? 'Continuar o diagnóstico' : 'Rodar o diagnóstico') + ' (' + fmt(pend) + ' pendentes)'}</button>${LD.rodando ? ' <button class="btn btn-sm btn-claro" onclick="LD.parar=true">Pausar</button>' : ''}</div><div class="dica" id="ld-msg">${LD.rodando ? '<span class="spinner"></span>' : ''}${esc(LD.msg)}</div>
+    <div class="acoes"><label class="auto" style="margin:0">Rodar até <select id="ld-lim" style="width:auto"><option value="0">todos</option><option value="80" ${LD.lim==='80'?'selected':''}>80</option><option value="240" ${LD.lim==='240'?'selected':''}>240</option><option value="600" ${LD.lim==='600'?'selected':''}>600</option></select> por rodada</label><button class="btn btn-principal" onclick="LD.lim=$('ld-lim').value;diagnosticarTudo()" ${LD.rodando || !pend ? 'disabled' : ''}><i class="ti ti-sparkles"></i> ${!pend ? 'Diagnóstico completo' : (feitos ? 'Continuar o diagnóstico' : 'Rodar o diagnóstico') + ' (' + fmt(pend) + ' pendentes)'}</button>${LD.rodando ? ' <button class="btn btn-sm btn-claro" onclick="LD.parar=true">Pausar</button>' : ''}</div><div class="dica" id="ld-msg">${LD.rodando ? '<span class="spinner"></span>' : ''}${esc(LD.msg)}</div>
     <div class="dica">Os achados ainda sem diagnóstico aparecem na tabela pela ligação por palavras (menos precisa). "TCE-PE" conta os achados que têm referência dos processos do Tribunal de Contas já mapeados no sistema.</div>
     <div class="rolagem"><table class="tabela"><thead><tr><th rowspan="2">Norma</th><th colspan="3" style="text-align:center">Achados do Raio-X</th><th colspan="3" style="text-align:center">Pareceres da CTAI</th><th rowspan="2">Com referência TCE-PE</th><th rowspan="2">Sem diagnóstico</th><th rowspan="2"></th></tr>
       <tr><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th></tr></thead><tbody>
