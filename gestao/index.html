@@ -751,7 +751,7 @@ function formUsuario(id) {
     <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> Analista</label>
     <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
     <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> Acervo <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
-    <label class="marcar"><input type="checkbox" id="fu-app-descontos" ${lista.includes('descontos') || (u && u.perfil === 'admin') ? 'checked' : ''}> Descontos <span class="dica" style="margin:0;">(telas Descontos e Histórico CTAI; administrador sempre tem)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-descontos" ${lista.includes('descontos') || (u && u.perfil === 'admin') ? 'checked' : ''}> Descontos <span class="dica" style="margin:0;">(telas Descontos e Pareceres CTAI; administrador sempre tem)</span></label>
     <label class="marcar"><input type="checkbox" id="fu-app-raiox" ${lista.includes('raiox') ? 'checked' : ''}> Raio-X <span class="dica" style="margin:0;">(escrutínio geral; só quem for liberado)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}

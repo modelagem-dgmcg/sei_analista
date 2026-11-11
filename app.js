@@ -435,7 +435,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_concluidos: 'Registro de Concluídos',
     dashboard_panorama: 'Painel Geral',
     dashboard_perguntas: 'Perguntas sobre achados',
-    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho', admin: 'Administração', descontos: 'Processo de Descontos', historico: 'Histórico dos pareceres da CTAI'
+    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho', admin: 'Administração', descontos: 'Processo de Descontos', historico: 'Pareceres da CTAI'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
@@ -765,7 +765,7 @@ function _mostrarBotaoGestao() {
   const temAcesso = !!usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
   const item = document.getElementById('nav-admin');
   if (item) item.style.display = temAcesso ? '' : 'none';
-  // Descontos e Histórico CTAI: só administrador ou quem recebeu o acesso "descontos" em Gestão > Usuários
+  // Descontos e Pareceres CTAI: só administrador ou quem recebeu o acesso "descontos" em Gestão > Usuários
   const temDesc = !!usuarioAtual && (usuarioAtual.perfil === 'admin' || apps.includes('descontos'));
   ['nav-descontos', 'nav-historico'].forEach(function (id) { const n = document.getElementById(id); if (n) n.style.display = temDesc ? '' : 'none'; });
 }
