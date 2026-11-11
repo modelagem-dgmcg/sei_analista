@@ -142,12 +142,15 @@ function hLerParecer(blocos) {
   });
   if (meta.repasse_mensal === null && repasseTab !== null) meta.repasse_mensal = repasseTab;
 
-  var notas = [], secao = '';
+  var notas = [], secao = '', errCont = 0;
   ps.forEach(function (t) {
     var cabec = t.match(/^(\d{1,2})\.\s+\S/) && t.length < 170 && t.slice(0, 30) === t.slice(0, 30).toUpperCase() && /[A-ZÀ-Ú]{3}/.test(t);
     if (cabec) { secao = t.match(/^(\d{1,2})\./)[1]; return; }
     if (/^["“]?\s*\(?\.{0,3}\)?\s*Art\./i.test(t) || /^§/.test(t)) return;
-    if (/CTAI\s+notificar[áa]\s+a\s+contratada/i.test(t)) notas.push({ tipo: 'compensacao_15a', texto: t.slice(0, 1200) });
+    if (/^ERRATA\b/i.test(t) && t.length < 40) { errCont = 4; return; }
+    if (errCont > 0 && t.length > 25) { errCont--; notas.push({ tipo: 'errata', texto: t.slice(0, 1200) }); return; }
+    if (/\berrata\b|\bretifica(?:-se|mos|ç[ãa]o|r)\b/i.test(t) && t.length > 40) notas.push({ tipo: 'errata', texto: t.slice(0, 1200) });
+    else if (/CTAI\s+notificar[áa]\s+a\s+contratada/i.test(t)) notas.push({ tipo: 'compensacao_15a', texto: t.slice(0, 1200) });
     else if (/gasto com pessoal/i.test(t) && /limite|70%|80%/i.test(t)) notas.push({ tipo: 'gasto_pessoal', texto: t.slice(0, 1200) });
     else if (secao === '8' && /^R\.\s/.test(t)) notas.push({ tipo: 'resposta_ctai', texto: t.slice(0, 1200) });
     else if (secao === '8' && /^0?\d{1,2}\.\s*\S/.test(t)) notas.push({ tipo: 'recomendacao_cma', texto: t.slice(0, 1200) });
@@ -167,7 +170,7 @@ function hLerParecer(blocos) {
   } else if (apont.length) prob.push('Não achei a tabela de totais dos descontos do parecer.');
   var totalParecer = tab07 && tab07.total !== null ? tab07.total : (soma.producao + soma.qualidade);
   return { meta: meta, resultados: resultados, apontamentos: apont, notas: notas, totais: { producao: tab07 ? tab07.producao : soma.producao, qualidade: tab07 ? tab07.qualidade : soma.qualidade, total: totalParecer, soma_producao: soma.producao, soma_qualidade: soma.qualidade },
-    confere: prob.length === 0, problemas: prob, sem_desconto: apont.length === 0 };
+    confere: prob.length === 0, estrutura_ok: !!(meta.numero && meta.unidade && meta.trimestre && meta.ano), problemas: prob, sem_desconto: apont.length === 0 };
 }
 
 
@@ -179,14 +182,14 @@ function hMesBonito(m) { var t = String(m || ''); if (t === 'trimestre') return 
 function hCartao(titulo, corpo) { return '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,0.04);">' + (titulo ? '<h3 style="margin:0 0 12px;font-size:0.95rem;">' + hEsc(titulo) + '</h3>' : '') + corpo + '</div>'; }
 function hEtq(txt, cor) { var c = { verde: ['#d1e7dd', '#0f5132'], verm: ['#f8d7da', '#842029'], amar: ['#fff3cd', '#664d03'], cinza: ['#e9ecef', '#495057'] }[cor || 'cinza']; return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:0.72rem;font-weight:600;background:' + c[0] + ';color:' + c[1] + ';">' + hEsc(txt) + '</span>'; }
 var HIST_STATUS = { cumprida: ['Cumprida', 'verde'], nao_cumprida: ['Não cumprida', 'verm'], impossibilitado: ['Impossibilitado de análise', 'amar'], sem_ocorrencia: ['Sem ocorrência', 'cinza'] };
-var HIST_NOTAS = { compensacao_15a: 'Compensação (art. 15-A): unidade notificada', gasto_pessoal: 'Gasto com pessoal', recomendacao_cma: 'Recomendação da CMA', resposta_ctai: 'Resposta da CTAI à CMA', cma_sintese: 'Parecer da CMA sobre o trimestre anterior', orientacao_ctai: 'Orientação da CTAI à unidade' };
+var HIST_NOTAS = { errata: 'Errata (correção de parecer anterior)', compensacao_15a: 'Compensação (art. 15-A): unidade notificada', gasto_pessoal: 'Gasto com pessoal', recomendacao_cma: 'Recomendação da CMA', resposta_ctai: 'Resposta da CTAI à CMA', cma_sintese: 'Parecer da CMA sobre o trimestre anterior', orientacao_ctai: 'Orientação da CTAI à unidade' };
 
 async function renderHistorico() {
   var c = document.getElementById('content'); if (!c) return;
   c.innerHTML = '<p style="color:#6c757d;">Carregando o histórico…</p>';
   var r = await api('historico/listar');
   if (!r || r.ok === false) { c.innerHTML = '<div style="background:#fff3cd;padding:14px;border-radius:6px;">Não consegui abrir o histórico: ' + hEsc((r && r.erro) || 'erro') + '. Se for a primeira vez, confira se o Code.gs e o Historico.gs foram colados e publicados em Nova versão.</div>'; return; }
-  HIST.lista = r.pareceres || []; HIST.carregou = true; histDesenhar();
+  HIST.lista = r.pareceres || []; HIST.erratas = r.erratas || []; HIST.carregou = true; histDesenhar();
 }
 function histAbas() {
   var ab = [['importar', 'Importar pareceres', 'ti-upload'], ['consultar', 'Consultar', 'ti-search'], ['cobertura', 'O que já foi guardado', 'ti-grid-dots']];
@@ -200,7 +203,7 @@ function histDesenhar() {
 
 // ---------- IMPORTAR ----------
 function histHtmlImportar() {
-  var caixa = hCartao('1. Solte os pareceres aqui', '<p style="margin:0 0 10px;font-size:0.85rem;color:#495057;">Arquivos Word (.docx) dos pareceres técnicos da CTAI, um ou vários de uma vez. O sistema lê as tabelas de resultados e de descontos, <strong>confere se a soma bate com o total do próprio parecer</strong> e mostra o resultado antes de guardar. Nada é guardado sem você marcar.</p>' +
+  var caixa = hCartao('1. Solte os pareceres aqui', '<p style="margin:0 0 10px;font-size:0.85rem;color:#495057;">Arquivos Word (.docx) dos pareceres técnicos da CTAI, um ou vários de uma vez. O sistema lê as tabelas de resultados e de descontos, guarda tudo como foi emitido. Se a soma dos descontos não bater com o total do próprio parecer, isso fica sinalizado no banco (aba Consultar), junto com a errata de um parecer seguinte, se houver.</p>' +
     '<label style="display:block;border:2px dashed #adb5bd;border-radius:8px;padding:26px;text-align:center;cursor:pointer;background:#f8f9fa;" ondragover="event.preventDefault()" ondrop="event.preventDefault();histLer(event.dataTransfer.files)"><i class="ti ti-file-upload" style="font-size:1.6rem;"></i><div style="margin-top:6px;font-size:0.9rem;">Clique ou arraste os arquivos .docx (ou um .zip com eles)</div><input type="file" multiple accept=".docx,.md,.txt,.zip" style="display:none" onchange="histLer(this.files);this.value=\'\'"></label><div id="hist-prog" style="margin-top:8px;font-size:0.82rem;color:#6c757d;"></div>');
   if (!HIST.fila.length) return caixa;
   var existentes = {}; HIST.lista.forEach(function (p) { existentes[p.chave] = p; });
@@ -208,16 +211,17 @@ function histHtmlImportar() {
   var cards = HIST.fila.map(function (f, i) {
     var r = f.r, m = r.meta, chave = [String(m.unidade).trim().toLowerCase(), Number(m.ano), Number(m.trimestre)].join('|');
     var jaTem = existentes[chave];
-    var prob = r.problemas.length ? '<ul style="margin:6px 0 0 18px;padding:0;font-size:0.8rem;color:#842029;">' + r.problemas.map(function (x) { return '<li>' + hEsc(x) + '</li>'; }).join('') + '</ul>' : '';
-    return '<div style="border:1px solid ' + (r.confere ? '#badbcc' : '#f1aeb5') + ';border-radius:8px;padding:12px;margin-bottom:10px;background:' + (r.confere ? '#f8fffb' : '#fff8f8') + ';">' +
+    var pe = r.problemas.filter(function (x) { return /^Não achei (o número|o nome|o trimestre)|^Este arquivo|^Não consegui/.test(x); });
+    var prob = pe.length ? '<ul style="margin:6px 0 0 18px;padding:0;font-size:0.8rem;color:#842029;">' + pe.map(function (x) { return '<li>' + hEsc(x) + '</li>'; }).join('') + '</ul>' : '';
+    return '<div style="border:1px solid ' + (r.estrutura_ok ? '#dee2e6' : '#f1aeb5') + ';border-radius:8px;padding:12px;margin-bottom:10px;background:' + (r.estrutura_ok ? '#fff' : '#fff8f8') + ';">' +
       '<div style="display:flex;gap:10px;align-items:flex-start;"><input type="checkbox" ' + (f.marcado ? 'checked' : '') + ' onchange="HIST.fila[' + i + '].marcado=this.checked;histDesenhar()" style="margin-top:4px;">' +
       '<div style="flex:1;min-width:0;"><div style="font-weight:700;">' + hEsc(m.unidade || '(unidade não encontrada)') + ' <span style="font-weight:400;color:#6c757d;">· ' + hEsc(m.trimestre || '?') + 'º trimestre de ' + hEsc(m.ano || '?') + ' · Parecer Técnico CTAI nº ' + hEsc(m.numero || '?') + '/' + hEsc(m.ano_parecer || '?') + '</span></div>' +
       '<div style="font-size:0.78rem;color:#6c757d;margin:2px 0 6px;">' + hEsc(m.tipo_unidade) + ' · Contrato de Gestão ' + hEsc(m.contrato || '—') + ' · ' + hEsc(m.oss || 'OSS não encontrada') + ' · arquivo ' + hEsc(f.nome) + '</div>' +
-      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' + (r.confere ? hEtq('Soma confere com o parecer', 'verde') : hEtq('Conferir antes de guardar', 'verm')) + (jaTem ? hEtq('Já está no banco — será substituído', 'amar') : '') + (r.sem_desconto ? hEtq('Sem desconto neste trimestre', 'cinza') : '') +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' + (r.estrutura_ok ? '' : hEtq('Não identifiquei o parecer', 'verm')) + (jaTem ? hEtq('Já está no banco — será substituído', 'amar') : '') + (r.sem_desconto ? hEtq('Sem desconto neste trimestre', 'cinza') : '') +
       '<span style="font-size:0.8rem;">Produção ' + hBrl(r.totais.producao) + ' · Qualidade ' + hBrl(r.totais.qualidade) + ' · <strong>Total ' + hBrl(r.totais.total) + '</strong></span></div>' + prob +
       '<div style="font-size:0.76rem;color:#6c757d;margin-top:6px;">' + r.resultados.length + ' linhas de resultado · ' + r.apontamentos.length + ' linhas de desconto · ' + r.notas.length + ' observações</div></div></div></div>';
   }).join('');
-  var resumo = hCartao('2. Confira e guarde', cards + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-primary" ' + (n && !HIST.salvando ? '' : 'disabled') + ' onclick="histGuardar()"><i class="ti ti-database-import"></i> Guardar ' + n + ' no banco</button><button class="btn btn-secondary" onclick="HIST.fila=[];histDesenhar()">Limpar lista</button><span id="hist-msg" style="font-size:0.84rem;"></span></div>');
+  var resumo = hCartao('2. Guarde no banco', cards + '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-primary" ' + (n && !HIST.salvando ? '' : 'disabled') + ' onclick="histGuardar()"><i class="ti ti-database-import"></i> Guardar ' + n + ' no banco</button><button class="btn btn-secondary" onclick="HIST.fila=[];histDesenhar()">Limpar lista</button><span id="hist-msg" style="font-size:0.84rem;"></span></div>');
   return caixa + resumo;
 }
 async function histLer(arquivos) {
@@ -247,15 +251,13 @@ async function histLer(arquivos) {
       var r = hLerParecer(blocos);
       if (!r.meta.numero && !r.meta.unidade) { HIST.fila.push({ nome: f.name, r: { meta: r.meta, resultados: [], apontamentos: [], notas: [], totais: { producao: 0, qualidade: 0, total: 0 }, confere: false, problemas: ['Este arquivo não parece ser um parecer técnico da CTAI.'] }, marcado: false }); continue; }
       HIST.fila = HIST.fila.filter(function (x) { return x.nome !== f.name; });
-      HIST.fila.push({ nome: f.name, r: r, marcado: r.confere && !!r.meta.unidade && !!r.meta.trimestre });
+      HIST.fila.push({ nome: f.name, r: r, marcado: !!r.estrutura_ok });
     } catch (e) { HIST.fila.push({ nome: f.name, r: { meta: { unidade: '', ano: '', trimestre: '' }, resultados: [], apontamentos: [], notas: [], totais: { producao: 0, qualidade: 0, total: 0 }, confere: false, problemas: ['Não consegui ler: ' + (e.message || e)] }, marcado: false }); }
   }
   prog(''); histDesenhar();
 }
 async function histGuardar() {
   if (HIST.salvando) return; var marc = HIST.fila.filter(function (f) { return f.marcado; }); if (!marc.length) return;
-  var semConf = marc.filter(function (f) { return !f.r.confere; });
-  if (semConf.length && !confirm(semConf.length + ' parecer(es) marcado(s) NÃO conferem com o total do próprio parecer. Guardar mesmo assim? (ficam marcados como "não confere" no banco)')) return;
   HIST.salvando = true; histDesenhar();
   var msg = function (t, cor) { var e = document.getElementById('hist-msg'); if (e) { e.textContent = t; e.style.color = cor || '#495057'; } };
   var novos = 0, subst = 0, rej = [], falhou = false;
@@ -267,7 +269,7 @@ async function histGuardar() {
     lote.forEach(function (f) { f.guardado = true; });
   }
   HIST.salvando = false;
-  var l = await api('historico/listar'); if (l && l.pareceres) HIST.lista = l.pareceres;
+  var l = await api('historico/listar'); if (l && l.pareceres) { HIST.lista = l.pareceres; HIST.erratas = l.erratas || []; }
   HIST.fila = HIST.fila.filter(function (f) { return !f.guardado; });
   histDesenhar();
   var e = document.getElementById('hist-msg'); if (e) { e.style.color = falhou ? '#842029' : '#0f5132'; e.textContent = falhou ? e.textContent : novos + ' novo(s), ' + subst + ' substituído(s)' + (rej.length ? ' · não guardados: ' + rej.join('; ') : '') + '.'; }
@@ -290,13 +292,29 @@ function histHtmlConsultar() {
   var ls = histFiltrar().sort(function (a, b) { return (b.ano - a.ano) || (b.trimestre - a.trimestre) || String(a.unidade).localeCompare(String(b.unidade)); });
   if (!ls.length) return filtros + '<div style="background:#fff;border:1px dashed #ced4da;border-radius:8px;padding:30px;text-align:center;color:#6c757d;">Nenhum parecer guardado' + (HIST.lista.length ? ' com este filtro' : ' ainda. Use a aba <strong>Importar pareceres</strong>') + '.</div>';
   var tot = ls.reduce(function (s, p) { return s + (Number(p.desc_total) || 0); }, 0);
-  var kpi = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">' + [['Pareceres', ls.length], ['Total de descontos apontados', hBrl(tot)], ['Que não conferem', ls.filter(function (p) { return p.confere !== 'sim'; }).length]].map(function (k) { return '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 16px;"><div style="font-size:0.72rem;color:#6c757d;">' + k[0] + '</div><div style="font-size:1.1rem;font-weight:700;">' + k[1] + '</div></div>'; }).join('') + '</div>';
+  var kpi = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">' + [['Pareceres', ls.length], ['Total de descontos apontados', hBrl(tot)], ['Divergência de soma sem errata', ls.filter(function (p) { return histStatusSoma(p).cod === 'aberta'; }).length]].map(function (k) { return '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 16px;"><div style="font-size:0.72rem;color:#6c757d;">' + k[0] + '</div><div style="font-size:1.1rem;font-weight:700;">' + k[1] + '</div></div>'; }).join('') + '</div>';
   var linhas = ls.map(function (p) {
     var aberto = HIST.aberto === String(p.id);
-    return '<tr style="cursor:pointer;" onclick="histAbrir(' + p.id + ')"><td><strong>' + hEsc(p.unidade) + '</strong><div style="font-size:0.72rem;color:#6c757d;">' + hEsc(p.tipo_unidade) + ' · C.G ' + hEsc(p.contrato || '—') + ' · ' + hEsc(p.oss || '') + '</div></td><td>' + p.ano + ' · ' + p.trimestre + 'º tri</td><td>nº ' + hEsc(p.numero) + '/' + hEsc(p.ano_parecer) + '</td><td style="text-align:right;">' + hBrl(p.desc_producao) + '</td><td style="text-align:right;">' + hBrl(p.desc_qualidade) + '</td><td style="text-align:right;font-weight:700;">' + hBrl(p.desc_total) + '</td><td>' + (p.confere === 'sim' ? hEtq('Confere', 'verde') : hEtq('Não confere', 'verm')) + '</td></tr>' +
+    return '<tr style="cursor:pointer;" onclick="histAbrir(' + p.id + ')"><td><strong>' + hEsc(p.unidade) + '</strong><div style="font-size:0.72rem;color:#6c757d;">' + hEsc(p.tipo_unidade) + ' · C.G ' + hEsc(p.contrato || '—') + ' · ' + hEsc(p.oss || '') + '</div></td><td>' + p.ano + ' · ' + p.trimestre + 'º tri</td><td>nº ' + hEsc(p.numero) + '/' + hEsc(p.ano_parecer) + '</td><td style="text-align:right;">' + hBrl(p.desc_producao) + '</td><td style="text-align:right;">' + hBrl(p.desc_qualidade) + '</td><td style="text-align:right;font-weight:700;">' + hBrl(p.desc_total) + '</td><td>' + (function (s) { return hEtq(s.txt, s.cor) + (s.det ? '<div style="font-size:0.7rem;color:#6c757d;margin-top:2px;">' + hEsc(s.det) + '</div>' : ''); })(histStatusSoma(p)) + '</td></tr>' +
       (aberto ? '<tr><td colspan="7" style="background:#f8f9fa;">' + histHtmlDetalhe(String(p.id)) + '</td></tr>' : '');
   }).join('');
   return '<style>.hist-tab td,.hist-tab th{padding:8px;border-top:1px solid #eef0f2;vertical-align:top}.hist-tab tbody tr:hover{background:#f8f9fa}</style>' + filtros + kpi + '<div style="overflow-x:auto;background:#fff;border:1px solid #dee2e6;border-radius:8px;"><table class="hist-tab" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="text-align:left;"><th>Unidade</th><th>Período</th><th>Parecer CTAI</th><th style="text-align:right;">Produção</th><th style="text-align:right;">Qualidade</th><th style="text-align:right;">Total</th><th>Conferência</th></tr></thead><tbody>' + linhas + '</tbody></table></div>';
+}
+function histNormU(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim(); }
+// Situação da soma de um parecer: confere / divergência corrigida por errata de parecer seguinte / divergência sem errata
+function histStatusSoma(p) {
+  if (p.confere === 'sim') return { cod: 'ok', txt: 'Confere', cor: 'verde' };
+  var un = histNormU(p.unidade), per = Number(p.ano) * 10 + Number(p.trimestre), num = String(p.numero || '').replace(/^0+/, '');
+  var cand = (HIST.erratas || []).filter(function (e) { return histNormU(e.unidade) === un && (Number(e.ano) * 10 + Number(e.trimestre)) > per; });
+  var casa = cand.filter(function (e) {
+    var t = String(e.texto || ''), tl = t.toLowerCase();
+    var porNum = num && (new RegExp('(^|\\D)0*' + num + '\\s*/\\s*' + (p.ano_parecer || '') + '|n[º°o.]*\\s*0*' + num + '(\\D|$)', 'i')).test(t);
+    var porTri = new RegExp(p.trimestre + '\\s*[º°o]?\\s*trimestre', 'i').test(t) && (tl.indexOf(String(p.ano)) > -1 || true);
+    return porNum || porTri;
+  });
+  if (casa.length) { var e = casa[0]; return { cod: 'corrigida', txt: 'Divergência corrigida por errata', cor: 'amar', det: 'errata no parecer nº ' + e.numero + '/' + e.ano_parecer + ' (' + e.trimestre + 'º tri ' + e.ano + ')' }; }
+  if (cand.length) return { cod: 'aberta', txt: 'Divergência de soma', cor: 'verm', det: 'há errata posterior, mas não cita este parecer' };
+  return { cod: 'aberta', txt: 'Divergência de soma', cor: 'verm', det: 'sem errata nos pareceres seguintes' };
 }
 async function histAbrir(id) {
   var k = String(id); if (HIST.aberto === k) { HIST.aberto = null; histDesenhar(); return; }
@@ -318,7 +336,7 @@ function histHtmlDetalhe(k) {
 async function histRemover(id) {
   if (!confirm('Remover este parecer do banco? Os arquivos originais não são afetados.')) return;
   var r = await api('historico/remover', { id: id }); if (!r || r.ok === false) { alert((r && r.erro) || 'Não consegui remover.'); return; }
-  HIST.aberto = null; var l = await api('historico/listar'); if (l && l.pareceres) HIST.lista = l.pareceres; histDesenhar();
+  HIST.aberto = null; var l = await api('historico/listar'); if (l && l.pareceres) { HIST.lista = l.pareceres; HIST.erratas = l.erratas || []; } histDesenhar();
 }
 
 // ---------- COBERTURA ----------
@@ -330,7 +348,7 @@ function histHtmlCobertura() {
   doAno.forEach(function (p) { var u = un[p.unidade] = un[p.unidade] || { tipo: p.tipo_unidade, tri: {} }; u.tri[p.trimestre] = p; });
   var nomes = Object.keys(un).sort(function (a, b) { return (un[a].tipo + a).localeCompare(un[b].tipo + b); });
   var totTri = [0, 0, 0, 0], nTri = [0, 0, 0, 0];
-  var linhas = nomes.map(function (n) { return '<tr><td><strong>' + hEsc(n) + '</strong> <span style="color:#6c757d;font-size:0.72rem;">' + hEsc(un[n].tipo) + '</span></td>' + [1, 2, 3, 4].map(function (t) { var p = un[n].tri[t]; if (!p) return '<td style="color:#adb5bd;text-align:center;">—</td>'; totTri[t - 1] += Number(p.desc_total) || 0; nTri[t - 1]++; return '<td style="text-align:center;' + (p.confere === 'sim' ? '' : 'background:#f8d7da;') + '">' + hBrl(p.desc_total) + '</td>'; }).join('') + '</tr>'; }).join('');
+  var linhas = nomes.map(function (n) { return '<tr><td><strong>' + hEsc(n) + '</strong> <span style="color:#6c757d;font-size:0.72rem;">' + hEsc(un[n].tipo) + '</span></td>' + [1, 2, 3, 4].map(function (t) { var p = un[n].tri[t]; if (!p) return '<td style="color:#adb5bd;text-align:center;">—</td>'; totTri[t - 1] += Number(p.desc_total) || 0; nTri[t - 1]++; return '<td style="text-align:center;' + (histStatusSoma(p).cod === 'aberta' ? 'background:#f8d7da;' : histStatusSoma(p).cod === 'corrigida' ? 'background:#fff3cd;' : '') + '">' + hBrl(p.desc_total) + '</td>'; }).join('') + '</tr>'; }).join('');
   var sel = '<select onchange="HIST.anoCob=this.value;histDesenhar()" style="padding:6px;border:1px solid #ced4da;border-radius:4px;">' + anos.map(function (a) { return '<option ' + (a === ano ? 'selected' : '') + '>' + a + '</option>'; }).join('') + '</select>';
   return '<style>.hist-tab td,.hist-tab th{padding:8px;border-top:1px solid #eef0f2}</style><div style="margin-bottom:12px;font-size:0.85rem;">Ano: ' + sel + ' &nbsp; Cada célula mostra o total de descontos apontado no parecer. "—" é parecer ainda não guardado. Vermelho: guardado, mas a soma não conferia.</div>' +
     '<div style="overflow-x:auto;background:#fff;border:1px solid #dee2e6;border-radius:8px;"><table class="hist-tab" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="text-align:left;"><th>Unidade</th><th style="text-align:center;">1º tri</th><th style="text-align:center;">2º tri</th><th style="text-align:center;">3º tri</th><th style="text-align:center;">4º tri</th></tr></thead><tbody>' + linhas +
