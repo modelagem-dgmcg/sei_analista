@@ -829,7 +829,7 @@ function descStatusPassos() {
   const revisada = sim(a.ata_revisada) || (it.length > 0 && it.every(function (x) { return sim(x.julgamento_revisado); }));
   return [
     !!(a.unidade && a.ano && a.trimestre && a.sei_processo),
-    String(descFichaMapaUnidade().ficha_conferida) === 'sim',
+    !descEhAdmin() || String(descFichaMapaUnidade().ficha_conferida) === 'sim',
     it.length > 0 && !!a.parecer_numero,
     !!a.notificacao_envio,
     sim(a.defesa) || nao(a.defesa) || (p.prazo_defesa && hoje > dParse(p.prazo_defesa)),
@@ -842,8 +842,9 @@ function descPrimeiroPendente() { const s = descStatusPassos(); const k = s.inde
 function descHtmlFluxo() {
   const a = DESC.atual, st = descStatusPassos(), p = DESC.passo;
   const lateral = DESC_PASSOS.map(function (x, k) {
+    if (k === 1 && !descEhAdmin()) return '';
     const feito = st[k], atual = k === p;
-    return '<a href="#" onclick="descIrPasso(' + k + ',true);return false;" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;text-decoration:none;color:' + (atual ? '#fff' : '#343a40') + ';background:' + (atual ? '#5c636a' : 'transparent') + ';margin-bottom:2px;font-size:0.86rem;"><span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.78rem;flex:none;background:' + (feito ? '#198754' : atual ? 'rgba(255,255,255,0.25)' : '#e9ecef') + ';color:' + (feito || atual ? '#fff' : '#6c757d') + ';">' + (feito ? '✓' : (k + 1)) + '</span>' + dEsc(x.nome) + '</a>';
+    return '<a href="#" onclick="descIrPasso(' + k + ',true);return false;" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;text-decoration:none;color:' + (atual ? '#fff' : '#343a40') + ';background:' + (atual ? '#5c636a' : 'transparent') + ';margin-bottom:2px;font-size:0.86rem;"><span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.78rem;flex:none;background:' + (feito ? '#198754' : atual ? 'rgba(255,255,255,0.25)' : '#e9ecef') + ';color:' + (feito || atual ? '#fff' : '#6c757d') + ';">' + (feito ? '✓' : descNumPasso(k)) + '</span>' + dEsc(x.nome) + '</a>';
   }).join('');
   const titulo = a.unidade ? '<div style="font-size:0.78rem;color:#6c757d;margin:0 0 8px 4px;">' + dEsc(a.unidade) + ' · ' + a.ano + ' T' + a.trimestre + '</div>' : '';
   const rodape = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"><button class="btn btn-secondary btn-sm" ' + (p === 0 ? 'disabled' : '') + ' onclick="descIrPasso(' + (p - 1) + ',true)"><i class="ti ti-arrow-left"></i> Passo anterior</button><button class="btn btn-secondary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
@@ -851,7 +852,7 @@ function descHtmlFluxo() {
   return '<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Lista</button><button class="btn btn-secondary btn-sm" onclick="descModoCompleto()">Ver ficha completa</button></div>' +
     '<div id="d_resumo"></div>' +
     '<div style="display:grid;grid-template-columns:minmax(200px,250px) 1fr;gap:18px;align-items:start;" class="desc-fluxo"><div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:12px;position:sticky;top:8px;"><div style="font-size:0.72rem;color:#6c757d;font-weight:700;text-transform:uppercase;margin:0 0 6px 4px;">Fluxo do desconto</div>' + titulo + lateral + '</div>' +
-    '<div><div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:18px;margin-bottom:12px;"><h3 style="margin:0 0 4px;font-size:1.05rem;"><i class="ti ' + DESC_PASSOS[p].ic + '"></i> ' + (p + 1) + '. ' + DESC_PASSOS[p].nome + '</h3><div style="font-size:0.82rem;color:#6c757d;margin-bottom:14px;">' + descAjudaPasso(p) + '</div>' + descCorpoPasso(p) + '</div>' + rodape + '</div></div>' +
+    '<div><div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:18px;margin-bottom:12px;"><h3 style="margin:0 0 4px;font-size:1.05rem;"><i class="ti ' + DESC_PASSOS[p].ic + '"></i> ' + descNumPasso(p) + '. ' + DESC_PASSOS[p].nome + '</h3><div style="font-size:0.82rem;color:#6c757d;margin-bottom:14px;">' + descAjudaPasso(p) + '</div>' + descCorpoPasso(p) + '</div>' + rodape + '</div></div>' +
     '<style>@media(max-width:820px){.desc-fluxo{grid-template-columns:1fr !important}}</style>';
 }
 function descAjudaPasso(p) {
@@ -998,7 +999,11 @@ function descAutoUnidade() {
   DESC.fichaCampos = null; DESC._fichaUnidade = ''; // a ficha do contrato é por unidade: recarrega no passo 2
   descDesenhar(); descMudou();
 }
+// Passo 2 (contrato e aditivos) é da administração: usuário comum não vê esse passo; a ficha da unidade já vem pronta.
+function descEhAdmin() { return typeof usuarioAtual !== 'undefined' && !!usuarioAtual && usuarioAtual.perfil === 'admin'; }
+function descNumPasso(p) { return (p + 1) - (!descEhAdmin() && p > 1 ? 1 : 0); }
 async function descIrPasso(k, salvar) {
+  if (k === 1 && !descEhAdmin()) k = DESC.passo < 1 ? 2 : 0;
   if (k < 0 || k >= DESC_PASSOS.length) return;
   descLerFicha();
   if (salvar && DESC.passo === 1 && DESC._fichaSuja && DESC.atual.unidade) await descSalvarFichaContrato(true);
