@@ -261,9 +261,10 @@ async function histGuardar() {
   HIST.salvando = true; histDesenhar();
   var msg = function (t, cor) { var e = document.getElementById('hist-msg'); if (e) { e.textContent = t; e.style.color = cor || '#495057'; } };
   var novos = 0, subst = 0, rej = [], falhou = false;
-  for (var i = 0; i < marc.length; i += 3) {
-    var lote = marc.slice(i, i + 3); msg('Guardando ' + Math.min(i + 3, marc.length) + ' de ' + marc.length + '…');
-    var resp = await api('historico/importar', { pareceres: lote.map(function (f) { return Object.assign({}, f.r, { arquivo: f.nome }); }) }, { timeoutMs: 120000 });
+  for (var i = 0; i < marc.length; i += 1) {
+    var lote = marc.slice(i, i + 1); msg('Guardando ' + (i + 1) + ' de ' + marc.length + ': ' + lote[0].nome + '…');
+    var resp = await api('historico/importar', { pareceres: lote.map(function (f) { return Object.assign({}, f.r, { arquivo: f.nome }); }) }, { timeoutMs: 280000 });
+    if (resp && resp.ok === false && /não respondeu/i.test(resp.erro || '')) { msg('Demorou; tentando de novo ' + (i + 1) + ' de ' + marc.length + '…'); resp = await api('historico/importar', { pareceres: lote.map(function (f) { return Object.assign({}, f.r, { arquivo: f.nome }); }) }, { timeoutMs: 280000 }); }
     if (!resp || resp.ok === false) { falhou = true; msg('Parou: ' + ((resp && resp.erro) || 'erro ao guardar') + '. O que já foi guardado continua no banco.', '#842029'); break; }
     novos += resp.novos; subst += resp.substituidos; (resp.rejeitados || []).forEach(function (x) { rej.push(x); });
     lote.forEach(function (f) { f.guardado = true; });
