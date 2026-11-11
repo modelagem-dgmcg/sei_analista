@@ -7,6 +7,8 @@ var DESC_PARAMETROS_PADRAO = {
   dias_recurso:         { valor: '10', confirmado: 'nao', nota: 'Prazo para a OSS pedir recurso após ciência da Ata. VALOR PROVISÓRIO: confirmar no contrato/decreto.' },
   feriados_extras:      { valor: '',   confirmado: 'nao', nota: 'Datas AAAA-MM-DD separadas por vírgula (feriados estaduais, pontos facultativos). O sistema já usa os feriados nacionais e a Sexta-feira Santa.' },
   base_legal:           { valor: 'Lei Estadual nº 15.210/2013 e Decreto Estadual nº 58.200/2025', confirmado: 'sim', nota: 'Citada nos textos gerados. Conferir a cláusula do contrato de cada unidade.' },
+  limiar_producao_pct:  { valor: '85', confirmado: 'sim', nota: 'Atingimento mínimo da meta de produção; abaixo disso há apontamento (art. 15-A da Lei 15.210/2013, como nas decisões já tomadas).' },
+  trimestres_compensacao:{ valor: '2', confirmado: 'nao', nota: 'Prazo de compensação sugerido: fim do 2º trimestre seguinte (deduzido de um caso: 4º tri/2024 → 30/06/2025). Confirmar no contrato.' },
   tolerancia_externa_pct:{ valor: '5', confirmado: 'nao', nota: 'Diferença (%) aceita entre o valor informado e a fonte externa (CNES/SIH/SIA) antes de gerar alerta.' }
 };
 var DESC_DECISOES = ['', 'acatado', 'nao_acatado'];
@@ -71,27 +73,25 @@ function paramsMapa(linhas) {
   return m;
 }
 
-// Contas. Convenções (ver LEIA-ME): "acatado" = o apontamento da CTAI é mantido; "não acatado" = é afastado.
-// Produção: efetivado = (apontado − compensado dentro do prazo) dos acatados. Qualidade: efetivado = apontado dos acatados.
+// Contas (modelo da ficha do AppSheet). Decisão por apontamento:
+//   "acatado"     = a DEFESA da OSS foi acatada: o apontamento cai (valor acatado abate o desconto);
+//   "nao_acatado" = a defesa não foi acatada (ou não houve): o apontamento é mantido.
+// Efetivado = apontado − compensado dentro do prazo (só produção) − acatado. Sem decisão, conta cheio e fica pendente.
 function calcularTotais(itens, hoje) {
   var t = { prod: { apontado: 0, compensado: 0, acatado: 0, efetivado: 0, pendentes: 0 }, qual: { apontado: 0, acatado: 0, efetivado: 0, pendentes: 0 }, linhas: [] };
   (itens || []).forEach(function (it) {
-    var ap = num(it.valor_apontado), comp = num(it.valor_compensado), dec = it.decisao || '';
+    var prod = it.tipo === 'producao', ap = num(it.valor_apontado), comp = prod ? num(it.valor_compensado) : 0, dec = it.decisao || '';
     var prazo = dParse(it.prazo_compensacao), dcomp = dParse(it.data_compensacao);
     var compValida = comp > 0 && (!prazo || !dcomp || dcomp <= prazo) ? Math.min(comp, ap) : 0;
     var compForaPrazo = comp > 0 && prazo && dcomp && dcomp > prazo;
-    var vencido = it.tipo === 'producao' && prazo && hoje && dParse(hoje) > prazo && r2(ap - compValida) > 0;
-    var ef = 0;
-    if (it.tipo === 'producao') {
-      t.prod.apontado += ap; t.prod.compensado += compValida;
-      if (dec === 'acatado') { t.prod.acatado += ap; ef = ap - compValida; t.prod.efetivado += ef; }
-      if (!dec) t.prod.pendentes++;
-    } else {
-      t.qual.apontado += ap;
-      if (dec === 'acatado') { t.qual.acatado += ap; ef = ap; t.qual.efetivado += ef; }
-      if (!dec) t.qual.pendentes++;
-    }
-    t.linhas.push({ efetivado: r2(ef), comp_valida: r2(compValida), comp_fora_prazo: !!compForaPrazo, fora_prazo_compensacao: !!vencido });
+    var base = r2(ap - compValida), acat = 0;
+    if (dec === 'acatado') acat = (it.valor_acatado !== undefined && it.valor_acatado !== '' && it.valor_acatado !== null) ? Math.min(num(it.valor_acatado), base) : base;
+    var ef = r2(base - acat);
+    var vencido = prod && prazo && hoje && dParse(hoje) > prazo && base > 0;
+    var g = prod ? t.prod : t.qual;
+    g.apontado += ap; g.acatado += acat; g.efetivado += ef; if (!dec) g.pendentes++;
+    if (prod) g.compensado += compValida;
+    t.linhas.push({ efetivado: ef, acatado: r2(acat), comp_valida: r2(compValida), comp_fora_prazo: !!compForaPrazo, fora_prazo_compensacao: !!vencido });
   });
   ['prod', 'qual'].forEach(function (k) { Object.keys(t[k]).forEach(function (f) { if (f !== 'pendentes') t[k][f] = r2(t[k][f]); }); });
   t.apontado = r2(t.prod.apontado + t.qual.apontado);
@@ -99,6 +99,20 @@ function calcularTotais(itens, hoje) {
   t.pct_qualidade_sobre_producao = t.prod.apontado > 0 ? r2(t.qual.apontado / t.prod.apontado * 100) : null;
   return t;
 }
+// Produção: percentual do trimestre a partir dos meses informados e da meta (ou o % que consta no parecer).
+function percProducao(it) {
+  var m = [it.realizado_1, it.realizado_2, it.realizado_3].map(function (x) { return (x === '' || x === undefined || x === null) ? null : num(x); });
+  var temMeses = m.every(function (x) { return x !== null; }), soma = temMeses ? m[0] + m[1] + m[2] : null, meta = num(it.meta_trimestre);
+  var calc = (temMeses && meta > 0) ? r2(soma / meta * 100) : null;
+  var parecer = (it.pct_parecer === '' || it.pct_parecer === undefined || it.pct_parecer === null) ? null : num(it.pct_parecer);
+  return { meses: m, soma: soma, meta: meta || null, calculado: calc, parecer: parecer, pct: calc !== null ? calc : parecer, diverge: calc !== null && parecer !== null && Math.abs(calc - parecer) > 0.1 };
+}
+function prazoCompensacaoSugerido(ano, tri, n) {
+  var idx = (+ano) * 4 + (+tri - 1) + (+n || 2), a = Math.floor(idx / 4), q = idx % 4 + 1;
+  return fimTrimestre(a, q);
+}
+var DESC_MESES = [['janeiro', 'fevereiro', 'março'], ['abril', 'maio', 'junho'], ['julho', 'agosto', 'setembro'], ['outubro', 'novembro', 'dezembro']];
+
 function calcularPrazos(rec, pm) {
   var ex = pm.feriados_extras, p = {};
   p.ciencia = rec.ciencia_data ? dIso(dParse(rec.ciencia_data)) : '';
@@ -119,6 +133,7 @@ function nao(v) { return String(v || '').toLowerCase() === 'nao' || String(v || 
 function calcularFicha(rec, itens, pm, hoje) {
   hoje = hoje || dIso(new Date());
   var t = calcularTotais(itens, hoje), p = calcularPrazos(rec, pm), H = dParse(hoje);
+  var revisada = sim(rec.ata_revisada) || ((itens || []).length > 0 && (itens || []).every(function (x) { return sim(x.julgamento_revisado); }));
   var semDesconto = t.apontado === 0 && (itens || []).length === 0 ? null : t.apontado === 0;
   var prazoDefesaVencido = p.prazo_defesa && H > dParse(p.prazo_defesa);
   var temDefesa = sim(rec.defesa), semDefesa = nao(rec.defesa);
@@ -129,7 +144,7 @@ function calcularFicha(rec, itens, pm, hoje) {
     { n: DESC_ETAPAS[3], feito: temDefesa || semDefesa || !!prazoDefesaVencido, pula: semDesconto === true },
     { n: DESC_ETAPAS[4], feito: !!rec.grupo_tecnico_data, pula: semDesconto === true || semDefesa },
     { n: DESC_ETAPAS[5], feito: !!rec.comissao_data, pula: semDesconto === true },
-    { n: DESC_ETAPAS[6], feito: sim(rec.ata_revisada), pula: semDesconto === true },
+    { n: DESC_ETAPAS[6], feito: revisada, pula: semDesconto === true },
     { n: DESC_ETAPAS[7], feito: !!(rec.ata_envio_oss && rec.envio_gafcg), pula: semDesconto === true },
     { n: DESC_ETAPAS[8], feito: nao(rec.recurso) || !!rec.recurso_decisao_data || (!sim(rec.recurso) && !!p.prazo_recurso && H > dParse(p.prazo_recurso)), pula: semDesconto === true },
     { n: DESC_ETAPAS[9], feito: !!rec.execucao_data, pula: semDesconto === true }
@@ -165,14 +180,21 @@ function calcularFicha(rec, itens, pm, hoje) {
     if (l.fora_prazo_compensacao) A('erro', 'Fora do prazo de compensação: ' + (it.indicador || 'apontamento de produção') + ' (prazo ' + dBr(it.prazo_compensacao) + ').');
     if (l.comp_fora_prazo) A('aviso', 'Compensação de "' + (it.indicador || 'produção') + '" feita depois do prazo; não foi abatida do valor.');
   });
+  var lim = +pm.limiar_producao_pct || 85;
+  (itens || []).forEach(function (it) {
+    if (it.tipo !== 'producao') return;
+    var pp = percProducao(it);
+    if (pp.pct !== null && pp.pct >= lim) A('erro', 'Apontamento de produção "' + (it.indicador || '') + '" com atingimento de ' + pp.pct + '% (meta mínima ' + lim + '%): conferir o parecer, o apontamento pode estar indevido.');
+    if (pp.diverge) A('aviso', 'Produção "' + (it.indicador || '') + '": o percentual calculado (' + pp.calculado + '%) difere do que consta no parecer (' + pp.parecer + '%).');
+  });
   if (rec.notificacao_envio && !sim(rec.base_legal_conferida)) A('aviso', 'Base legal da notificação não marcada como conferida com o contrato vigente.');
   if (p.ciencia_presumida) A('info', 'Prazo de defesa contado a partir de ciência presumida (' + dBr(p.ciencia) + '): sem ciência expressa da unidade.');
   if (prazoDefesaVencido && !temDefesa && !semDefesa && rec.notificacao_envio) A('aviso', 'Prazo de defesa venceu em ' + dBr(p.prazo_defesa) + ' e não há registro se houve defesa.');
   if (p.dias_ate_notificacao !== null && p.dias_ate_notificacao > 180) A('info', 'Notificação enviada ' + p.dias_ate_notificacao + ' dias depois do fim do trimestre.');
   if (t.apontado > 0 && !rec.sei_processo) A('aviso', 'Falta o número do processo SEI.');
   if (!rec.contrato) A('info', 'Falta o número do contrato de gestão (C.G).');
-  if (t.prod.pendentes + t.qual.pendentes > 0 && (rec.comissao_data || sim(rec.ata_revisada))) A('erro', 'Há apontamentos sem decisão (acatado / não acatado) e o julgamento já foi registrado.');
-  if (rec.ata_envio_oss && sim(rec.ata_revisada) === false) A('aviso', 'Ata enviada à OSS sem marcar a revisão.');
+  if (t.prod.pendentes + t.qual.pendentes > 0 && (rec.comissao_data || revisada)) A('erro', 'Há apontamentos sem decisão (acatado / não acatado) e o julgamento já foi registrado.');
+  if (rec.ata_envio_oss && !revisada) A('aviso', 'Ata enviada à OSS sem a revisão do julgamento marcada.');
   if (sim(rec.recurso) && !sim(rec.defesa) && !rec.recurso_decisao_data) A('info', 'Recurso registrado sem defesa prévia: conferir se cabe.');
   if (sim(rec.recurso) && rec.recurso_data && p.prazo_recurso && dParse(rec.recurso_data) > dParse(p.prazo_recurso)) A('aviso', 'Recurso apresentado depois do prazo (' + dBr(p.prazo_recurso) + ').');
   if (t.efetivado > 0 && rec.ata_envio_oss && !rec.execucao_data) A('info', 'Desconto de ' + brl(t.efetivado) + ' ainda sem registro de execução (LE/OB).');
@@ -191,16 +213,21 @@ function compararExterno(valorInformado, valorReferencia, tolPct) {
 // ===== Textos (rascunhos para o servidor revisar; o que falta fica entre colchetes) =====
 function _v(x, rot) { return (x === '' || x === null || x === undefined) ? '[' + rot + ']' : x; }
 function _trimLabel(rec) { return _v(rec.trimestre, 'trimestre') + 'º trimestre de ' + _v(rec.ano, 'ano'); }
-function _listaItens(itens, tipo, calc) {
+function _listaItens(itens, tipo, calc, comFundamento) {
   var out = [];
   (itens || []).forEach(function (it, i) {
     if (it.tipo !== tipo) return;
     var l = calc.totais.linhas[i];
-    var dec = it.decisao === 'acatado' ? 'apontamento acatado' : it.decisao === 'nao_acatado' ? 'apontamento não acatado' : '[decisão pendente]';
+    var dec = it.decisao === 'acatado' ? 'defesa acatada (apontamento afastado)' : it.decisao === 'nao_acatado' ? 'defesa não acatada (apontamento mantido)' : '[decisão pendente]';
     var s = '- ' + _v(it.indicador, 'indicador') + ': valor apontado ' + brl(num(it.valor_apontado));
     if (tipo === 'producao' && num(it.valor_compensado) > 0) s += '; compensado ' + brl(l.comp_valida) + (l.comp_fora_prazo ? ' (fora do prazo, não considerado)' : '');
-    s += '; ' + dec + (it.decisao === 'acatado' ? '; valor a descontar ' + brl(l.efetivado) : '') + '.';
-    if (it.justificativa_decisao) s += ' Fundamento: ' + it.justificativa_decisao;
+    s += '; ' + dec + '; valor a descontar ' + brl(l.efetivado) + '.';
+    if (comFundamento) {
+      if (it.justificativa_decisao) s += '\n  ' + it.justificativa_decisao;
+      if (it.resumo_defesa) s += '\n  Resumo da defesa: ' + it.resumo_defesa;
+      if (it.analise_tecnica) s += '\n  Análise técnica e probatória: ' + it.analise_tecnica;
+      if (it.fundamentacao_juridica) s += '\n  Fundamentação jurídica e contratual: ' + it.fundamentacao_juridica;
+    }
     out.push(s);
   });
   return out.length ? out.join('\n') : '- Nenhum apontamento.';
@@ -214,7 +241,7 @@ function gerarNotificacao(rec, itens, calc, pm) {
     '',
     'Assunto: apontamentos de desempenho do ' + _trimLabel(rec) + ' — oportunidade de defesa.',
     '',
-    'Com fundamento em ' + pm.base_legal + ' e nas cláusulas do Contrato de Gestão [conferir a base legal vigente na versão atual do contrato], e com base no Parecer Técnico da CTAI ' + _v(rec.parecer_sei, 'nº do documento SEI do parecer') + ', ficam notificadas as seguintes metas não cumpridas:',
+    'Com fundamento em ' + pm.base_legal + ' e nas cláusulas do Contrato de Gestão [conferir a base legal vigente na versão atual do contrato], e com base no ' + _refParecer(rec) + ', ficam notificadas as seguintes metas não cumpridas:',
     '',
     'Produção:', _listaItens(itens, 'producao', calc),
     '',
@@ -237,18 +264,18 @@ function gerarAta(rec, itens, calc, pm) {
     'Processo SEI nº ' + _v(rec.sei_processo, 'nº do processo') + ' | Contrato de Gestão nº ' + _v(rec.contrato, 'C.G') + ' | OSS: ' + _v(rec.sigla_oss, 'OSS'),
     '',
     '1. Do procedimento',
-    'Em ' + _v(dBr(rec.comissao_data), 'data da reunião') + ', reuniu-se a Comissão de Julgamento dos Descontos [composição conforme ato de designação: conferir] para deliberar sobre os apontamentos constantes do Parecer Técnico da CTAI ' + _v(rec.parecer_sei, 'nº do parecer') + ', nos termos de ' + pm.base_legal + '.',
+    'Em ' + _v(dBr(rec.comissao_data), 'data da reunião') + ', reuniu-se a Comissão de Julgamento dos Descontos [composição conforme ato de designação: conferir] para deliberar sobre os apontamentos constantes do ' + _refParecer(rec) + ', nos termos de ' + pm.base_legal + '.',
     'A OSS foi notificada em ' + _v(dBr(rec.notificacao_envio), 'data da notificação') + ' e o prazo de defesa terminou em ' + _v(dBr(calc.prazos.prazo_defesa), 'prazo') + '. ' +
       (sim(rec.defesa) ? 'Foi apresentada defesa em ' + _v(dBr(rec.defesa_data), 'data da defesa') + ', analisada pelo Grupo Técnico de Avaliação em ' + _v(dBr(rec.grupo_tecnico_data), 'data') + '.' : nao(rec.defesa) ? 'Não foi apresentada defesa no prazo.' : '[informar se houve defesa]'),
     '',
     '2. Das decisões',
-    'Produção:', _listaItens(itens, 'producao', calc),
+    'Produção:', _listaItens(itens, 'producao', calc, true),
     '',
-    'Qualidade:', _listaItens(itens, 'qualidade', calc),
+    'Qualidade:', _listaItens(itens, 'qualidade', calc, true),
     '',
     '3. Do resumo',
-    'Produção — apontado ' + brl(t.prod.apontado) + '; compensado ' + brl(t.prod.compensado) + '; acatado ' + brl(t.prod.acatado) + '; efetivado ' + brl(t.prod.efetivado) + '.',
-    'Qualidade — apontado ' + brl(t.qual.apontado) + '; acatado ' + brl(t.qual.acatado) + '; efetivado ' + brl(t.qual.efetivado) + '.',
+    'Produção — apontado ' + brl(t.prod.apontado) + '; compensado ' + brl(t.prod.compensado) + '; defesas acatadas ' + brl(t.prod.acatado) + '; efetivado ' + brl(t.prod.efetivado) + '.',
+    'Qualidade — apontado ' + brl(t.qual.apontado) + '; defesas acatadas ' + brl(t.qual.acatado) + '; efetivado ' + brl(t.qual.efetivado) + '.',
     'Valor total a ser descontado: ' + brl(t.efetivado) + '.',
     '',
     '4. Dos encaminhamentos',
@@ -285,6 +312,61 @@ function gerarAnaliseRecurso(rec, itens, calc, pm) {
     '[Assinatura e cargo]'
   ].join('\n');
 }
+
+// ===== ANÁLISE AUTOMÁTICA DA DECISÃO (rascunho por regras, com base nas decisões já tomadas; o servidor confere e decide) =====
+var DESC_BASE_JURIDICA = {
+  producao_meta: 'A decisão fundamenta-se no artigo 10, inciso IV, e no artigo 15-A da Lei Estadual nº 15.210/2013, que vinculam os repasses financeiros ao alcance das metas pactuadas e disciplinam a compensação por produção excedente em caso de atingimento inferior a 85%.',
+  prestacao_contas: 'A deliberação apoia-se no artigo 14, inciso I, e no artigo 18, inciso III, da Lei Estadual nº 15.210/2013, que impõem a prestação de contas mensal e cominam a sanção de multa e desconto por inexecução de obrigações contratuais.',
+  comprovacao: 'A fundamentação jurídico-formal assenta-se no artigo 14, inciso II, e no artigo 18, inciso III, da Lei Estadual nº 15.210/2013, que estabelecem o dever de comprovação idônea dos resultados do contrato de gestão. Adicionalmente, fundamenta-se nos artigos 38, 47 e 49 do Decreto Estadual nº 58.200/2025, bem como na Cláusula [conferir: Décima Sexta no CG 024/2022] e na Tabela do Anexo Técnico II do Contrato de Gestão nº [C.G], que determinam a glosa direta na parcela variável em face do não envio ou envio ilegível de comprovantes das metas de qualidade.',
+  qualidade_geral: 'A decisão fundamenta-se no artigo 18, inciso III, da Lei Estadual nº 15.210/2013 e nas cláusulas e no Anexo Técnico do Contrato de Gestão nº [C.G] [conferir os dispositivos aplicáveis a este indicador].'
+};
+function classificarIndicador(it) {
+  var n = String(it.indicador || '').toLowerCase();
+  if (it.tipo === 'producao') return 'producao_meta';
+  if (/presta[cç][aã]o de contas|relat[oó]rio/.test(n)) return 'prestacao_contas';
+  if (/educa[cç][aã]o permanente|comprova|ileg[ií]vel|document/.test(n)) return 'comprovacao';
+  return 'qualidade_geral';
+}
+function _refParecer(rec) { return 'Parecer Técnico CTAI nº ' + _v(rec.parecer_numero, 'nº do parecer') + (rec.parecer_sei ? ' (documento SEI ' + rec.parecer_sei + ')' : ''); }
+function sugerirDecisao(rec, it, pm, hoje) {
+  var p = calcularPrazos(rec, pm), regra = classificarIndicador(it), av = [], sigla = _v(rec.sigla_oss, 'OSS'), tri = _trimLabel(rec);
+  var temDefesa = sim(rec.defesa), semDefesa = nao(rec.defesa), r = { regra: regra, decisao: '', abertura: '', resumo: '', analise: '', juridica: DESC_BASE_JURIDICA[regra], avisos: av };
+  if (!temDefesa && !semDefesa) { av.push('Informe na ficha se a OSS apresentou defesa; sem isso a decisão não pode ser sugerida.'); return r; }
+  var pp = it.tipo === 'producao' ? percProducao(it) : null, lim = +pm.limiar_producao_pct || 85;
+  if (pp && pp.pct !== null && pp.pct >= lim) av.push('O atingimento (' + pp.pct + '%) está igual ou acima de ' + lim + '%: o apontamento parece indevido. Confira o parecer antes de decidir.');
+  var base = r2(num(it.valor_apontado) - (it.tipo === 'producao' ? num(it.valor_compensado) : 0));
+  if (it.tipo === 'producao' && num(it.valor_compensado) > 0) av.push('Há compensação informada; o valor a descontar considera só a compensação feita dentro do prazo.');
+  // --- sem defesa ---
+  if (semDefesa) {
+    r.decisao = av.some(function (x) { return /parece indevido/.test(x); }) ? '' : 'nao_acatado';
+    r.abertura = 'Defesa administrativa não encaminhada.';
+    r.resumo = it.tipo === 'producao'
+      ? 'A Organização Social de Saúde (OSS) ' + sigla + ' não encaminhou defesa administrativa ou recurso tempestivo referente ao não atingimento da meta apontada pela comissão no ' + tri + '. Constata-se a inércia formal da contratada, inexistindo justificativa protocolada para afastar o descumprimento apurado no período.'
+      : 'A Organização Social contratada não apresentou defesa administrativa nem justificativa formal referente ao apontamento do indicador "' + _v(it.indicador, 'indicador') + '" no período.';
+    if (regra === 'producao_meta') {
+      var ms = DESC_MESES[(+rec.trimestre || 1) - 1], m = pp.meses;
+      var vals = m.every(function (x) { return x !== null; }) ? ms[0] + ': ' + m[0] + '; ' + ms[1] + ': ' + m[1] + '; ' + ms[2] + ': ' + m[2] : '[quantitativos mensais]';
+      r.analise = 'De acordo com o ' + _refParecer(rec) + ', a unidade registrou, no indicador "' + _v(it.indicador, 'indicador') + '", os seguintes quantitativos de ' + _v(rec.ano, 'ano') + ' (' + vals + '), alcançando um percentual trimestral de ' + (pp.pct !== null ? String(pp.pct).replace('.', ',') + '%' : '[percentual]') + ' da meta. Diante da ausência de defesa administrativa ou de comprovação de excludentes de responsabilidade, como a inexistência de demanda validada pela contratante, prevalece a verdade material dos registros oficiais, confirmando-se que a unidade não atingiu o patamar mínimo contratual de ' + lim + '% de execução. Em decorrência do descumprimento, mantém-se integralmente o apontamento de desconto.';
+    } else if (regra === 'prestacao_contas') {
+      r.analise = 'Conforme verificado pela Gerência de Acompanhamento Contábil Financeiro dos Contratos de Gestão e registrado no ' + _refParecer(rec) + ', o relatório referente à(s) competência(s) [informar] foi entregue fora do prazo estipulado. Sem justificativa ou prova de força maior, resta caracterizado o descumprimento do indicador de qualidade na(s) referida(s) competência(s). Dessa forma, ratifica-se o apontamento de desconto.';
+    } else if (regra === 'comprovacao') {
+      r.analise = 'A análise do ' + _refParecer(rec) + ' demonstrou que [descrever o problema: documentação ausente ou ilegível, competência e página] inviabilizou a aferição técnica do cumprimento do indicador "' + _v(it.indicador, 'indicador') + '" naquele período. Não houve defesa que o afastasse; ratifica-se o apontamento de desconto.';
+    } else {
+      r.analise = 'Conforme o ' + _refParecer(rec) + ', [descrever o descumprimento apurado]. Não houve defesa que o afastasse; ratifica-se o apontamento de desconto.';
+    }
+    return r;
+  }
+  // --- com defesa ---
+  var tempestiva = (rec.defesa_data && p.prazo_defesa) ? dParse(rec.defesa_data) <= dParse(p.prazo_defesa) : null;
+  r.abertura = 'Defesa administrativa apresentada' + (rec.defesa_data ? ' em ' + dBr(rec.defesa_data) : '') + (tempestiva === true ? ', dentro do prazo (até ' + dBr(p.prazo_defesa) + ').' : tempestiva === false ? ', FORA do prazo (venceu em ' + dBr(p.prazo_defesa) + ').' : '. [conferir a tempestividade]');
+  if (tempestiva === false) { av.push('Defesa intempestiva: avalie, com o jurídico, se cabe não conhecê-la. A decisão sugerida mantém o apontamento, mas confirme.'); r.decisao = 'nao_acatado'; }
+  r.resumo = '[Resumir os argumentos e as provas apresentados pela OSS ' + sigla + ' ponto a ponto. Dica: cole o texto da defesa no campo acima e use "Redigir com IA".]';
+  r.analise = it.tipo === 'producao' && pp.pct !== null
+    ? 'De acordo com o ' + _refParecer(rec) + ', o percentual trimestral apurado foi de ' + String(pp.pct).replace('.', ',') + '% da meta. [Confrontar cada argumento da defesa com os registros oficiais (CNES, SIH/SIA, relatórios assistenciais) e concluir se a meta foi ou não atingida.]'
+    : 'De acordo com o ' + _refParecer(rec) + ', [descrever o apurado]. [Confrontar cada argumento da defesa com os documentos e concluir.]';
+  av.push('Com defesa apresentada, a decisão de mérito é sua: o sistema só monta a estrutura e confere prazo, números e fontes externas.');
+  return r;
+}
 // ===== FIM DO NÚCLEO =====
 
 // ===== TELA: aba "Descontos" do Analista =====
@@ -296,7 +378,7 @@ var DESC_FONTES = [
   { fonte: 'SIH', nome: 'SIH/SUS — Internações', chaves: 'saidas, aih_aprovadas, valor_aih', uso: 'Saídas hospitalares, AIH aprovadas.', onde: 'Arquivos RD (AIH reduzida) do SIH, por UF e mês; ou TabNet > Hospitalares.' },
   { fonte: 'SIA', nome: 'SIA/SUS — Ambulatorial', chaves: 'consultas, procedimentos_aprovados', uso: 'Produção ambulatorial (consultas, exames).', onde: 'Arquivos PA (produção ambulatorial) do SIA, por UF e mês; ou TabNet > Ambulatorial.' }
 ];
-var DESC_ROTULOS_DEC = { '': '— pendente —', acatado: 'Acatado (desconto mantido)', nao_acatado: 'Não acatado (afastado)' };
+var DESC_ROTULOS_DEC = { '': '— pendente —', acatado: 'Acatado (defesa acatada: apontamento afastado)', nao_acatado: 'Não acatado (apontamento mantido)' };
 
 function dEsc(s) { return typeof escHtml === 'function' ? escHtml(s) : String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
 function dIn(id, v, tipo, extra) { return '<input id="' + id + '" type="' + (tipo || 'text') + '" value="' + dEsc(tipo === 'date' ? dIso(dParse(v)) : v) + '" ' + (extra || '') + ' oninput="descMudou()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">'; }
@@ -396,7 +478,7 @@ function descHtmlFicha() {
     dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
     dCampo('CNES', dIn('f_cnes', a.cnes, 'text', 'placeholder="7 dígitos"'), 'usado nas conferências externas') + dCampo('Ano', dIn('f_ano', a.ano, 'number')) +
     dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) + dCampo('Processo SEI', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"'))));
-  const parecer = dCartao('1. Parecer da CTAI', dGrade(190, dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))));
+  const parecer = dCartao('1. Parecer da CTAI', dGrade(190, dCampo('Nº do parecer da CTAI', dIn('f_parecer_numero', a.parecer_numero, 'text', 'placeholder="ex.: 048/2025"')) + dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))));
   const notif = dCartao('2. Notificação e defesa', dGrade(190,
     dCampo('Base legal conferida com o contrato vigente?', dSel('f_base_legal_conferida', a.base_legal_conferida, SIM_NAO)) + dCampo('Data de envio da notificação', dIn('f_notificacao_envio', a.notificacao_envio, 'date')) +
     dCampo('Ciência expressa da OSS', dIn('f_ciencia_data', a.ciencia_data, 'date'), 'deixe vazio se não houve') + dCampo('Apresentou defesa?', dSel('f_defesa', a.defesa, SIM_NAO)) + dCampo('Data da defesa', dIn('f_defesa_data', a.defesa_data, 'date'))) + '<div id="d_prazos" style="margin-top:10px;"></div>');
@@ -412,20 +494,20 @@ function descHtmlFicha() {
   const ev = DESC.eventos.length ? dCartao('Histórico', DESC.eventos.slice().reverse().map(function (e) { return '<div style="font-size:0.78rem;padding:2px 0;color:#495057;">' + dEsc(String(e.quando).slice(0, 16).replace('T', ' ')) + ' — ' + dEsc(e.usuario) + ' ' + dEsc(e.evento) + (e.detalhe ? ': ' + dEsc(e.detalhe) : '') + '</div>'; }).join('')) : '';
   return '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button><button class="btn btn-primary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
     '<button class="btn btn-secondary btn-sm" onclick="descTexto(\'notificacao\')">Gerar notificação</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'ata\')">Gerar Ata</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'recurso\')">Gerar análise de recurso</button><span id="d_sujo" style="font-size:0.78rem;color:#842029;"></span></div>' +
-    '<div id="d_resumo"></div>' + dados + parecer + notif + dCartao('Apontamentos do parecer', '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button></div><p style="font-size:0.74rem;color:#6c757d;margin:8px 0 0;">Acatado = o apontamento da CTAI é mantido e entra no desconto. Não acatado = é afastado. Em produção, a compensação feita dentro do prazo abate o valor.</p>') + julg + rec +
+    '<div id="d_resumo"></div>' + dados + parecer + notif + dCartao('Apontamentos do parecer', '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button><button class="btn btn-secondary btn-sm" onclick="descSugerirTodas()"><i class="ti ti-wand"></i> Sugerir decisão de todos</button></div><p style="font-size:0.74rem;color:#6c757d;margin:8px 0 0;">Acatado = a defesa da OSS foi acatada e o apontamento cai. Não acatado = a defesa não foi acatada (ou não houve) e o apontamento é mantido. Em produção, a compensação feita dentro do prazo também abate o valor.</p>') + julg + rec +
     '<div id="d_texto"></div>' + ev;
 }
 function descLerFicha() {
   const a = DESC.atual, g = function (id) { const e = document.getElementById('f_' + id); return e ? e.value : ''; };
-  ['unidade', 'tipo', 'sigla_oss', 'contrato', 'cnes', 'ano', 'trimestre', 'sei_processo', 'parecer_sei', 'parecer_data', 'base_legal_conferida', 'notificacao_envio', 'ciencia_data', 'defesa', 'defesa_data', 'grupo_tecnico_data', 'comissao_data', 'ata_revisada', 'ata_sei', 'ata_envio_oss', 'ata_ciencia_data', 'envio_gafcg', 'recurso', 'recurso_data', 'recurso_decisao_data', 'execucao_tipo', 'execucao_data', 'execucao_ref', 'observacoes'].forEach(function (c) { if (document.getElementById('f_' + c)) a[c] = g(c); });
-  DESC.itens.forEach(function (it, i) { ['indicador', 'valor_apontado', 'valor_compensado', 'data_compensacao', 'prazo_compensacao', 'decisao', 'justificativa_decisao', 'fonte_externa', 'chave_externa', 'valor_informado', 'valor_referencia'].forEach(function (c) { const e = document.getElementById('i_' + c + '_' + i); if (e) it[c] = e.value; }); });
+  ['unidade', 'parecer_numero', 'tipo', 'sigla_oss', 'contrato', 'cnes', 'ano', 'trimestre', 'sei_processo', 'parecer_sei', 'parecer_data', 'base_legal_conferida', 'notificacao_envio', 'ciencia_data', 'defesa', 'defesa_data', 'grupo_tecnico_data', 'comissao_data', 'ata_revisada', 'ata_sei', 'ata_envio_oss', 'ata_ciencia_data', 'envio_gafcg', 'recurso', 'recurso_data', 'recurso_decisao_data', 'execucao_tipo', 'execucao_data', 'execucao_ref', 'observacoes'].forEach(function (c) { if (document.getElementById('f_' + c)) a[c] = g(c); });
+  DESC.itens.forEach(function (it, i) { ['indicador', 'valor_apontado', 'valor_compensado', 'data_compensacao', 'prazo_compensacao', 'decisao', 'justificativa_decisao', 'fonte_externa', 'chave_externa', 'valor_informado', 'valor_referencia', 'valor_acatado', 'meta_trimestre', 'realizado_1', 'realizado_2', 'realizado_3', 'pct_parecer', 'resumo_defesa', 'analise_tecnica', 'fundamentacao_juridica', 'julgamento_revisado'].forEach(function (c) { const e = document.getElementById('i_' + c + '_' + i); if (e) it[c] = e.value; }); });
 }
 function descMudou() { DESC._sujo = true; const s = document.getElementById('d_sujo'); if (s) s.textContent = 'Alterações não salvas'; clearTimeout(window._dr); window._dr = setTimeout(descRecalcular, 250); }
 function descAddItem(tipo) { descLerFicha(); DESC.itens.push({ tipo: tipo, indicador: '', valor_apontado: '', decisao: '' }); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
 function descRemItem(i) { descLerFicha(); DESC.itens.splice(i, 1); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
 function descRecalcular() {
   const a = DESC.atual; if (!a || DESC.aba !== 'ficha') return;
-  descLerFicha();
+  if (!DESC._redesenharItens) descLerFicha(); // quando a lista vai ser redesenhada, o modelo em memória é a fonte da verdade
   const pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm), t = f.totais;
   // prazos
   const p = f.prazos, pz = document.getElementById('d_prazos');
@@ -441,25 +523,71 @@ function descRecalcular() {
   // itens: só redesenha a lista quando a estrutura muda; senão atualiza os valores no lugar (não tira o cursor do campo)
   const box = document.getElementById('d_itens'); if (!box) return;
   if (!DESC._redesenharItens && box.children.length === DESC.itens.length && DESC.itens.length) {
-    DESC.itens.forEach(function (it, i) { const l = t.linhas[i] || {}, e = document.getElementById('i_efet_' + i); if (e) e.innerHTML = 'A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : ''); const m = document.getElementById('i_ext_msg_' + i); if (m && it.valor_referencia !== '' && it.valor_referencia !== undefined && !/Faltam|Não há/.test(m.textContent)) m.innerHTML = descMsgExterno(it); });
+    DESC.itens.forEach(function (it, i) { descAtualizarPct(i); const l = t.linhas[i] || {}, e = document.getElementById('i_efet_' + i); if (e) e.innerHTML = 'A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : ''); const m = document.getElementById('i_ext_msg_' + i); if (m && it.valor_referencia !== '' && it.valor_referencia !== undefined && !/Faltam|Não há/.test(m.textContent)) m.innerHTML = descMsgExterno(it); });
     return;
   }
   DESC._redesenharItens = false;
   if (!DESC.itens.length) { box.innerHTML = '<p style="color:#6c757d;font-size:0.85rem;margin:0;">Nenhum apontamento. Use os botões abaixo.</p>'; return; }
   const trim = [1, 2, 3].map(function (k) { return a.ano + '-' + String((+a.trimestre - 1) * 3 + k).padStart(2, '0'); });
   box.innerHTML = DESC.itens.map(function (it, i) {
-    const l = t.linhas[i] || {}, prod = it.tipo === 'producao';
+    const l = t.linhas[i] || {}, prod = it.tipo === 'producao', pp = prod ? percProducao(it) : null, ta = function (id, v, rows) { return '<textarea id="i_' + id + '_' + i + '" rows="' + rows + '" oninput="descMudou()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">' + dEsc(v) + '</textarea>'; };
     const ext = '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:0.78rem;color:#495057;">Conferência com fonte externa (CNES, SIH, SIA)' + (it.fonte_externa ? ' — ' + dEsc(it.fonte_externa) : '') + '</summary><div style="margin-top:8px;">' + dGrade(150,
       dCampo('Fonte', dSel('i_fonte_externa_' + i, it.fonte_externa, [['', '—']].concat(DESC_FONTES.map(function (x) { return [x.fonte, x.nome]; })))) + dCampo('Chave do dado', dIn('i_chave_externa_' + i, it.chave_externa, 'text', 'placeholder="ex.: saidas"')) +
       dCampo('Valor informado pela unidade', dIn('i_valor_informado_' + i, it.valor_informado)) + dCampo('Valor na fonte', dIn('i_valor_referencia_' + i, it.valor_referencia)) +
       '<div style="align-self:end;"><button class="btn btn-secondary btn-sm" onclick="descBuscarRef(' + i + ')">Buscar nos dados importados</button></div>') +
       '<div id="i_ext_msg_' + i + '" style="font-size:0.8rem;margin-top:6px;">' + (it.valor_referencia !== '' && it.valor_referencia !== undefined ? descMsgExterno(it) : '') + '</div></div></details>';
+    const sugPrazo = prod && !it.prazo_compensacao && a.ano && a.trimestre ? prazoCompensacaoSugerido(a.ano, a.trimestre, dPmapa().trimestres_compensacao) : '';
+    const bloco = prod ? '<div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:6px;"><div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">Dados da meta (para conferir o atingimento)</div>' + dGrade(130,
+      dCampo('Meta do trimestre', dIn('i_meta_trimestre_' + i, it.meta_trimestre)) + dCampo('Realizado mês 1', dIn('i_realizado_1_' + i, it.realizado_1)) + dCampo('Realizado mês 2', dIn('i_realizado_2_' + i, it.realizado_2)) + dCampo('Realizado mês 3', dIn('i_realizado_3_' + i, it.realizado_3)) + dCampo('% que consta no parecer', dIn('i_pct_parecer_' + i, it.pct_parecer))) +
+      '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:6px;"></div>' + (sugPrazo ? '<div style="font-size:0.78rem;margin-top:4px;color:#495057;">Prazo de compensação sugerido: <strong>' + dBr(sugPrazo) + '</strong> (fim do ' + dPmapa().trimestres_compensacao + 'º trimestre seguinte; regra a confirmar) <button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'i_prazo_compensacao_' + i + '\').value=\'' + sugPrazo + '\';descMudou()">Usar</button></div>' : '') + '</div>' : '';
+    const decisao = '<div style="margin-top:10px;padding:10px;border:1px solid #dee2e6;border-radius:6px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><div style="font-size:0.78rem;font-weight:700;">Decisão e fundamentação</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerir(' + i + ')"><i class="ti ti-wand"></i> Sugerir decisão</button><button class="btn btn-secondary btn-sm" onclick="descIA(' + i + ')"><i class="ti ti-sparkles"></i> Redigir análise com IA</button></div></div>' +
+      '<div id="i_avisos_' + i + '" style="margin-bottom:6px;"></div>' + dGrade(200, dCampo('Decisão', dSel('i_decisao_' + i, it.decisao, Object.keys(DESC_ROTULOS_DEC).map(function (k) { return [k, DESC_ROTULOS_DEC[k]]; }))) + dCampo('Valor acatado (R$)', dIn('i_valor_acatado_' + i, it.valor_acatado), 'vazio = tudo, quando a defesa for acatada') + dCampo('Julgamento revisado?', dSel('i_julgamento_revisado_' + i, it.julgamento_revisado, SIM_NAO))) +
+      '<div style="margin-top:8px;">' + dCampo('Abertura da fundamentação', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao)) + '</div><div style="margin-top:8px;">' + dCampo('Resumo da defesa', ta('resumo_defesa', it.resumo_defesa, 3)) + '</div><div style="margin-top:8px;">' + dCampo('Análise técnica e probatória', ta('analise_tecnica', it.analise_tecnica, 5)) + '</div><div style="margin-top:8px;">' + dCampo('Fundamentação jurídica e contratual', ta('fundamentacao_juridica', it.fundamentacao_juridica, 4)) + '</div></div>';
     return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:' + (l.fora_prazo_compensacao ? '#fff5f5' : '#fff') + ';"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;"><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span><button class="btn btn-sm btn-secondary" onclick="descRemItem(' + i + ')" title="Remover"><i class="ti ti-trash"></i></button></div>' +
       dGrade(prod ? 150 : 190, dCampo('Indicador', dIn('i_indicador_' + i, it.indicador)) + dCampo('Valor apontado (R$)', dIn('i_valor_apontado_' + i, it.valor_apontado)) +
-        (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '') +
-        dCampo('Decisão', dSel('i_decisao_' + i, it.decisao, Object.keys(DESC_ROTULOS_DEC).map(function (k) { return [k, DESC_ROTULOS_DEC[k]]; }))) + dCampo('Fundamento da decisão', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao))) +
-      '<div id="i_efet_' + i + '" style="font-size:0.8rem;margin-top:6px;">A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : '') + '</div>' + ext + '</div>';
+        (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '')) +
+      bloco + decisao +
+      '<div id="i_efet_' + i + '" style="font-size:0.8rem;margin-top:8px;">A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : '') + '</div>' + ext + '</div>';
   }).join('');
+  DESC.itens.forEach(function (it, i) { descAtualizarPct(i); });
+}
+function descAtualizarPct(i) {
+  const it = DESC.itens[i], e = document.getElementById('i_pct_' + i); if (!e || it.tipo !== 'producao') return;
+  const pp = percProducao(it), lim = +dPmapa().limiar_producao_pct || 85;
+  e.innerHTML = pp.pct === null ? '<span style="color:#6c757d;">Informe a meta e os 3 meses (ou o % do parecer) para conferir.</span>' : 'Atingimento no trimestre: <strong>' + String(pp.pct).replace('.', ',') + '%</strong> ' + (pp.pct < lim ? '(abaixo de ' + lim + '%: apontamento cabível)' : '<span style="color:#842029;">(igual ou acima de ' + lim + '%: apontamento pode estar indevido)</span>') + (pp.diverge ? ' <span style="color:#664d03;">· difere do % do parecer (' + String(pp.parecer).replace('.', ',') + '%)</span>' : '');
+}
+function descSugerir(i, silencioso) {
+  descLerFicha(); const it = DESC.itens[i], r = sugerirDecisao(DESC.atual, it, dPmapa());
+  const tem = it.resumo_defesa || it.analise_tecnica || it.justificativa_decisao;
+  if (tem && !silencioso && !confirm('Já há texto de fundamentação neste apontamento. Substituir pelo rascunho sugerido?')) return;
+  if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; }
+  it.fundamentacao_juridica = r.juridica;
+  if (r.decisao) it.decisao = r.decisao;
+  DESC._redesenharItens = true; descRecalcular();
+  const av = document.getElementById('i_avisos_' + i);
+  if (av) av.innerHTML = r.avisos.map(function (x) { return '<div style="background:#fff3cd;border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x) + '</div>'; }).join('') + '<div style="font-size:0.74rem;color:#6c757d;margin-top:4px;">Rascunho montado por regras a partir das decisões já tomadas (' + dEsc(r.regra) + '). Revise antes de usar.</div>';
+  descMudou();
+}
+function descSugerirTodas() { descLerFicha(); if (!DESC.itens.length) { mostrarToast('Não há apontamentos.'); return; } if (!confirm('Montar o rascunho de decisão de todos os apontamentos? Textos já escritos serão substituídos.')) return; DESC.itens.forEach(function (_, i) { descSugerir(i, true); }); }
+async function descIA(i) {
+  descLerFicha(); const a = DESC.atual, it = DESC.itens[i];
+  if (typeof invocarIAComFallback !== 'function') { mostrarToast('A IA não está disponível nesta tela.'); return; }
+  const defesa = prompt('Cole aqui o texto da defesa da OSS (ou deixe vazio se não houve defesa). Ele é enviado à IA; não inclua dados pessoais.', DESC._defesa || '');
+  if (defesa === null) return; DESC._defesa = defesa;
+  const base = sugerirDecisao(a, it, dPmapa()), pp = it.tipo === 'producao' ? percProducao(it) : null;
+  const prompt_ = 'Você ajuda a redigir a análise de uma decisão sobre desconto em Contrato de Gestão de saúde (SES-PE). Use SOMENTE os fatos abaixo; não invente números, artigos nem documentos. Se faltar informação, escreva [informar].\n\n' +
+    'Unidade: ' + a.unidade + ' | OSS: ' + (a.sigla_oss || '[informar]') + ' | Contrato: ' + (a.contrato || '[informar]') + ' | Período: ' + a.trimestre + 'º trimestre de ' + a.ano + '\nIndicador (' + it.tipo + '): ' + it.indicador + ' | Valor apontado: ' + brl(num(it.valor_apontado)) + '\nParecer: ' + (a.parecer_numero ? 'Parecer Técnico CTAI nº ' + a.parecer_numero : '[informar]') + '\n' +
+    (pp && pp.pct !== null ? 'Atingimento apurado: ' + pp.pct + '% da meta (mínimo ' + dPmapa().limiar_producao_pct + '%)\n' : '') + (a.defesa_data ? 'Defesa apresentada em ' + a.defesa_data + ' (prazo até ' + (calcularPrazos(a, dPmapa()).prazo_defesa || '?') + ')\n' : '') +
+    '\nTEXTO DA DEFESA DA OSS:\n' + (defesa || '(não houve defesa)') + '\n\nFUNDAMENTO JURÍDICO JÁ DEFINIDO (não altere):\n' + base.juridica + '\n\nResponda em português formal, exatamente neste formato:\nRESUMO: <resumo objetivo da defesa em até 5 linhas>\nANÁLISE: <análise técnica e probatória confrontando cada argumento com os fatos acima>\nSUGESTÃO: <ACATAR ou NÃO ACATAR a defesa, com uma frase de motivo>';
+  mostrarToast('Consultando a IA…', 8000);
+  let txt; try { txt = await invocarIAComFallback(prompt_, true); } catch (e) { mostrarToast('A IA não respondeu: ' + (e.message || e)); return; }
+  txt = String(txt || ''); const m1 = /RESUMO:\s*([\s\S]*?)\n\s*AN[ÁA]LISE:/i.exec(txt), m2 = /AN[ÁA]LISE:\s*([\s\S]*?)\n\s*SUGEST[ÃA]O:/i.exec(txt), m3 = /SUGEST[ÃA]O:\s*([\s\S]*)$/i.exec(txt);
+  if (!m1 || !m2) { mostrarToast('A IA respondeu fora do formato; nada foi alterado.'); return; }
+  it.justificativa_decisao = base.abertura; it.resumo_defesa = m1[1].trim(); it.analise_tecnica = m2[1].trim(); it.fundamentacao_juridica = base.juridica;
+  DESC._redesenharItens = true; descRecalcular();
+  const av = document.getElementById('i_avisos_' + i);
+  if (av) av.innerHTML = '<div style="background:#e7f1ff;border-radius:4px;padding:5px 9px;font-size:0.8rem;">A IA sugere: ' + dEsc(m3 ? m3[1].trim() : '—') + '. A decisão é sua: ajuste os textos e escolha acatado ou não acatado.</div>';
+  descMudou();
 }
 function descMsgExterno(it) { const c = compararExterno(it.valor_informado !== '' && it.valor_informado !== undefined ? it.valor_informado : it.valor_apontado, it.valor_referencia, dPmapa().tolerancia_externa_pct); return '<span style="color:' + (c.ok === false ? '#842029' : '#0f5132') + ';">' + dEsc(c.msg) + '</span>'; }
 async function descBuscarRef(i) {
