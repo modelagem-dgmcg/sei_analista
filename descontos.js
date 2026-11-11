@@ -130,7 +130,7 @@ function calcularPrazos(rec, pm) {
 function sim(v) { return String(v || '').toLowerCase() === 'sim'; }
 function nao(v) { return String(v || '').toLowerCase() === 'nao' || String(v || '').toLowerCase() === 'não'; }
 
-function calcularFicha(rec, itens, pm, hoje) {
+function calcularFicha(rec, itens, pm, hoje, fm) {
   hoje = hoje || dIso(new Date());
   var t = calcularTotais(itens, hoje), p = calcularPrazos(rec, pm), H = dParse(hoje);
   var revisada = sim(rec.ata_revisada) || ((itens || []).length > 0 && (itens || []).every(function (x) { return sim(x.julgamento_revisado); }));
@@ -180,7 +180,8 @@ function calcularFicha(rec, itens, pm, hoje) {
     if (l.fora_prazo_compensacao) A('erro', 'Fora do prazo de compensação: ' + (it.indicador || 'apontamento de produção') + ' (prazo ' + dBr(it.prazo_compensacao) + ').');
     if (l.comp_fora_prazo) A('aviso', 'Compensação de "' + (it.indicador || 'produção') + '" feita depois do prazo; não foi abatida do valor.');
   });
-  var lim = +pm.limiar_producao_pct || 85;
+  var lim = (fm && +fm.piso_producao_pct) || +pm.limiar_producao_pct || 85;
+  if (fm && (itens || []).length && String(fm.ficha_conferida) !== 'sim') A('aviso', 'Ficha do contrato da unidade ainda não conferida: o piso de ' + lim + '% e os demais valores podem não ser os deste contrato (passo "Contrato e aditivos").');
   (itens || []).forEach(function (it) {
     if (it.tipo !== 'producao') return;
     var pp = percProducao(it);
@@ -330,11 +331,12 @@ function classificarIndicador(it) {
 function _nomeOss(rec) { var n = String(rec.nome_oss || '').trim(), g = String(rec.sigla_oss || '').trim(); return n ? n + (g ? ' (' + g + ')' : '') : _v(g, 'OSS'); }
 function _unidadeMedida(it) { var w = String(it.indicador || '').trim().split(/\s+/)[0].toLowerCase(); return /^(saídas|saidas|consultas|cirurgias|atendimentos|exames|partos|procedimentos|internações|internacoes)$/.test(w) ? w : 'registros'; }
 function _refParecer(rec) { return 'Parecer Técnico CTAI nº ' + _v(rec.parecer_numero, 'nº do parecer') + (rec.parecer_sei ? ' (documento SEI ' + rec.parecer_sei + ')' : ''); }
-function sugerirDecisao(rec, it, pm, hoje) {
+function sugerirDecisao(rec, it, pm, hoje, fm) {
   var p = calcularPrazos(rec, pm), regra = classificarIndicador(it), av = [], sigla = _nomeOss(rec), tri = _trimLabel(rec);
   var temDefesa = sim(rec.defesa), semDefesa = nao(rec.defesa), r = { regra: regra, decisao: '', abertura: '', resumo: '', analise: '', juridica: DESC_BASE_JURIDICA[regra], avisos: av };
   if (!temDefesa && !semDefesa) { av.push('Informe na ficha se a OSS apresentou defesa; sem isso a decisão não pode ser sugerida.'); return r; }
-  var pp = it.tipo === 'producao' ? percProducao(it) : null, lim = +pm.limiar_producao_pct || 85;
+  var pp = it.tipo === 'producao' ? percProducao(it) : null, lim = (fm && +fm.piso_producao_pct) || +pm.limiar_producao_pct || 85;
+  if (fm && String(fm.ficha_conferida) !== 'sim') av.push('A ficha do contrato desta unidade ainda não foi conferida (passo 2): os valores usados podem não ser os deste contrato.');
   if (pp && pp.pct !== null && pp.pct >= lim) av.push('O atingimento (' + pp.pct + '%) está igual ou acima de ' + lim + '%: o apontamento parece indevido. Confira o parecer antes de decidir.');
   var base = r2(num(it.valor_apontado) - (it.tipo === 'producao' ? num(it.valor_compensado) : 0));
   if (it.tipo === 'producao' && num(it.valor_compensado) > 0) av.push('Há compensação informada; o valor a descontar considera só a compensação feita dentro do prazo.');
@@ -369,6 +371,155 @@ function sugerirDecisao(rec, it, pm, hoje) {
   av.push('Com defesa apresentada, a decisão de mérito é sua: o sistema só monta a estrutura e confere prazo, números e fontes externas.');
   return r;
 }
+// ===== FICHA DO CONTRATO DA UNIDADE (cada unidade é um caso: os valores vêm do contrato e dos aditivos dela) =====
+// "padrao" é só o ponto de partida (o que mais aparece nos contratos). O que vier diferente no contrato vale e é destacado como "fora do padrão".
+var DESC_FICHA_PADRAO = {
+  ficha_conferida:        { rot: 'Ficha conferida com o contrato?', padrao: 'nao', dica: 'Marque "sim" depois de conferir cada valor abaixo com o contrato e os aditivos da unidade.' },
+  piso_producao_pct:      { rot: 'Piso de produção (%)', padrao: '85', dica: 'Atingimento mínimo das metas de produção no trimestre para não haver desconto (art. 15-A da Lei 15.210/2013). Confira se o contrato repete ou muda esse piso.' },
+  pct_fixo:               { rot: 'Parte fixa do repasse (%)', padrao: '70', dica: 'Percentual do repasse que não depende de meta.' },
+  pct_producao:           { rot: 'Parte variável de produção (%)', padrao: '20', dica: 'Percentual do repasse ligado às metas de produção.' },
+  pct_qualidade:          { rot: 'Parte variável de qualidade (%)', padrao: '10', dica: 'Percentual do repasse ligado aos indicadores de qualidade.' },
+  dia_entrega_rm:         { rot: 'Dia-limite do relatório mensal', padrao: '20', dica: 'Dia do mês seguinte para a unidade entregar a prestação de contas (dia 20 na maioria; 25 em alguns contratos). Feriado prorroga para o dia útil seguinte.' },
+  compensacao_trimestres: { rot: 'Prazo de compensação (trimestres)', padrao: '2', dica: 'Até quando a produção pode ser compensada (fim do 2º trimestre seguinte, na regra mais comum). Só vale para produção.' },
+  clausula_demanda:       { rot: 'Cláusula de inexistência de demanda', padrao: '', dica: 'Número da cláusula que afasta o desconto de produção quando o ÚNICO motivo é a falta de demanda (ex.: Cláusula 6.3; Observação 2 do Anexo Técnico I). Vazio = não localizada neste contrato.' },
+  clausula_sistemas:      { rot: 'Cláusula de alimentar os sistemas oficiais', padrao: '', dica: 'Número muda de contrato para contrato (ex.: 3.1.70 no CG 001/2022; 3.1.75 no CG 020/2022). Confira no contrato da unidade.' },
+  valoracao_escala:       { rot: 'Tabela de valoração da escala', padrao: '', dica: 'Como as faltas viram desconto neste contrato (ex.: 0,04% do repasse por falta; 15 ou mais faltas no mês = 0% do indicador). Copie do Anexo Técnico II.' },
+  excecoes_qualitativo:   { rot: 'Exceções previstas para indicadores de qualidade', padrao: '', dica: 'Só o que estiver escrito em aditivo ou nota técnica (ex.: reequilíbrio financeiro do TA 11; NT SES 38/2025 para perfil de alto risco). Sem documento formal, vale o art. 38 do Decreto 58.200/2025: qualidade não compensa.' },
+  aditivos_metas:         { rot: 'Aditivos que mudam metas ou valores', padrao: '', dica: 'Liste número e assunto de cada termo aditivo que altera meta, indicador ou percentual (ex.: 6º TA: novo formulário de satisfação).' }
+};
+function fichaMapa(linhas) {
+  var m = {}; Object.keys(DESC_FICHA_PADRAO).forEach(function (k) { m[k] = DESC_FICHA_PADRAO[k].padrao; });
+  (linhas || []).forEach(function (l) { if (l && l.chave && DESC_FICHA_PADRAO[l.chave] && l.valor !== '' && l.valor !== undefined && l.valor !== null) m[l.chave] = String(l.valor); });
+  return m;
+}
+// O que neste contrato foge do padrão dos demais: merece atenção na análise.
+function fichaForaDaRegra(fm) {
+  var out = [];
+  function dif(chave, rot) { if (String(fm[chave]) !== String(DESC_FICHA_PADRAO[chave].padrao)) out.push(rot + ': neste contrato é ' + fm[chave] + ' (o comum é ' + DESC_FICHA_PADRAO[chave].padrao + ').'); }
+  dif('piso_producao_pct', 'Piso de produção');
+  dif('dia_entrega_rm', 'Dia-limite do relatório mensal');
+  dif('compensacao_trimestres', 'Prazo de compensação');
+  dif('pct_fixo', 'Parte fixa'); dif('pct_producao', 'Variável de produção'); dif('pct_qualidade', 'Variável de qualidade');
+  if (String(fm.excecoes_qualitativo || '').trim()) out.push('Há exceção prevista para indicador de qualidade: ' + fm.excecoes_qualitativo + '. Só vale com o documento formal; sem ele, aplica-se o art. 38 do Decreto 58.200/2025 (qualidade não compensa).');
+  if (String(fm.aditivos_metas || '').trim()) out.push('Aditivos que mudam metas ou valores: ' + fm.aditivos_metas + '. Confira se o trimestre analisado já está sob a regra nova.');
+  return out;
+}
+// Família de conferência do apontamento (decide qual roteiro usar na leitura da defesa).
+function classificarConferencia(it) {
+  var n = String(it.indicador || '').toLowerCase();
+  if (/escala/.test(n)) return 'escala';
+  if (/cnes/.test(n)) return 'cnes';
+  if (/queixa|ouvidoria/.test(n)) return 'queixas';
+  if (/satisfa/.test(n)) return 'satisfacao';
+  if (/educa[cç][aã]o/.test(n)) return 'educacao';
+  if (/matricia|supervis/.test(n)) return 'matriciamento';
+  if (/acolhimento|classifica[cç][aã]o de risco|accr/.test(n)) return 'accr';
+  if (/presta[cç][aã]o de contas|relat[oó]rio/.test(n)) return 'prazo_entrega';
+  if (it.tipo === 'producao') return 'producao';
+  return 'qualidade_geral';
+}
+function _ou(v, falta) { v = String(v || '').trim(); return v ? v : '[' + falta + ']'; }
+// Roteiro de conferência da defesa, por família, usando os valores do contrato da unidade (fm).
+// Montado a partir das 32 análises reais de 2024; o sistema confere, quem decide é o analista.
+function roteiroConferencia(it, fm) {
+  fm = fm || fichaMapa([]);
+  var fam = classificarConferencia(it), piso = fm.piso_producao_pct, r = { familia: fam, titulo: '', passos: [], decide: [] };
+  if (fam === 'producao') {
+    r.titulo = 'Produção: meta não atingida';
+    r.passos = [
+      'Calcule o atingimento do trimestre: ' + piso + '% ou mais afasta o desconto (confira os 3 meses e a meta acima).',
+      'A defesa alega falta de demanda? Previsão neste contrato: ' + _ou(fm.clausula_demanda, 'não localizada na ficha do contrato') + '. Só vale se a falta de demanda for o ÚNICO motivo e os dados forem validados pela contratante.',
+      'Confira a oferta mês a mês contra a meta: relatório de oferta, perda primária (vagas abertas não agendadas pela regulação) e absenteísmo dos pacientes.',
+      'Procure motivo interno que derrube a alegação: vaga de especialidade sem profissional (TO, fono etc.), equipamento parado sem registro formal, suboferta ou escala incompleta no mesmo período.',
+      'Meta tida como inexequível ou trocada de especialidade só muda a conta com termo aditivo formalizado; pedido de repactuação em andamento não basta.'
+    ];
+    r.decide = ['Costuma-se ACATAR: oferta igual ou maior que a meta em todos os meses, capacidade mantida e agendamento/absenteísmo fora do alcance da unidade (comprovados).',
+      'Costuma-se NÃO ACATAR: faltou profissional ou estrutura, a oferta ficou abaixo da meta, ou a alegação de demanda não tem prova validada.'];
+  } else if (fam === 'escala') {
+    r.titulo = 'Escala (médica, odontológica ou outra)';
+    r.passos = [
+      'Confronte as faltas do BID (Boletim de Informação Diária) com o que a defesa afirma: o registro oficial prevalece sobre relatório interno.',
+      'Substituição conta só se foi registrada na escala oficial; médico "intermediado"/PJ sem registro nominal não cobre a falta.',
+      'Produção alta não compensa escala incompleta (art. 38, parágrafo único, do Decreto 58.200/2025).',
+      'Aplique a valoração deste contrato: ' + _ou(fm.valoracao_escala, 'tabela de valoração não preenchida na ficha do contrato') + '.'
+    ];
+    r.decide = ['Costuma-se NÃO ACATAR: faltas admitidas, atestado sem substituto imediato, "escassez de mercado" ou remanejamento unilateral.',
+      'Acatamento depende de previsão formal (ex.: distribuição aceita pela supervisão ou exceção escrita em aditivo).'];
+  } else if (fam === 'cnes') {
+    r.titulo = 'Profissionais cadastrados no CNES';
+    r.passos = [
+      'Exija a listagem nominal de quem atuou no mês (do relatório mensal): extrato do CNES sozinho não substitui a lista.',
+      'Cruze nome a nome a lista com o extrato do CNES do mês, citando os profissionais pelas iniciais.',
+      'Lista entregue só na defesa é extemporânea: não valida o período já apurado.',
+      'Erro de grafia ou mudança de nome comprovada pode justificar; profissional que de fato não atuou no mês sai da conta.'
+    ];
+    r.decide = ['Pode haver acatamento por mês: acata nos meses em que a lista e o CNES batem; mantém nos demais.'];
+  } else if (fam === 'queixas') {
+    r.titulo = 'Resolução das queixas';
+    r.passos = [
+      'Compare, mês a mês, o número de queixas do relatório mensal com o registrado no SIMAS: divergência resolve-se pelo SIMAS.',
+      'Confira se as resoluções foram enviadas com as tratativas e prazos: resposta genérica ("estamos averiguando", "mande mais detalhes") não é resolução.',
+      'Prazo de resposta ao usuário: até 20 dias corridos (confira a cláusula deste contrato).'
+    ];
+    r.decide = ['Pode haver acatamento parcial por mês: acata no mês em que relatório e SIMAS convergem e as resoluções estão provadas; mantém nos demais.'];
+  } else if (fam === 'satisfacao') {
+    r.titulo = 'Satisfação do usuário';
+    r.passos = [
+      'Amostra: 10% ou mais dos atendimentos do mês. Abaixo disso, o indicador zera.',
+      'Formulário: só vale o modelo contratual (resposta positiva = soma de 24 pontos ou mais nos itens). Modelo próprio ou "parecido" = indicador impossibilitado de análise.',
+      'Dados no sistema oficial e no prazo: extrato de sistema paralelo (ex.: Smart Pixeon) apresentado só na defesa não tem valor probatório.',
+      'Se o sistema oficial falhou, a unidade devia ter usado formulário físico (plano de contingência do contrato).'
+    ];
+    r.decide = ['Costuma-se NÃO ACATAR: amostra insuficiente, formulário fora do modelo ou dado só em sistema paralelo/extemporâneo.'];
+  } else if (fam === 'educacao') {
+    r.titulo = 'Educação permanente / educação na saúde';
+    r.passos = [
+      'Só conta capacitação técnica da própria equipe: campanha temática (Agosto Lilás, Outubro Rosa etc.), ação para paciente e reunião de equipe não entram.',
+      'Confira o denominador: o nº de atividades previstas registrado no sistema. Erro no previsto pode derrubar o apontamento.',
+      'O relatório específico do indicador tem de ter sido enviado no formato e prazo pactuados; realizar sem relatar conta como não cumprido.',
+      'Atividade fora do plano aprovado previamente pela SES não valida o indicador.'
+    ];
+    r.decide = ['Costuma-se ACATAR: quando o denominador (previstas) foi contado errado pela fiscalização.',
+      'Costuma-se NÃO ACATAR: campanhas no lugar de capacitação, relatório não enviado ou detalhamento só na defesa.'];
+  } else if (fam === 'matriciamento') {
+    r.titulo = 'Matriciamento / supervisão do cuidado nas UBS';
+    r.passos = [
+      'Confira a natureza das ações: só valem as modalidades do contrato (diretrizes clínicas, reuniões clínicas, cursos rápidos, atendimento conjunto, videoconferência, segunda opinião).',
+      'Rotina interna da própria unidade (busca ativa, agendamento, atendimento ao usuário) não é matriciamento nem supervisão.',
+      'Na supervisão, pelo menos 50% das ações têm de ocorrer dentro das UBS: confira onde cada ação aconteceu.'
+    ];
+    r.decide = ['Costuma-se NÃO ACATAR: ações registradas que são rotina assistencial, ou nenhuma ação nas UBS.'];
+  } else if (fam === 'accr') {
+    r.titulo = 'Acolhimento e classificação de risco';
+    r.passos = [
+      'Confira a consistência dos números do relatório: o denominador usado pela unidade bate com o total de atendimentos nas classificações?',
+      'Recalcule o percentual com o denominador correto antes de aceitar o valor da defesa.',
+      'Limitação do sistema (ex.: BPA aceita uma classificação por paciente) comprovada pode justificar percentuais um pouco abaixo de 100%.'
+    ];
+    r.decide = ['Acata quando a diferença vem de limitação comprovada do sistema ou de erro de cálculo da fiscalização; mantém quando os dados da própria unidade se contradizem.'];
+  } else if (fam === 'prazo_entrega') {
+    r.titulo = 'Prazo da prestação de contas / relatórios';
+    r.passos = [
+      'Confronte a data de entrega no SEI (documento e despacho da GAFCG) com o dia-limite deste contrato: dia ' + fm.dia_entrega_rm + ' do mês seguinte; feriado prorroga para o dia útil seguinte.',
+      'Captura de tela não prova entrega; vale o registro no SEI ou no sistema oficial.',
+      'Força maior documentada (ex.: falha geral comprovada) pode justificar atraso pequeno; problema no servidor interno da unidade não é força maior.'
+    ];
+    r.decide = ['Costuma-se ACATAR: entrega dentro do prazo recontado (feriado) ou força maior documentada.',
+      'Costuma-se NÃO ACATAR: atraso confirmado sem prova de força maior.'];
+  } else {
+    r.titulo = 'Indicador de qualidade';
+    r.passos = [
+      'Qualidade é aferida mês a mês e não admite compensação por produção excedente (art. 38, parágrafo único, do Decreto 58.200/2025).',
+      'Prova entregue só na defesa (não enviada no monitoramento) é extemporânea e não valida o período.',
+      'Dado do sistema oficial prevalece sobre relatório interno da unidade.',
+      'Exceção só com documento formal: ' + _ou(fm.excecoes_qualitativo, 'nenhuma exceção registrada na ficha deste contrato') + '.'
+    ];
+    r.decide = ['Costuma-se ACATAR: erro de cálculo ou de denominador da fiscalização, ou exceção prevista em aditivo/nota técnica.',
+      'Costuma-se NÃO ACATAR: compensação temporal, prova extemporânea ou dado divergente do sistema oficial.'];
+  }
+  return r;
+}
+
 function textoFundamentacao(it) {
   var p = [];
   if (it.justificativa_decisao) p.push(it.justificativa_decisao);
@@ -380,7 +531,7 @@ function textoFundamentacao(it) {
 // ===== FIM DO NÚCLEO =====
 
 // ===== TELA: aba "Descontos" do Analista =====
-var DESC = { lista: [], params: null, pmapa: null, aba: 'lista', atual: null, itens: [], eventos: [], filtro: { ano: '', tri: '', tipo: '', q: '' }, resumoRef: [], tela: null };
+var DESC = { lista: [], params: null, pmapa: null, aba: 'lista', atual: null, itens: [], eventos: [], filtro: { ano: '', tri: '', tipo: '', q: '' }, resumoRef: [], tela: null, fichaCampos: null };
 var DESC_FONTES = [
   { fonte: 'CNES-LT', nome: 'CNES — Leitos', chaves: 'leitos_existentes, leitos_sus, leitos_uti', uso: 'Taxa de ocupação, leitos contratados x cadastrados.', onde: 'Arquivos LT (leitos) do CNES, por UF e mês, no FTP do DATASUS; ou TabNet > CNES > Leitos.' },
   { fonte: 'CNES-PF', nome: 'CNES — Profissionais', chaves: 'profissionais_total, medicos, enfermeiros', uso: 'Conferir médicos e demais profissionais cadastrados na unidade.', onde: 'Arquivos PF (profissionais) do CNES, por UF e mês; ou TabNet > CNES > Profissionais.' },
@@ -479,7 +630,9 @@ function descHtmlPainel() {
 async function descAbrir(id) {
   if (id === null) { DESC.atual = { id: '', unidade: '', tipo: 'HOSPITAL', ano: new Date().getFullYear(), trimestre: 1, defesa: '', recurso: '', base_legal_conferida: '', ata_revisada: '' }; DESC.itens = []; DESC.eventos = []; }
   else { const r = await api('descontos/obter', { id: id }); if (!r.ok) { mostrarToast(r.erro || 'Erro ao abrir.'); return; } DESC.atual = r.desconto; DESC.itens = r.itens || []; DESC.eventos = r.eventos || []; }
-  DESC.aba = 'ficha'; DESC._sujo = false; DESC.modo = 'fluxo'; DESC._defesa = ''; DESC.passo = id === null ? 0 : descPrimeiroPendente(); descEntrarPasso(); descDesenhar();
+  DESC.aba = 'ficha'; DESC._sujo = false; DESC.modo = 'fluxo'; DESC._defesa = ''; DESC.fichaCampos = null; DESC._fichaUnidade = '';
+  if (DESC.atual.unidade) await descCarregarFicha();
+  DESC.passo = id === null ? 0 : descPrimeiroPendente(); descEntrarPasso(); descDesenhar();
 }
 function descHtmlFicha() {
   const a = DESC.atual;
@@ -518,14 +671,14 @@ function descRemItem(i) { descLerFicha(); DESC.itens.splice(i, 1); DESC._redesen
 function descRecalcular() {
   const a = DESC.atual; if (!a || DESC.aba !== 'ficha') return;
   if (!DESC._redesenharItens) descLerFicha(); // quando a lista vai ser redesenhada, o modelo em memória é a fonte da verdade
-  const pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm), t = f.totais;
+  const pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm, null, descFichaMapaUnidade()), t = f.totais;
   // prazos
   const p = f.prazos, pz = document.getElementById('d_prazos');
   if (pz) pz.innerHTML = '<div style="font-size:0.82rem;background:#f8f9fa;border-radius:6px;padding:8px 10px;">' + (p.ciencia ? 'Ciência ' + (p.ciencia_presumida ? '<em>presumida</em>' : 'registrada') + ' em <strong>' + dBr(p.ciencia) + '</strong> · prazo de defesa até <strong>' + dBr(p.prazo_defesa) + '</strong> (' + pm.dias_defesa + ' dias úteis' + (pm.feriados_extras ? '' : '; só feriados nacionais') + ')' : 'Informe a data de envio da notificação para calcular o prazo.') + '</div>';
   // resumo
   const cor = { erro: '#f8d7da', aviso: '#fff3cd', info: '#e7f1ff' };
   const rs = document.getElementById('d_resumo');
-  const aa = document.getElementById('d_alerta_ata'); if (aa) { const pend = DESC.itens.filter(function (x) { return !x.decisao; }).length; aa.innerHTML = pend ? '<div style="background:#f8d7da;border-radius:6px;padding:8px 12px;font-size:0.84rem;margin-bottom:10px;">' + pend + ' apontamento(s) ainda sem decisão. Volte ao passo 5 antes de gerar a Ata.</div>' : ''; }
+  const aa = document.getElementById('d_alerta_ata'); if (aa) { const pend = DESC.itens.filter(function (x) { return !x.decisao; }).length; aa.innerHTML = pend ? '<div style="background:#f8d7da;border-radius:6px;padding:8px 12px;font-size:0.84rem;margin-bottom:10px;">' + pend + ' apontamento(s) ainda sem decisão. Volte ao passo 6 antes de gerar a Ata.</div>' : ''; }
   if (rs) rs.innerHTML = '<div style="background:#fff;border:1px solid #dee2e6;border-left:4px solid #5c636a;border-radius:8px;padding:14px;margin-bottom:14px;"><div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:8px;">' +
     [['Produção apontada', brl(t.prod.apontado)], ['Compensado', brl(t.prod.compensado)], ['Qualidade apontada', brl(t.qual.apontado)], ['Valor a descontar', '<strong style="font-size:1.1rem;">' + brl(f.a_descontar) + '</strong>']].map(function (k) { return '<div><div style="font-size:0.7rem;color:#6c757d;">' + k[0] + '</div><div>' + k[1] + '</div></div>'; }).join('') + '</div>' +
     '<div style="font-size:0.85rem;"><strong>Próxima ação:</strong> ' + dEsc(f.proxima_acao) + '</div>' +
@@ -566,18 +719,18 @@ function descHtmlItem(it, i, t, modo) {
   const decisao = '<div id="i_avisos_' + i + '" style="margin:8px 0;">' + (it._avisos || []).map(function (x) { return '<div style="background:#fff3cd;border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x) + '</div>'; }).join('') + '</div>' +
     '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">' + sel('acatado', 'Acatar a defesa (apontamento cai)', '#198754') + sel('nao_acatado', 'Não acatar (apontamento mantido)', '#842029') + '</div>' +
     (it.decisao === 'acatado' ? '<div style="max-width:260px;margin-bottom:8px;">' + dCampo('Valor acatado (R$)', dIn('i_valor_acatado_' + i, it.valor_acatado), 'vazio = tudo') + '</div>' : '') +
-    '<details ' + (it._abrir ? 'open' : '') + ' style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.82rem;font-weight:700;">Texto da decisão' + (it._proposto ? ' <span class="badge-status" style="background:#e7f1ff;color:#084298;">proposta automática: revise</span>' : '') + '</summary><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + botoesTexto + '</div>' + textos + '</div></details>' +
+    '<details ' + (it._abrir ? 'open' : '') + ' style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.82rem;font-weight:700;">Texto da decisão' + (it._proposto ? ' <span class="badge-status" style="background:#e7f1ff;color:#084298;">proposta automática: revise</span>' : '') + '</summary><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + botoesTexto + '</div>' + textos + '</details>' +
     '<div style="max-width:220px;margin-top:8px;">' + dCampo('Julgamento revisado?', dSel('i_julgamento_revisado_' + i, it.julgamento_revisado, SIM_NAO)) + '</div>' + efet;
   if (modo === 'decisao') return '<div style="border:1px solid #dee2e6;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;border-left:4px solid ' + (it.decisao === 'acatado' ? '#198754' : it.decisao === 'nao_acatado' ? '#842029' : '#ced4da') + ';"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span> <strong>' + dEsc(it.indicador || '(sem nome)') + '</strong></div><div style="font-size:0.9rem;">Apontado: <strong>' + brl(num(it.valor_apontado)) + '</strong></div></div>' + (prod ? '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:4px;"></div>' : '') + decisao + '</div>';
   return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:#fff;">' + entrada + decisao.replace(efet, '') + efet + ext + '</div>';
 }
 function descAtualizarPct(i) {
   const it = DESC.itens[i], e = document.getElementById('i_pct_' + i); if (!e || it.tipo !== 'producao') return;
-  const pp = percProducao(it), lim = +dPmapa().limiar_producao_pct || 85;
+  const pp = percProducao(it), lim = +descFichaMapaUnidade().piso_producao_pct || +dPmapa().limiar_producao_pct || 85;
   e.innerHTML = pp.pct === null ? '<span style="color:#6c757d;">Informe a meta e os 3 meses (ou o % do parecer) para conferir.</span>' : 'Atingimento no trimestre: <strong>' + String(pp.pct).replace('.', ',') + '%</strong> ' + (pp.pct < lim ? '(abaixo de ' + lim + '%: apontamento cabível)' : '<span style="color:#842029;">(igual ou acima de ' + lim + '%: apontamento pode estar indevido)</span>') + (pp.diverge ? ' <span style="color:#664d03;">· difere do % do parecer (' + String(pp.parecer).replace('.', ',') + '%)</span>' : '');
 }
 function descSugerir(i, silencioso) {
-  descLerFicha(); const it = DESC.itens[i], r = sugerirDecisao(DESC.atual, it, dPmapa());
+  descLerFicha(); const it = DESC.itens[i], r = sugerirDecisao(DESC.atual, it, dPmapa(), null, descFichaMapaUnidade());
   const tem = it.resumo_defesa || it.analise_tecnica || it.justificativa_decisao;
   if (tem && !silencioso && !confirm('Já há texto de fundamentação neste apontamento. Substituir pelo rascunho sugerido?')) return;
   if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; }
@@ -594,10 +747,11 @@ async function descIA(i) {
   if (typeof invocarIAComFallback !== 'function') { mostrarToast('A IA não está disponível nesta tela.'); return; }
   let defesa = DESC._defesa || '';
   if (!defesa && sim(a.defesa)) { defesa = prompt('Cole aqui o texto da defesa da OSS. Ele é enviado à IA; não inclua dados pessoais.', '') || ''; if (!defesa) return; DESC._defesa = defesa; }
-  const base = sugerirDecisao(a, it, dPmapa()), pp = it.tipo === 'producao' ? percProducao(it) : null;
+  const fmIA = descFichaMapaUnidade();
+  const base = sugerirDecisao(a, it, dPmapa(), null, fmIA), pp = it.tipo === 'producao' ? percProducao(it) : null;
   const prompt_ = 'Você ajuda a redigir a análise de uma decisão sobre desconto em Contrato de Gestão de saúde (SES-PE). Use SOMENTE os fatos abaixo; não invente números, artigos nem documentos. Se faltar informação, escreva [informar].\n\n' +
     'Unidade: ' + a.unidade + ' | OSS: ' + (a.sigla_oss || '[informar]') + ' | Contrato: ' + (a.contrato || '[informar]') + ' | Período: ' + a.trimestre + 'º trimestre de ' + a.ano + '\nIndicador (' + it.tipo + '): ' + it.indicador + ' | Valor apontado: ' + brl(num(it.valor_apontado)) + '\nParecer: ' + (a.parecer_numero ? 'Parecer Técnico CTAI nº ' + a.parecer_numero : '[informar]') + '\n' +
-    (pp && pp.pct !== null ? 'Atingimento apurado: ' + pp.pct + '% da meta (mínimo ' + dPmapa().limiar_producao_pct + '%)\n' : '') + (a.defesa_data ? 'Defesa apresentada em ' + a.defesa_data + ' (prazo até ' + (calcularPrazos(a, dPmapa()).prazo_defesa || '?') + ')\n' : '') +
+    (pp && pp.pct !== null ? 'Atingimento apurado: ' + pp.pct + '% da meta (mínimo ' + (fmIA.piso_producao_pct || dPmapa().limiar_producao_pct) + '% neste contrato)\n' : '') + (a.defesa_data ? 'Defesa apresentada em ' + a.defesa_data + ' (prazo até ' + (calcularPrazos(a, dPmapa()).prazo_defesa || '?') + ')\n' : '') +
     '\nTEXTO DA DEFESA DA OSS:\n' + (defesa || '(não houve defesa)') + '\n\nFUNDAMENTO JURÍDICO JÁ DEFINIDO (não altere):\n' + base.juridica + '\n\nResponda em português formal, exatamente neste formato:\nRESUMO: <resumo objetivo da defesa em até 5 linhas>\nANÁLISE: <análise técnica e probatória confrontando cada argumento com os fatos acima>\nSUGESTÃO: <ACATAR ou NÃO ACATAR a defesa, com uma frase de motivo>';
   mostrarToast('Consultando a IA…', 8000);
   let txt; try { txt = await invocarIAComFallback(prompt_, true); } catch (e) { mostrarToast('A IA não respondeu: ' + (e.message || e)); return; }
@@ -633,7 +787,7 @@ async function descSalvar(silencioso) {
 }
 async function descVoltar() { if (DESC._sujo && !confirm('Há alterações não salvas. Sair mesmo assim?')) return; DESC._sujo = false; await renderDescontos(); }
 function descTexto(tipo) {
-  descLerFicha(); const a = DESC.atual, pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm);
+  descLerFicha(); const a = DESC.atual, pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm, null, descFichaMapaUnidade());
   const campo = 'texto_' + tipo, existente = a[campo];
   let txt = existente;
   if (!txt || confirm('Já existe um texto salvo. Gerar de novo e substituir o rascunho na tela?')) txt = tipo === 'ata' ? gerarAta(a, DESC.itens, f, pm) : tipo === 'recurso' ? gerarAnaliseRecurso(a, DESC.itens, f, pm) : gerarNotificacao(a, DESC.itens, f, pm);
@@ -663,16 +817,19 @@ var DESC_CATALOGO = [
   { unidade: 'UPA Engenho Velho', tipo: 'UPA', contrato: '010/2022' }, { unidade: 'UPA Ibura', tipo: 'UPA', contrato: '015/2022' }, { unidade: 'UPA Olinda', tipo: 'UPA', contrato: '001/2022' }
 ];
 var DESC_PASSOS = [
-  { id: 'unidade', nome: 'Unidade e período', ic: 'ti-building-hospital' }, { id: 'parecer', nome: 'Parecer e apontamentos', ic: 'ti-file-analytics' },
+  { id: 'unidade', nome: 'Unidade e período', ic: 'ti-building-hospital' }, { id: 'contrato', nome: 'Contrato e aditivos', ic: 'ti-file-certificate' },
+  { id: 'parecer', nome: 'Parecer e apontamentos', ic: 'ti-file-analytics' },
   { id: 'notificacao', nome: 'Notificação à OSS', ic: 'ti-send' }, { id: 'defesa', nome: 'Defesa da OSS', ic: 'ti-shield-check' },
   { id: 'decisao', nome: 'Decisão: acatar ou não', ic: 'ti-scale' }, { id: 'ata', nome: 'Ata e envio', ic: 'ti-file-text' }, { id: 'fim', nome: 'Recurso e execução', ic: 'ti-flag-check' }
 ];
+function descFichaMapaUnidade() { return fichaMapa(DESC.fichaCampos || []); }
 function descStatusPassos() {
-  const a = DESC.atual, it = DESC.itens, f = calcularFicha(a, it, dPmapa()), p = f.prazos, hoje = dParse(dIso(new Date()));
+  const a = DESC.atual, it = DESC.itens, f = calcularFicha(a, it, dPmapa(), null, descFichaMapaUnidade()), p = f.prazos, hoje = dParse(dIso(new Date()));
   const decidido = it.length > 0 && it.every(function (x) { return x.decisao; });
   const revisada = sim(a.ata_revisada) || (it.length > 0 && it.every(function (x) { return sim(x.julgamento_revisado); }));
   return [
     !!(a.unidade && a.ano && a.trimestre && a.sei_processo),
+    String(descFichaMapaUnidade().ficha_conferida) === 'sim',
     it.length > 0 && !!a.parecer_numero,
     !!a.notificacao_envio,
     sim(a.defesa) || nao(a.defesa) || (p.prazo_defesa && hoje > dParse(p.prazo_defesa)),
@@ -698,8 +855,11 @@ function descHtmlFluxo() {
     '<style>@media(max-width:820px){.desc-fluxo{grid-template-columns:1fr !important}}</style>';
 }
 function descAjudaPasso(p) {
-  return ['Informe a unidade e o trimestre. O restante preenche sozinho quando a unidade já é conhecida.', 'Leia o parecer da CTAI e lance os apontamentos. Dá para trazê-los automaticamente do arquivo do parecer.',
-    'Registre o envio da notificação; o prazo de defesa é calculado em dias úteis.', 'A OSS apresentou defesa? Sem defesa, o sistema propõe manter os apontamentos.',
+  return ['Informe a unidade e o trimestre. O restante preenche sozinho quando a unidade já é conhecida.',
+    'Cada unidade é um caso: anexe o contrato e os aditivos para o sistema preencher a ficha de parâmetros (piso, prazos, cláusulas). Confira cada valor e a origem antes de seguir.',
+    'Leia o parecer da CTAI e lance os apontamentos. Dá para trazê-los automaticamente do arquivo do parecer.',
+    'Registre o envio da notificação; o prazo de defesa é calculado em dias úteis.',
+    'A OSS apresentou defesa? Para cada apontamento, o sistema mostra o roteiro de conferência de dados do tipo daquele indicador.',
     'Para cada apontamento, acate a defesa ou não. A proposta de decisão já vem escrita; revise e ajuste.', 'Gere a Ata, revise o julgamento e registre os envios à OSS e à GAFCG.', 'Acompanhe o recurso da OSS e a execução do desconto (LE/OB) com a GAOCG.'][p];
 }
 function descCorpoPasso(p) {
@@ -709,21 +869,23 @@ function descCorpoPasso(p) {
     dCampo('Ano', dIn('f_ano', a.ano, 'number')) + dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) +
     dCampo('Processo SEI do desconto', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"')) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
     dCampo('OSS (nome completo)', dIn('f_nome_oss', a.nome_oss, 'text', 'placeholder="ex.: Fundação Gestão Hospitalar Martiniano Fernandes"')) + dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('CNES', dIn('f_cnes', a.cnes, 'text', 'placeholder="7 dígitos"'), 'para as conferências externas'));
-  if (p === 1) return dGrade(200, dCampo('Nº do parecer da CTAI', dIn('f_parecer_numero', a.parecer_numero, 'text', 'placeholder="ex.: 048/2025"')) + dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))) +
+  if (p === 1) return descCorpoContrato();
+  if (p === 2) return dGrade(200, dCampo('Nº do parecer da CTAI', dIn('f_parecer_numero', a.parecer_numero, 'text', 'placeholder="ex.: 048/2025"')) + dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))) +
     '<details style="margin:14px 0;background:#f8f9fa;border-radius:6px;padding:10px 12px;"><summary style="cursor:pointer;font-weight:700;font-size:0.88rem;"><i class="ti ti-wand"></i> Ler o parecer automaticamente (PDF, Word ou texto colado)</summary><div style="margin-top:10px;"><input type="file" id="d_parecer_arq" accept=".pdf,.docx,.doc,.txt,.html,.htm"><textarea id="d_parecer_txt" rows="3" placeholder="ou cole aqui o trecho do parecer com os apontamentos" style="width:100%;margin-top:8px;padding:8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;"></textarea><div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="descLerParecer()">Ler apontamentos</button> <span id="d_parecer_st" style="font-size:0.8rem;color:#6c757d;"></span></div><div style="font-size:0.74rem;color:#6c757d;margin-top:6px;">A IA sugere os apontamentos e valores; confira cada um abaixo antes de seguir. Dados pessoais são mascarados antes do envio.</div></div></details>' +
     '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button></div>';
-  if (p === 2) return dGrade(200, dCampo('Base legal conferida com o contrato vigente?', dSel('f_base_legal_conferida', a.base_legal_conferida, SIM_NAO)) + dCampo('Data de envio da notificação', dIn('f_notificacao_envio', a.notificacao_envio, 'date')) + dCampo('Ciência expressa da OSS', dIn('f_ciencia_data', a.ciencia_data, 'date'), 'vazio se não houve')) +
+  if (p === 3) return dGrade(200, dCampo('Base legal conferida com o contrato vigente?', dSel('f_base_legal_conferida', a.base_legal_conferida, SIM_NAO)) + dCampo('Data de envio da notificação', dIn('f_notificacao_envio', a.notificacao_envio, 'date')) + dCampo('Ciência expressa da OSS', dIn('f_ciencia_data', a.ciencia_data, 'date'), 'vazio se não houve')) +
     '<div id="d_prazos" style="margin-top:10px;"></div><div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'notificacao\')"><i class="ti ti-file-text"></i> Gerar a notificação</button></div><div id="d_texto"></div>';
-  if (p === 3) return dGrade(200, dCampo('A OSS apresentou defesa?', dSel('f_defesa', a.defesa, SIM_NAO)) + dCampo('Data da defesa', dIn('f_defesa_data', a.defesa_data, 'date'))) + '<div id="d_prazos" style="margin-top:10px;"></div>' +
+  if (p === 4) return dGrade(200, dCampo('A OSS apresentou defesa?', dSel('f_defesa', a.defesa, SIM_NAO)) + dCampo('Data da defesa', dIn('f_defesa_data', a.defesa_data, 'date'))) + '<div id="d_prazos" style="margin-top:10px;"></div>' +
     (sim(a.defesa) ? '<div style="margin-top:12px;">' + dCampo('Texto da defesa da OSS (opcional; usado só para a IA analisar, não fica salvo)', '<textarea id="d_defesa_txt" rows="6" oninput="DESC._defesa=this.value" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(DESC._defesa || '') + '</textarea>') + '<div style="margin-top:8px;"><button class="btn btn-secondary btn-sm" onclick="descIATodos()"><i class="ti ti-sparkles"></i> Analisar todos os apontamentos com IA</button></div></div>'
-      : nao(a.defesa) ? '<div style="margin-top:12px;background:#e7f1ff;border-radius:6px;padding:10px;font-size:0.85rem;">Sem defesa: no próximo passo o sistema propõe manter todos os apontamentos, com o texto no padrão das decisões anteriores.</div>' : '');
-  if (p === 4) {
+      : nao(a.defesa) ? '<div style="margin-top:12px;background:#e7f1ff;border-radius:6px;padding:10px;font-size:0.85rem;">Sem defesa: no próximo passo o sistema propõe manter todos os apontamentos, com o texto no padrão das decisões anteriores.</div>' : '') +
+    descHtmlRoteiros();
+  if (p === 5) {
     const t = calcularTotais(DESC.itens, dIso(new Date())), n = { ac: 0, na: 0, pe: 0 };
     DESC.itens.forEach(function (x) { if (x.decisao === 'acatado') n.ac++; else if (x.decisao === 'nao_acatado') n.na++; else n.pe++; });
     return '<div id="d_dec_resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"><span class="badge-status" style="background:#d1e7dd;color:#0f5132;">' + n.ac + ' defesa(s) acatada(s)</span><span class="badge-status" style="background:#f8d7da;color:#842029;">' + n.na + ' não acatado(s)</span><span class="badge-status">' + n.pe + ' pendente(s)</span></div>' +
-      (DESC.itens.length ? '' : '<p style="color:#6c757d;">Sem apontamentos. Volte ao passo 2.</p>') + '<div id="d_itens"></div>' + (DESC.itens.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerirTodas()"><i class="ti ti-wand"></i> Refazer propostas de todos</button><button class="btn btn-secondary btn-sm" onclick="descRevisarTodos()"><i class="ti ti-checks"></i> Marcar todos como revisados</button></div>' : '');
+      (DESC.itens.length ? '' : '<p style="color:#6c757d;">Sem apontamentos. Volte ao passo 3.</p>') + '<div id="d_itens"></div>' + (DESC.itens.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerirTodas()"><i class="ti ti-wand"></i> Refazer propostas de todos</button><button class="btn btn-secondary btn-sm" onclick="descRevisarTodos()"><i class="ti ti-checks"></i> Marcar todos como revisados</button></div>' : '');
   }
-  if (p === 5) return '<div id="d_alerta_ata"></div>' + dGrade(200, dCampo('Julgamento revisado (Ata)?', dSel('f_ata_revisada', a.ata_revisada, SIM_NAO), 'ou marque revisado em cada apontamento') + dCampo('Reunião da Comissão', dIn('f_comissao_data', a.comissao_data, 'date')) + dCampo('Pré-julgamento (Grupo Técnico / CASSCG)', dIn('f_grupo_tecnico_data', a.grupo_tecnico_data, 'date')) +
+  if (p === 6) return '<div id="d_alerta_ata"></div>' + dGrade(200, dCampo('Julgamento revisado (Ata)?', dSel('f_ata_revisada', a.ata_revisada, SIM_NAO), 'ou marque revisado em cada apontamento') + dCampo('Reunião da Comissão', dIn('f_comissao_data', a.comissao_data, 'date')) + dCampo('Pré-julgamento (Grupo Técnico / CASSCG)', dIn('f_grupo_tecnico_data', a.grupo_tecnico_data, 'date')) +
     dCampo('Documento SEI da Ata', dIn('f_ata_sei', a.ata_sei)) + dCampo('Ata enviada à OSS em', dIn('f_ata_envio_oss', a.ata_envio_oss, 'date')) + dCampo('Ciência da Ata pela OSS', dIn('f_ata_ciencia_data', a.ata_ciencia_data, 'date'), 'vazio se não houve') + dCampo('Processo enviado à GAFCG em', dIn('f_envio_gafcg', a.envio_gafcg, 'date'))) +
     '<div id="d_prazos" style="margin-top:10px;"></div><div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'ata\')"><i class="ti ti-file-text"></i> Gerar a Ata</button></div><div id="d_texto"></div>';
   return dGrade(200, dCampo('A OSS pediu recurso?', dSel('f_recurso', a.recurso, SIM_NAO)) + dCampo('Data do recurso', dIn('f_recurso_data', a.recurso_data, 'date')) + dCampo('Decisão do recurso em', dIn('f_recurso_decisao_data', a.recurso_decisao_data, 'date')) +
@@ -731,6 +893,96 @@ function descCorpoPasso(p) {
     '<div id="d_prazos" style="margin-top:10px;"></div>' + (sim(a.recurso) ? '<div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'recurso\')"><i class="ti ti-file-text"></i> Gerar a análise de recurso</button></div><div id="d_texto"></div>' : '') +
     '<div style="margin-top:12px;">' + dCampo('Observações', '<textarea id="f_observacoes" oninput="descMudou()" rows="2" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(a.observacoes) + '</textarea>') + '</div>';
 }
+// ---------- PASSO 2: CONTRATO E ADITIVOS (ficha de parâmetros da unidade) ----------
+function descFichaLocalPadrao() { return Object.keys(DESC_FICHA_PADRAO).map(function (k) { return { chave: k, rot: DESC_FICHA_PADRAO[k].rot, dica: DESC_FICHA_PADRAO[k].dica, padrao: DESC_FICHA_PADRAO[k].padrao, valor: DESC_FICHA_PADRAO[k].padrao, origem: '', confirmado: 'nao', salvo: false }; }); }
+async function descCarregarFicha(forcar) {
+  const a = DESC.atual;
+  if (!a || !String(a.unidade || '').trim()) { DESC.fichaCampos = null; return; }
+  if (DESC.fichaCampos && DESC._fichaUnidade === a.unidade && !forcar) return;
+  const r = await api('descontos/ficha-obter', { unidade: a.unidade });
+  if (r.ok) { DESC.fichaCampos = r.campos; DESC._fichaContrato = r.contrato || a.contrato || ''; }
+  else { DESC.fichaCampos = DESC.fichaCampos || descFichaLocalPadrao(); if (r.erro && /rota|Rota|não existe/.test(r.erro)) mostrarToast('O servidor ainda não tem as rotas da ficha do contrato: cole o Code.gs novo e publique Nova versão.'); }
+  DESC._fichaUnidade = a.unidade; DESC._fichaSuja = false;
+}
+function descLerFichaDom() {
+  (DESC.fichaCampos || []).forEach(function (c, i) {
+    const v = document.getElementById('ff_valor_' + i), o = document.getElementById('ff_origem_' + i), cf = document.getElementById('ff_conf_' + i);
+    if (v) c.valor = v.value; if (o) c.origem = o.value; if (cf) c.confirmado = cf.value;
+  });
+  const g = document.getElementById('ff_conferida'); if (g) { const c = (DESC.fichaCampos || []).find(function (x) { return x.chave === 'ficha_conferida'; }); if (c) c.valor = g.value; }
+}
+function descFichaMudou() { descLerFichaDom(); DESC._fichaSuja = true; const s = document.getElementById('d_ficha_st'); if (s) s.textContent = 'Ficha com alterações não salvas.'; }
+async function descSalvarFichaContrato(silencioso) {
+  descLerFichaDom(); const a = DESC.atual;
+  if (!String(a.unidade || '').trim()) { mostrarToast('Informe a unidade no passo 1.'); return false; }
+  const r = await api('descontos/ficha-salvar', { unidade: a.unidade, contrato: a.contrato || DESC._fichaContrato || '', campos: (DESC.fichaCampos || []).map(function (c) { return { chave: c.chave, valor: c.valor, origem: c.origem, confirmado: c.confirmado }; }) });
+  if (!r.ok) { mostrarToast(r.erro || 'Não salvou a ficha. O Code.gs novo já foi colado e publicado?'); return false; }
+  DESC.fichaCampos = r.campos; DESC._fichaSuja = false; const s = document.getElementById('d_ficha_st'); if (s) s.textContent = '';
+  if (!silencioso) mostrarToast('Ficha do contrato salva para ' + a.unidade + '.');
+  return true;
+}
+function descCorpoContrato() {
+  const a = DESC.atual;
+  if (!String(a.unidade || '').trim()) return '<div style="background:#fff3cd;border-radius:6px;padding:12px;font-size:0.86rem;">Informe a unidade no passo 1 para abrir a ficha do contrato dela.</div>';
+  if (!DESC.fichaCampos) { descCarregarFicha().then(function () { if (DESC.passo === 1) descDesenhar(); }); return '<p style="color:#6c757d;">Carregando a ficha do contrato de ' + dEsc(a.unidade) + '…</p>'; }
+  const fm = descFichaMapaUnidade(), fora = fichaForaDaRegra(fm);
+  const conferida = (DESC.fichaCampos.find(function (x) { return x.chave === 'ficha_conferida'; }) || {}).valor === 'sim';
+  const ia = '<details style="margin:0 0 14px;background:#f8f9fa;border-radius:6px;padding:10px 12px;" ' + (conferida ? '' : 'open') + '><summary style="cursor:pointer;font-weight:700;font-size:0.88rem;"><i class="ti ti-wand"></i> Preencher a ficha lendo o contrato e os aditivos (PDF ou Word)</summary><div style="margin-top:10px;"><input type="file" id="d_contrato_arq" multiple accept=".pdf,.docx,.doc,.txt,.html,.htm"><div style="font-size:0.74rem;color:#6c757d;margin-top:4px;">Pode anexar vários arquivos de uma vez (contrato + termos aditivos). A IA preenche a ficha e anota de onde tirou cada valor; ela não inventa cláusula: o que não achar fica em branco.</div><div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="descLerContrato()">Ler e preencher a ficha</button> <span id="d_contrato_st" style="font-size:0.8rem;color:#6c757d;"></span></div></div></details>';
+  const linhas = DESC.fichaCampos.map(function (c, i) {
+    if (c.chave === 'ficha_conferida') return '';
+    const foraP = String(c.valor) !== String(c.padrao) && ['piso_producao_pct', 'dia_entrega_rm', 'compensacao_trimestres', 'pct_fixo', 'pct_producao', 'pct_qualidade'].indexOf(c.chave) > -1;
+    return '<tr' + (foraP ? ' style="background:#fff3cd;"' : '') + '><td style="min-width:190px;"><strong style="font-size:0.82rem;">' + dEsc(c.rot) + '</strong>' + (foraP ? '<div style="font-size:0.7rem;color:#664d03;font-weight:700;">fora do padrão: confira com atenção</div>' : '') + '<div style="font-size:0.7rem;color:#6c757d;">' + dEsc(c.dica) + '</div></td>' +
+      '<td style="min-width:150px;"><input id="ff_valor_' + i + '" value="' + dEsc(c.valor) + '" oninput="descFichaMudou()" style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;font-size:0.82rem;"></td>' +
+      '<td style="min-width:170px;"><input id="ff_origem_' + i + '" value="' + dEsc(c.origem) + '" oninput="descFichaMudou()" placeholder="documento e cláusula" style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;font-size:0.82rem;"></td>' +
+      '<td style="width:120px;"><select id="ff_conf_' + i + '" onchange="descFichaMudou()" style="width:100%;padding:6px;font-size:0.82rem;"><option value="nao"' + (c.confirmado !== 'sim' ? ' selected' : '') + '>A conferir</option><option value="sim"' + (c.confirmado === 'sim' ? ' selected' : '') + '>Conferido</option></select></td></tr>';
+  }).join('');
+  const idxConf = DESC.fichaCampos.findIndex(function (x) { return x.chave === 'ficha_conferida'; });
+  const rodFicha = '<div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">' +
+    '<label style="font-size:0.85rem;font-weight:700;">Ficha conferida com o contrato? <select id="ff_conferida" onchange="descFichaMudou()" style="padding:6px;margin-left:6px;"><option value="nao"' + (conferida ? '' : ' selected') + '>Ainda não</option><option value="sim"' + (conferida ? ' selected' : '') + '>Sim, conferi</option></select></label>' +
+    '<button class="btn btn-primary btn-sm" onclick="descSalvarFichaContrato()"><i class="ti ti-device-floppy"></i> Salvar ficha do contrato</button><span id="d_ficha_st" style="font-size:0.78rem;color:#842029;"></span></div>' +
+    '<p style="font-size:0.74rem;color:#6c757d;margin:8px 0 0;">A ficha fica guardada por unidade: nos próximos trimestres ela já vem preenchida. Em "Origem", diga de onde o valor veio (ex.: Anexo Técnico II do CG 020/2022; 6º Termo Aditivo), para qualquer pessoa conferir sem adivinhar.</p>';
+  const avisoFora = fora.length ? '<div style="background:#fff3cd;border-radius:6px;padding:10px 12px;font-size:0.82rem;margin:0 0 12px;"><strong>O que neste contrato foge da regra geral:</strong>' + fora.map(function (x) { return '<div style="margin-top:4px;">• ' + dEsc(x) + '</div>'; }).join('') + '</div>' : '';
+  return ia + avisoFora + '<div style="overflow-x:auto;background:#fff;border:1px solid #dee2e6;border-radius:8px;"><table style="width:100%;border-collapse:collapse;" class="desc-tab"><thead><tr style="background:#f8f9fa;text-align:left;font-size:0.76rem;"><th style="padding:8px;">Parâmetro</th><th>Valor neste contrato</th><th>Origem (documento e cláusula)</th><th>Situação</th></tr></thead><tbody>' + linhas + '</tbody></table></div>' + rodFicha +
+    '<style>.desc-tab td{padding:8px;border-top:1px solid #eef0f2;vertical-align:top}</style>';
+}
+async function descLerContrato() {
+  const st = document.getElementById('d_contrato_st'), arqs = (document.getElementById('d_contrato_arq') || {}).files;
+  if (typeof invocarIAComFallback !== 'function') { st.textContent = 'A IA não está disponível.'; return; }
+  if (!arqs || !arqs.length) { st.textContent = 'Anexe o contrato (e os aditivos, se houver).'; return; }
+  try {
+    let texto = '';
+    for (let k = 0; k < arqs.length; k++) { st.textContent = 'Lendo ' + arqs[k].name + '…'; texto += '\n\n===== ARQUIVO: ' + arqs[k].name + ' =====\n' + await extrairTextoArquivo(arqs[k].name, await arqs[k].arrayBuffer(), null); }
+    st.textContent = 'A IA está montando a ficha…';
+    const chaves = Object.keys(DESC_FICHA_PADRAO).filter(function (k) { return k !== 'ficha_conferida'; }).map(function (k) { return k + ' = ' + DESC_FICHA_PADRAO[k].rot; }).join('\n');
+    const pr = 'Leia o contrato de gestão (e termos aditivos) abaixo e preencha a ficha de parâmetros. Use SOMENTE o que está escrito no texto; NÃO invente número de cláusula nem valor. Campo não encontrado: não inclua na resposta.\n' +
+      'Campos possíveis (chave = significado):\n' + chaves + '\n' +
+      'Responda APENAS com JSON válido: {"contrato":"nº do contrato ou null","campos":[{"chave":"uma das chaves acima","valor":"o valor como está no contrato","origem":"arquivo, anexo e cláusula de onde o valor foi tirado"}]}\n\nTEXTO:\n' + texto.slice(0, 150000);
+    const resp = await invocarIAComFallback(pr, true); let s = typeof resp === 'string' ? resp : JSON.stringify(resp);
+    const m = /\{[\s\S]*\}/.exec(s.replace(/```json|```/g, '')); if (!m) throw new Error('resposta fora do formato');
+    const o = JSON.parse(m[0]), lista = Array.isArray(o.campos) ? o.campos : [];
+    descLerFichaDom();
+    let n = 0;
+    lista.forEach(function (x) { const c = (DESC.fichaCampos || []).find(function (y) { return y.chave === x.chave; }); if (!c || x.valor === null || x.valor === undefined || x.valor === '') return; c.valor = String(x.valor); c.origem = String(x.origem || ''); c.confirmado = 'nao'; n++; });
+    if (o.contrato && !DESC.atual.contrato) DESC.atual.contrato = String(o.contrato);
+    DESC._fichaSuja = true; descDesenhar();
+    mostrarToast(n ? n + ' campo(s) preenchido(s) pela IA. Confira um a um, marque "Conferido" e salve a ficha.' : 'A IA não encontrou os parâmetros no texto. Preencha à mão com o contrato aberto.');
+  } catch (e) { if (st) st.textContent = 'Não consegui ler: ' + (e.message || e) + '. Preencha a ficha à mão.'; }
+}
+// Roteiros de conferência da defesa, por apontamento (passo "Defesa da OSS").
+function descHtmlRoteiros() {
+  if (!DESC.itens.length) return '';
+  const fm = descFichaMapaUnidade(), fora = fichaForaDaRegra(fm);
+  const avisoFicha = String(fm.ficha_conferida) !== 'sim' ? '<div style="background:#fff3cd;border-radius:6px;padding:10px 12px;font-size:0.82rem;margin:14px 0 0;">A ficha do contrato desta unidade ainda não foi conferida (passo 2). Os roteiros abaixo usam os valores padrão; este contrato pode ser diferente.</div>' : '';
+  const avisoFora = fora.length ? '<div style="background:#fff3cd;border-radius:6px;padding:10px 12px;font-size:0.82rem;margin:14px 0 0;"><strong>Atenção ao que foge da regra neste contrato:</strong>' + fora.map(function (x) { return '<div style="margin-top:4px;">• ' + dEsc(x) + '</div>'; }).join('') + '</div>' : '';
+  const cartoes = DESC.itens.map(function (it, i) {
+    const r = roteiroConferencia(it, fm);
+    return '<details style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 14px;margin-top:10px;"><summary style="cursor:pointer;font-size:0.86rem;"><span class="rx-tag">' + (it.tipo === 'producao' ? 'Produção' : 'Qualidade') + '</span> <strong>' + dEsc(it.indicador || '(apontamento ' + (i + 1) + ')') + '</strong> — roteiro: ' + dEsc(r.titulo) + '</summary>' +
+      '<div style="margin-top:10px;font-size:0.84rem;"><div style="font-weight:700;margin-bottom:4px;">O que conferir, na ordem:</div><ol style="margin:0 0 10px;padding-left:20px;">' + r.passos.map(function (x) { return '<li style="margin-bottom:4px;">' + dEsc(x) + '</li>'; }).join('') + '</ol>' +
+      '<div style="background:#f8f9fa;border-radius:6px;padding:8px 10px;">' + r.decide.map(function (x) { return '<div style="margin-bottom:4px;">' + dEsc(x) + '</div>'; }).join('') + '<div style="font-size:0.74rem;color:#6c757d;margin-top:4px;">Padrões tirados das 32 análises reais de 2024. O contrato desta unidade manda; a decisão é do analista.</div></div></div></details>';
+  }).join('');
+  return '<div style="margin-top:16px;"><h4 style="margin:0 0 2px;font-size:0.92rem;"><i class="ti ti-list-check"></i> Conferência de dados, apontamento por apontamento</h4><div style="font-size:0.78rem;color:#6c757d;">Antes de decidir, siga o roteiro do tipo de cada indicador, comparando os documentos da defesa com os registros oficiais.</div>' + avisoFicha + avisoFora + cartoes + '</div>';
+}
+
 function descUnidadesConhecidas() {
   const m = {}; DESC_CATALOGO.forEach(function (x) { m[x.unidade.toLowerCase()] = x; });
   DESC.lista.forEach(function (r) { m[String(r.unidade).toLowerCase()] = { unidade: r.unidade, tipo: r.tipo, contrato: r.contrato, sigla_oss: r.sigla_oss, nome_oss: r.nome_oss, cnes: r.cnes }; });
@@ -743,28 +995,31 @@ function descAutoUnidade() {
   if (c.tipo) a.tipo = c.tipo;
   const old = DESC.lista.find(function (r) { return String(r.unidade).toLowerCase() === k && Number(r.ano) === Number(a.ano) && Number(r.trimestre) === Number(a.trimestre); });
   if (old && !a.id) mostrarToast('Já existe registro desta unidade neste trimestre. Abra pela lista para continuar.');
+  DESC.fichaCampos = null; DESC._fichaUnidade = ''; // a ficha do contrato é por unidade: recarrega no passo 2
   descDesenhar(); descMudou();
 }
 async function descIrPasso(k, salvar) {
   if (k < 0 || k >= DESC_PASSOS.length) return;
   descLerFicha();
+  if (salvar && DESC.passo === 1 && DESC._fichaSuja && DESC.atual.unidade) await descSalvarFichaContrato(true);
   if (salvar && DESC._sujo && DESC.atual.unidade && DESC.atual.ano && DESC.atual.trimestre) await descSalvar(true);
   DESC.passo = k; descEntrarPasso(); descDesenhar();
   window.scrollTo(0, 0); const c = document.getElementById('content'); if (c && c.scrollTo) c.scrollTo(0, 0);
 }
 function descEntrarPasso() {
-  const k = DESC.passo; DESC.modoItens = k === 1 ? 'entrada' : k === 4 ? 'decisao' : 'todos'; DESC._redesenharItens = true;
-  if (k === 4) { // já traz a proposta pronta
-    DESC.itens.forEach(function (it) { if (!it.decisao && !it.resumo_defesa && !it.analise_tecnica) { const r = sugerirDecisao(DESC.atual, it, dPmapa()); if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; } it.fundamentacao_juridica = r.juridica; if (r.decisao) it.decisao = r.decisao; it._avisos = r.avisos; it._proposto = true; } });
+  const k = DESC.passo; DESC.modoItens = k === 2 ? 'entrada' : k === 5 ? 'decisao' : 'todos'; DESC._redesenharItens = true;
+  if (k === 1) descCarregarFicha().then(function () { if (DESC.passo === 1 && DESC.aba === 'ficha') descDesenhar(); });
+  if (k === 5) { // já traz a proposta pronta
+    DESC.itens.forEach(function (it) { if (!it.decisao && !it.resumo_defesa && !it.analise_tecnica) { const r = sugerirDecisao(DESC.atual, it, dPmapa(), null, descFichaMapaUnidade()); if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; } it.fundamentacao_juridica = r.juridica; if (r.decisao) it.decisao = r.decisao; it._avisos = r.avisos; it._proposto = true; } });
   }
 }
-async function descContinuar() { descLerFicha(); const ok = await descSalvar(); if (ok) descIrPasso(DESC.passo + 1, false); }
+async function descContinuar() { descLerFicha(); if (DESC.passo === 1 && DESC._fichaSuja) await descSalvarFichaContrato(true); const ok = await descSalvar(); if (ok) descIrPasso(DESC.passo + 1, false); }
 async function descConcluir() { descLerFicha(); const ok = await descSalvar(); if (ok) { DESC._sujo = false; await renderDescontos(); } }
 function descModoCompleto() { descLerFicha(); DESC.modo = 'completa'; DESC.modoItens = 'todos'; DESC._redesenharItens = true; descDesenhar(); }
 function descDecidir(i, v) { descLerFicha(); const it = DESC.itens[i]; it.decisao = it.decisao === v ? '' : v; DESC._redesenharItens = true; descRecalcular(); descAtualizarResumoDecisao(); descMudou(); }
 function descAtualizarResumoDecisao() { const e = document.getElementById('d_dec_resumo'); if (!e) return; const n = { ac: 0, na: 0, pe: 0 }; DESC.itens.forEach(function (x) { if (x.decisao === 'acatado') n.ac++; else if (x.decisao === 'nao_acatado') n.na++; else n.pe++; }); e.innerHTML = '<span class="badge-status" style="background:#d1e7dd;color:#0f5132;">' + n.ac + ' defesa(s) acatada(s)</span><span class="badge-status" style="background:#f8d7da;color:#842029;">' + n.na + ' não acatado(s)</span><span class="badge-status">' + n.pe + ' pendente(s)</span>'; }
 function descRevisarTodos() { descLerFicha(); DESC.itens.forEach(function (it) { it.julgamento_revisado = 'sim'; }); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
-async function descIATodos() { descLerFicha(); for (let i = 0; i < DESC.itens.length; i++) { await descIA(i); } mostrarToast('Análise da IA concluída. Revise no passo 5.'); }
+async function descIATodos() { descLerFicha(); for (let i = 0; i < DESC.itens.length; i++) { await descIA(i); } mostrarToast('Análise da IA concluída. Revise no passo 6.'); }
 async function descLerParecer() {
   const st = document.getElementById('d_parecer_st'), arq = (document.getElementById('d_parecer_arq') || {}).files, a = DESC.atual;
   if (typeof invocarIAComFallback !== 'function') { st.textContent = 'A IA não está disponível.'; return; }
