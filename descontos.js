@@ -1,0 +1,570 @@
+// descontos.js — aba Descontos do Analista (tela). Carregado pelo index.html depois do app.js.
+// ===== NÚCLEO DO PROCESSO DE DESCONTOS (regras puras; mesmo texto no servidor e na tela) =====
+var DESC_PARAMETROS_PADRAO = {
+  dias_defesa:          { valor: '10', confirmado: 'sim', nota: 'Dias úteis para defesa da OSS após a ciência (mapa do processo e Módulo 3).' },
+  dias_ciencia_presumida:{ valor: '5',  confirmado: 'nao', nota: 'Sem ciência expressa, conta-se a ciência a partir do 5º dia útil do envio. Base normativa ainda não localizada (pergunta ao jurídico).' },
+  dias_ciencia_ata:     { valor: '5',  confirmado: 'nao', nota: 'Dias úteis de ciência após o envio da Ata. Base normativa a confirmar.' },
+  dias_recurso:         { valor: '10', confirmado: 'nao', nota: 'Prazo para a OSS pedir recurso após ciência da Ata. VALOR PROVISÓRIO: confirmar no contrato/decreto.' },
+  feriados_extras:      { valor: '',   confirmado: 'nao', nota: 'Datas AAAA-MM-DD separadas por vírgula (feriados estaduais, pontos facultativos). O sistema já usa os feriados nacionais e a Sexta-feira Santa.' },
+  base_legal:           { valor: 'Lei Estadual nº 15.210/2013 e Decreto Estadual nº 58.200/2025', confirmado: 'sim', nota: 'Citada nos textos gerados. Conferir a cláusula do contrato de cada unidade.' },
+  tolerancia_externa_pct:{ valor: '5', confirmado: 'nao', nota: 'Diferença (%) aceita entre o valor informado e a fonte externa (CNES/SIH/SIA) antes de gerar alerta.' }
+};
+var DESC_DECISOES = ['', 'acatado', 'nao_acatado'];
+var DESC_ETAPAS = [
+  'Parecer da CTAI recebido', 'Triagem (há desconto?)', 'Notificação enviada à OSS', 'Prazo de defesa',
+  'Pré-julgamento técnico (Grupo Técnico / CASSCG)', 'Julgamento pela Comissão', 'Ata revisada',
+  'Ata enviada à OSS e processo à GAFCG', 'Recurso', 'Execução do desconto (GAOCG: LE/OB)'
+];
+
+function dParse(s) {
+  if (s === null || s === undefined || s === '') return null;
+  if (s instanceof Date) return isNaN(s) ? null : new Date(Date.UTC(s.getFullYear(), s.getMonth(), s.getDate()));
+  var t = String(s).trim(), m = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  if (m) return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  return m ? new Date(Date.UTC(+m[3], +m[2] - 1, +m[1])) : null;
+}
+function dIso(d) { return d ? d.toISOString().slice(0, 10) : ''; }
+function dBr(s) { var d = dParse(s); return d ? dIso(d).split('-').reverse().join('/') : ''; }
+function dAdd(d, n) { return new Date(d.getTime() + n * 86400000); }
+function pascoa(ano) {
+  var a = ano % 19, b = Math.floor(ano / 100), c = ano % 100, d = Math.floor(b / 4), e = b % 4,
+      f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30,
+      i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451),
+      mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(ano, mes - 1, dia));
+}
+function feriadosDoAno(ano) {
+  var fixos = ['01-01', '04-21', '05-01', '09-07', '10-12', '11-02', '11-15', '12-25'];
+  if (ano >= 2024) fixos.push('11-20'); // Consciência Negra, nacional desde a Lei 14.759/2023
+  var r = fixos.map(function (x) { return ano + '-' + x; });
+  r.push(dIso(dAdd(pascoa(ano), -2)));
+  return r;
+}
+function montarFeriados(anoIni, anoFim, extras) {
+  var set = {};
+  for (var a = anoIni; a <= anoFim; a++) feriadosDoAno(a).forEach(function (x) { set[x] = 1; });
+  String(extras || '').split(/[,;\s]+/).forEach(function (x) { var d = dParse(x); if (d) set[dIso(d)] = 1; });
+  return set;
+}
+function ehUtil(d, set) { var w = d.getUTCDay(); return w !== 0 && w !== 6 && !set[dIso(d)]; }
+// Soma n dias úteis a partir de uma data (o dia da data não conta; o 1º dia útil é o seguinte).
+function somarUteis(iso, n, extras) {
+  var d = dParse(iso); if (!d || !(n >= 0)) return '';
+  var set = montarFeriados(d.getUTCFullYear(), d.getUTCFullYear() + 2, extras), c = 0;
+  while (c < n) { d = dAdd(d, 1); if (ehUtil(d, set)) c++; }
+  return dIso(d);
+}
+function fimTrimestre(ano, tri) { return ano + '-' + ['03-31', '06-30', '09-30', '12-31'][(+tri || 1) - 1]; }
+function num(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  var s = String(v === null || v === undefined ? '' : v).replace(/[R$\s]/g, '');
+  if (!s) return 0;
+  if (s.indexOf(',') > -1) s = s.replace(/\./g, '').replace(',', '.');
+  var n = parseFloat(s); return isFinite(n) ? n : 0;
+}
+function r2(x) { return Math.round((x + 1e-9) * 100) / 100; }
+function brl(x) { return 'R$ ' + r2(x).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+function paramsMapa(linhas) {
+  var m = {}; Object.keys(DESC_PARAMETROS_PADRAO).forEach(function (k) { m[k] = DESC_PARAMETROS_PADRAO[k].valor; });
+  (linhas || []).forEach(function (l) { if (l && l.chave && l.valor !== '' && l.valor !== undefined) m[l.chave] = String(l.valor); });
+  return m;
+}
+
+// Contas. Convenções (ver LEIA-ME): "acatado" = o apontamento da CTAI é mantido; "não acatado" = é afastado.
+// Produção: efetivado = (apontado − compensado dentro do prazo) dos acatados. Qualidade: efetivado = apontado dos acatados.
+function calcularTotais(itens, hoje) {
+  var t = { prod: { apontado: 0, compensado: 0, acatado: 0, efetivado: 0, pendentes: 0 }, qual: { apontado: 0, acatado: 0, efetivado: 0, pendentes: 0 }, linhas: [] };
+  (itens || []).forEach(function (it) {
+    var ap = num(it.valor_apontado), comp = num(it.valor_compensado), dec = it.decisao || '';
+    var prazo = dParse(it.prazo_compensacao), dcomp = dParse(it.data_compensacao);
+    var compValida = comp > 0 && (!prazo || !dcomp || dcomp <= prazo) ? Math.min(comp, ap) : 0;
+    var compForaPrazo = comp > 0 && prazo && dcomp && dcomp > prazo;
+    var vencido = it.tipo === 'producao' && prazo && hoje && dParse(hoje) > prazo && r2(ap - compValida) > 0;
+    var ef = 0;
+    if (it.tipo === 'producao') {
+      t.prod.apontado += ap; t.prod.compensado += compValida;
+      if (dec === 'acatado') { t.prod.acatado += ap; ef = ap - compValida; t.prod.efetivado += ef; }
+      if (!dec) t.prod.pendentes++;
+    } else {
+      t.qual.apontado += ap;
+      if (dec === 'acatado') { t.qual.acatado += ap; ef = ap; t.qual.efetivado += ef; }
+      if (!dec) t.qual.pendentes++;
+    }
+    t.linhas.push({ efetivado: r2(ef), comp_valida: r2(compValida), comp_fora_prazo: !!compForaPrazo, fora_prazo_compensacao: !!vencido });
+  });
+  ['prod', 'qual'].forEach(function (k) { Object.keys(t[k]).forEach(function (f) { if (f !== 'pendentes') t[k][f] = r2(t[k][f]); }); });
+  t.apontado = r2(t.prod.apontado + t.qual.apontado);
+  t.efetivado = r2(t.prod.efetivado + t.qual.efetivado);
+  t.pct_qualidade_sobre_producao = t.prod.apontado > 0 ? r2(t.qual.apontado / t.prod.apontado * 100) : null;
+  return t;
+}
+function calcularPrazos(rec, pm) {
+  var ex = pm.feriados_extras, p = {};
+  p.ciencia = rec.ciencia_data ? dIso(dParse(rec.ciencia_data)) : '';
+  p.ciencia_presumida = false;
+  if (!p.ciencia && rec.notificacao_envio) { p.ciencia = somarUteis(rec.notificacao_envio, +pm.dias_ciencia_presumida, ex); p.ciencia_presumida = true; }
+  p.prazo_defesa = p.ciencia ? somarUteis(p.ciencia, +pm.dias_defesa, ex) : '';
+  p.ciencia_ata = rec.ata_ciencia_data ? dIso(dParse(rec.ata_ciencia_data)) : '';
+  p.ciencia_ata_presumida = false;
+  if (!p.ciencia_ata && rec.ata_envio_oss) { p.ciencia_ata = somarUteis(rec.ata_envio_oss, +pm.dias_ciencia_ata, ex); p.ciencia_ata_presumida = true; }
+  p.prazo_recurso = p.ciencia_ata ? somarUteis(p.ciencia_ata, +pm.dias_recurso, ex) : '';
+  p.fim_trimestre = rec.ano && rec.trimestre ? fimTrimestre(+rec.ano, +rec.trimestre) : '';
+  p.dias_ate_notificacao = (p.fim_trimestre && rec.notificacao_envio) ? Math.round((dParse(rec.notificacao_envio) - dParse(p.fim_trimestre)) / 86400000) : null;
+  return p;
+}
+function sim(v) { return String(v || '').toLowerCase() === 'sim'; }
+function nao(v) { return String(v || '').toLowerCase() === 'nao' || String(v || '').toLowerCase() === 'não'; }
+
+function calcularFicha(rec, itens, pm, hoje) {
+  hoje = hoje || dIso(new Date());
+  var t = calcularTotais(itens, hoje), p = calcularPrazos(rec, pm), H = dParse(hoje);
+  var semDesconto = t.apontado === 0 && (itens || []).length === 0 ? null : t.apontado === 0;
+  var prazoDefesaVencido = p.prazo_defesa && H > dParse(p.prazo_defesa);
+  var temDefesa = sim(rec.defesa), semDefesa = nao(rec.defesa);
+  var etapas = [
+    { n: DESC_ETAPAS[0], feito: !!(rec.parecer_data || rec.parecer_sei) },
+    { n: DESC_ETAPAS[1], feito: (itens || []).length > 0 },
+    { n: DESC_ETAPAS[2], feito: !!rec.notificacao_envio, pula: semDesconto === true },
+    { n: DESC_ETAPAS[3], feito: temDefesa || semDefesa || !!prazoDefesaVencido, pula: semDesconto === true },
+    { n: DESC_ETAPAS[4], feito: !!rec.grupo_tecnico_data, pula: semDesconto === true || semDefesa },
+    { n: DESC_ETAPAS[5], feito: !!rec.comissao_data, pula: semDesconto === true },
+    { n: DESC_ETAPAS[6], feito: sim(rec.ata_revisada), pula: semDesconto === true },
+    { n: DESC_ETAPAS[7], feito: !!(rec.ata_envio_oss && rec.envio_gafcg), pula: semDesconto === true },
+    { n: DESC_ETAPAS[8], feito: nao(rec.recurso) || !!rec.recurso_decisao_data || (!sim(rec.recurso) && !!p.prazo_recurso && H > dParse(p.prazo_recurso)), pula: semDesconto === true },
+    { n: DESC_ETAPAS[9], feito: !!rec.execucao_data, pula: semDesconto === true }
+  ];
+  var prox = '';
+  if (semDesconto === true && rec.situacao !== 'encerrado') prox = 'Sem desconto apontado: registrar e encerrar';
+  else if (rec.situacao === 'encerrado') prox = 'Encerrado';
+  else {
+    var ini = 0; // se uma etapa posterior já foi cumprida, as anteriores são tidas como feitas (registros antigos)
+    for (var k = etapas.length - 1; k >= 0; k--) { if (etapas[k].feito && !etapas[k].pula && k !== 1) { ini = k + 1; break; } }
+    for (var i = ini; i < etapas.length; i++) {
+      if (etapas[i].pula || etapas[i].feito) continue;
+      var e = etapas[i].n;
+      if (i === 0) prox = 'Registrar o parecer da CTAI';
+      else if (i === 1) prox = 'Lançar os apontamentos do parecer';
+      else if (i === 2) prox = 'Notificar a OSS' + (sim(rec.base_legal_conferida) ? '' : ' (conferir antes a base legal vigente)');
+      else if (i === 3) prox = 'Aguardar defesa até ' + dBr(p.prazo_defesa);
+      else if (i === 4) prox = 'Pré-julgamento técnico da defesa (Grupo Técnico / CASSCG)';
+      else if (i === 5) prox = 'Levar à Comissão de Julgamento';
+      else if (i === 6) prox = 'Aguardar revisão da Ata';
+      else if (i === 7) prox = 'Enviar a Ata à OSS e o processo à GAFCG';
+      else if (i === 8) prox = p.prazo_recurso ? 'Aguardar prazo de recurso até ' + dBr(p.prazo_recurso) : 'Registrar a ciência da Ata pela OSS';
+      else if (i === 9) prox = 'Acompanhar a execução (LE/OB) com a GAOCG';
+      if (i === 8 && sim(rec.recurso) && !rec.recurso_decisao_data) prox = 'Analisar o recurso e decidir';
+      break;
+    }
+    if (!prox) prox = 'Encerrar o registro';
+  }
+  var alertas = [];
+  function A(nivel, msg) { alertas.push({ nivel: nivel, msg: msg }); }
+  t.linhas.forEach(function (l, i) {
+    var it = itens[i];
+    if (l.fora_prazo_compensacao) A('erro', 'Fora do prazo de compensação: ' + (it.indicador || 'apontamento de produção') + ' (prazo ' + dBr(it.prazo_compensacao) + ').');
+    if (l.comp_fora_prazo) A('aviso', 'Compensação de "' + (it.indicador || 'produção') + '" feita depois do prazo; não foi abatida do valor.');
+  });
+  if (rec.notificacao_envio && !sim(rec.base_legal_conferida)) A('aviso', 'Base legal da notificação não marcada como conferida com o contrato vigente.');
+  if (p.ciencia_presumida) A('info', 'Prazo de defesa contado a partir de ciência presumida (' + dBr(p.ciencia) + '): sem ciência expressa da unidade.');
+  if (prazoDefesaVencido && !temDefesa && !semDefesa && rec.notificacao_envio) A('aviso', 'Prazo de defesa venceu em ' + dBr(p.prazo_defesa) + ' e não há registro se houve defesa.');
+  if (p.dias_ate_notificacao !== null && p.dias_ate_notificacao > 180) A('info', 'Notificação enviada ' + p.dias_ate_notificacao + ' dias depois do fim do trimestre.');
+  if (t.apontado > 0 && !rec.sei_processo) A('aviso', 'Falta o número do processo SEI.');
+  if (!rec.contrato) A('info', 'Falta o número do contrato de gestão (C.G).');
+  if (t.prod.pendentes + t.qual.pendentes > 0 && (rec.comissao_data || sim(rec.ata_revisada))) A('erro', 'Há apontamentos sem decisão (acatado / não acatado) e o julgamento já foi registrado.');
+  if (rec.ata_envio_oss && sim(rec.ata_revisada) === false) A('aviso', 'Ata enviada à OSS sem marcar a revisão.');
+  if (sim(rec.recurso) && !sim(rec.defesa) && !rec.recurso_decisao_data) A('info', 'Recurso registrado sem defesa prévia: conferir se cabe.');
+  if (sim(rec.recurso) && rec.recurso_data && p.prazo_recurso && dParse(rec.recurso_data) > dParse(p.prazo_recurso)) A('aviso', 'Recurso apresentado depois do prazo (' + dBr(p.prazo_recurso) + ').');
+  if (t.efetivado > 0 && rec.ata_envio_oss && !rec.execucao_data) A('info', 'Desconto de ' + brl(t.efetivado) + ' ainda sem registro de execução (LE/OB).');
+  return { totais: t, prazos: p, etapas: etapas, proxima_acao: prox, alertas: alertas, a_descontar: t.efetivado };
+}
+
+// Compara o valor informado/apontado com a fonte externa (CNES, SIH, SIA).
+function compararExterno(valorInformado, valorReferencia, tolPct) {
+  var a = num(valorInformado), b = num(valorReferencia);
+  if (valorReferencia === '' || valorReferencia === null || valorReferencia === undefined) return { ok: null, msg: 'Sem referência externa.' };
+  var dif = a - b, pct = b !== 0 ? Math.abs(dif) / Math.abs(b) * 100 : (a === 0 ? 0 : 100);
+  var ok = pct <= (+tolPct || 5);
+  return { ok: ok, dif: r2(dif), pct: r2(pct), msg: ok ? 'Confere com a fonte externa (diferença de ' + r2(pct) + '%).' : 'Diverge da fonte externa em ' + r2(pct) + '% (informado ' + a + ', referência ' + b + ').' };
+}
+
+// ===== Textos (rascunhos para o servidor revisar; o que falta fica entre colchetes) =====
+function _v(x, rot) { return (x === '' || x === null || x === undefined) ? '[' + rot + ']' : x; }
+function _trimLabel(rec) { return _v(rec.trimestre, 'trimestre') + 'º trimestre de ' + _v(rec.ano, 'ano'); }
+function _listaItens(itens, tipo, calc) {
+  var out = [];
+  (itens || []).forEach(function (it, i) {
+    if (it.tipo !== tipo) return;
+    var l = calc.totais.linhas[i];
+    var dec = it.decisao === 'acatado' ? 'apontamento acatado' : it.decisao === 'nao_acatado' ? 'apontamento não acatado' : '[decisão pendente]';
+    var s = '- ' + _v(it.indicador, 'indicador') + ': valor apontado ' + brl(num(it.valor_apontado));
+    if (tipo === 'producao' && num(it.valor_compensado) > 0) s += '; compensado ' + brl(l.comp_valida) + (l.comp_fora_prazo ? ' (fora do prazo, não considerado)' : '');
+    s += '; ' + dec + (it.decisao === 'acatado' ? '; valor a descontar ' + brl(l.efetivado) : '') + '.';
+    if (it.justificativa_decisao) s += ' Fundamento: ' + it.justificativa_decisao;
+    out.push(s);
+  });
+  return out.length ? out.join('\n') : '- Nenhum apontamento.';
+}
+function gerarNotificacao(rec, itens, calc, pm) {
+  var t = calc.totais;
+  return [
+    'NOTIFICAÇÃO Nº [número] — ' + _v(rec.unidade, 'unidade'),
+    '',
+    'Ao(À) ' + _v(rec.sigla_oss, 'OSS') + ', responsável pela gestão de ' + _v(rec.unidade, 'unidade') + ' (Contrato de Gestão nº ' + _v(rec.contrato, 'C.G') + ').',
+    '',
+    'Assunto: apontamentos de desempenho do ' + _trimLabel(rec) + ' — oportunidade de defesa.',
+    '',
+    'Com fundamento em ' + pm.base_legal + ' e nas cláusulas do Contrato de Gestão [conferir a base legal vigente na versão atual do contrato], e com base no Parecer Técnico da CTAI ' + _v(rec.parecer_sei, 'nº do documento SEI do parecer') + ', ficam notificadas as seguintes metas não cumpridas:',
+    '',
+    'Produção:', _listaItens(itens, 'producao', calc),
+    '',
+    'Qualidade:', _listaItens(itens, 'qualidade', calc),
+    '',
+    'Valor total apontado: ' + brl(t.apontado) + '.',
+    '',
+    'A OSS dispõe de ' + pm.dias_defesa + ' dias úteis, contados da ciência desta notificação, para apresentar defesa técnica, com os documentos que a sustentem. Prazo final estimado: ' + _v(dBr(calc.prazos.prazo_defesa), 'a calcular após a data de envio') + '.',
+    'Metas de produção podem ser compensadas dentro do prazo contratual de compensação.',
+    '',
+    'Recife, ' + dBr(dIso(new Date())) + '.',
+    '[Assinatura e cargo]'
+  ].join('\n');
+}
+function gerarAta(rec, itens, calc, pm) {
+  var t = calc.totais;
+  return [
+    'ATA DE JULGAMENTO DE DESCONTOS — ' + _v(rec.unidade, 'unidade') + ' — ' + _trimLabel(rec),
+    '',
+    'Processo SEI nº ' + _v(rec.sei_processo, 'nº do processo') + ' | Contrato de Gestão nº ' + _v(rec.contrato, 'C.G') + ' | OSS: ' + _v(rec.sigla_oss, 'OSS'),
+    '',
+    '1. Do procedimento',
+    'Em ' + _v(dBr(rec.comissao_data), 'data da reunião') + ', reuniu-se a Comissão de Julgamento dos Descontos [composição conforme ato de designação: conferir] para deliberar sobre os apontamentos constantes do Parecer Técnico da CTAI ' + _v(rec.parecer_sei, 'nº do parecer') + ', nos termos de ' + pm.base_legal + '.',
+    'A OSS foi notificada em ' + _v(dBr(rec.notificacao_envio), 'data da notificação') + ' e o prazo de defesa terminou em ' + _v(dBr(calc.prazos.prazo_defesa), 'prazo') + '. ' +
+      (sim(rec.defesa) ? 'Foi apresentada defesa em ' + _v(dBr(rec.defesa_data), 'data da defesa') + ', analisada pelo Grupo Técnico de Avaliação em ' + _v(dBr(rec.grupo_tecnico_data), 'data') + '.' : nao(rec.defesa) ? 'Não foi apresentada defesa no prazo.' : '[informar se houve defesa]'),
+    '',
+    '2. Das decisões',
+    'Produção:', _listaItens(itens, 'producao', calc),
+    '',
+    'Qualidade:', _listaItens(itens, 'qualidade', calc),
+    '',
+    '3. Do resumo',
+    'Produção — apontado ' + brl(t.prod.apontado) + '; compensado ' + brl(t.prod.compensado) + '; acatado ' + brl(t.prod.acatado) + '; efetivado ' + brl(t.prod.efetivado) + '.',
+    'Qualidade — apontado ' + brl(t.qual.apontado) + '; acatado ' + brl(t.qual.acatado) + '; efetivado ' + brl(t.qual.efetivado) + '.',
+    'Valor total a ser descontado: ' + brl(t.efetivado) + '.',
+    '',
+    '4. Dos encaminhamentos',
+    'Encaminhe-se a Ata à OSS, para ciência e eventual recurso no prazo de ' + pm.dias_recurso + ' dias úteis [prazo a confirmar], e o processo à GAFCG para as providências de execução do desconto.',
+    '',
+    'Recife, ' + dBr(dIso(new Date())) + '.',
+    '[Assinaturas dos membros da Comissão]'
+  ].join('\n');
+}
+function gerarAnaliseRecurso(rec, itens, calc, pm) {
+  var t = calc.totais;
+  return [
+    'ANÁLISE DE RECURSO — ' + _v(rec.unidade, 'unidade') + ' — ' + _trimLabel(rec),
+    '',
+    'Processo SEI nº ' + _v(rec.sei_processo, 'nº do processo') + ' | Contrato de Gestão nº ' + _v(rec.contrato, 'C.G') + ' | OSS: ' + _v(rec.sigla_oss, 'OSS'),
+    '',
+    '1. Do histórico',
+    'Ata de julgamento enviada à OSS em ' + _v(dBr(rec.ata_envio_oss), 'data') + ' (ciência ' + (calc.prazos.ciencia_ata_presumida ? 'presumida' : 'registrada') + ' em ' + _v(dBr(calc.prazos.ciencia_ata), 'data') + '). Prazo para recurso até ' + _v(dBr(calc.prazos.prazo_recurso), 'prazo') + '. Recurso apresentado em ' + _v(dBr(rec.recurso_data), 'data do recurso') + (rec.recurso_data && calc.prazos.prazo_recurso ? (dParse(rec.recurso_data) <= dParse(calc.prazos.prazo_recurso) ? ' (tempestivo).' : ' (INTEMPESTIVO).') : '.'),
+    '',
+    '2. Dos argumentos da OSS',
+    '[resumir os argumentos do recurso, ponto a ponto]',
+    '',
+    '3. Da análise por apontamento',
+    'Produção:', _listaItens(itens, 'producao', calc),
+    '',
+    'Qualidade:', _listaItens(itens, 'qualidade', calc),
+    '[para cada apontamento: argumento da OSS, evidência apresentada, conferência com a fonte (relatório, CNES, SIH/SIA), conclusão]',
+    '',
+    '4. Da conclusão',
+    'Valor a descontar antes do recurso: ' + brl(t.efetivado) + '. [Valor após o recurso: ______ ]',
+    '[Decisão: manter / reformar a Ata, com fundamento em ' + pm.base_legal + ']',
+    '',
+    'Recife, ' + dBr(dIso(new Date())) + '.',
+    '[Assinatura e cargo]'
+  ].join('\n');
+}
+// ===== FIM DO NÚCLEO =====
+
+// ===== TELA: aba "Descontos" do Analista =====
+var DESC = { lista: [], params: null, pmapa: null, aba: 'lista', atual: null, itens: [], eventos: [], filtro: { ano: '', tri: '', tipo: '', q: '' }, resumoRef: [], tela: null };
+var DESC_FONTES = [
+  { fonte: 'CNES-LT', nome: 'CNES — Leitos', chaves: 'leitos_existentes, leitos_sus, leitos_uti', uso: 'Taxa de ocupação, leitos contratados x cadastrados.', onde: 'Arquivos LT (leitos) do CNES, por UF e mês, no FTP do DATASUS; ou TabNet > CNES > Leitos.' },
+  { fonte: 'CNES-PF', nome: 'CNES — Profissionais', chaves: 'profissionais_total, medicos, enfermeiros', uso: 'Conferir médicos e demais profissionais cadastrados na unidade.', onde: 'Arquivos PF (profissionais) do CNES, por UF e mês; ou TabNet > CNES > Profissionais.' },
+  { fonte: 'CNES-SR', nome: 'CNES — Serviços especializados', chaves: 'servicos_habilitados', uso: 'Serviços e habilitações da unidade.', onde: 'Arquivos SR do CNES.' },
+  { fonte: 'SIH', nome: 'SIH/SUS — Internações', chaves: 'saidas, aih_aprovadas, valor_aih', uso: 'Saídas hospitalares, AIH aprovadas.', onde: 'Arquivos RD (AIH reduzida) do SIH, por UF e mês; ou TabNet > Hospitalares.' },
+  { fonte: 'SIA', nome: 'SIA/SUS — Ambulatorial', chaves: 'consultas, procedimentos_aprovados', uso: 'Produção ambulatorial (consultas, exames).', onde: 'Arquivos PA (produção ambulatorial) do SIA, por UF e mês; ou TabNet > Ambulatorial.' }
+];
+var DESC_ROTULOS_DEC = { '': '— pendente —', acatado: 'Acatado (desconto mantido)', nao_acatado: 'Não acatado (afastado)' };
+
+function dEsc(s) { return typeof escHtml === 'function' ? escHtml(s) : String(s === null || s === undefined ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+function dIn(id, v, tipo, extra) { return '<input id="' + id + '" type="' + (tipo || 'text') + '" value="' + dEsc(tipo === 'date' ? dIso(dParse(v)) : v) + '" ' + (extra || '') + ' oninput="descMudou()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">'; }
+function dSel(id, v, opcoes, extra) { return '<select id="' + id + '" onchange="descMudou()" ' + (extra || '') + ' style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">' + opcoes.map(function (o) { return '<option value="' + dEsc(o[0]) + '"' + (String(v || '') === String(o[0]) ? ' selected' : '') + '>' + dEsc(o[1]) + '</option>'; }).join('') + '</select>'; }
+function dCampo(rot, html, dica) { return '<label style="display:block;font-size:0.78rem;color:#495057;font-weight:600;">' + dEsc(rot) + (dica ? '<span style="display:block;font-weight:400;color:#6c757d;font-size:0.74rem;">' + dEsc(dica) + '</span>' : '') + '<div style="margin-top:3px;">' + html + '</div></label>'; }
+function dCartao(titulo, corpo, extraStyle) { return '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:16px;margin-bottom:14px;box-shadow:0 1px 2px rgba(0,0,0,0.04);' + (extraStyle || '') + '"><h3 style="margin:0 0 12px;font-size:0.95rem;">' + dEsc(titulo) + '</h3>' + corpo + '</div>'; }
+function dGrade(n, corpo) { return '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(' + (n || 180) + 'px,1fr));gap:12px;">' + corpo + '</div>'; }
+function dPmapa() { return DESC.pmapa || paramsMapa([]); }
+var SIM_NAO = [['', '—'], ['sim', 'Sim'], ['nao', 'Não']];
+
+async function descCarregarBase() {
+  const r = await api('descontos/listar');
+  if (r.ok) DESC.lista = r.descontos || [];
+  const p = await api('descontos/parametros');
+  if (p.ok) { DESC.params = p.parametros; DESC.pmapa = paramsMapa(p.parametros); }
+  return r;
+}
+
+async function renderDescontos() {
+  const content = document.getElementById('content'); if (!content) return;
+  content.innerHTML = '<p style="color:#6c757d;">Carregando descontos…</p>';
+  const r = await descCarregarBase();
+  if (!r.ok) { content.innerHTML = '<div style="background:#fff3cd;padding:14px;border-radius:6px;">Não consegui abrir os descontos: ' + dEsc(r.erro || 'erro') + '. Se for a primeira vez, confira se o Code.gs e o Descontos.gs foram colados e publicados em Nova versão.</div>'; return; }
+  DESC.aba = 'lista'; descDesenhar();
+}
+function descAbas() {
+  const ab = [['lista', 'Registros', 'ti-list'], ['painel', 'Painel', 'ti-chart-bar'], ['fontes', 'Fontes externas', 'ti-database-import'], ['params', 'Parâmetros', 'ti-adjustments']];
+  return '<div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;">' + ab.map(function (a) { const at = DESC.aba === a[0] || (DESC.aba === 'ficha' && a[0] === 'lista'); return '<button class="btn btn-sm ' + (at ? 'btn-primary' : 'btn-secondary') + '" onclick="descIrAba(\'' + a[0] + '\')"><i class="ti ' + a[2] + '"></i> ' + a[1] + '</button>'; }).join('') + '</div>';
+}
+async function descIrAba(a) { DESC.aba = a; if (a === 'fontes') { const r = await api('descontos/ref-resumo'); DESC.resumoRef = r.ok ? r.resumo : []; const n = await api('descontos/necessidades'); DESC.falta = n.ok ? n.falta : []; } descDesenhar(); }
+function descDesenhar() {
+  const c = document.getElementById('content'); if (!c) return;
+  let corpo = '';
+  if (DESC.aba === 'lista') corpo = descHtmlLista();
+  else if (DESC.aba === 'painel') corpo = descHtmlPainel();
+  else if (DESC.aba === 'fontes') corpo = descHtmlFontes();
+  else if (DESC.aba === 'params') corpo = descHtmlParams();
+  else if (DESC.aba === 'ficha') corpo = descHtmlFicha();
+  c.innerHTML = (DESC.aba === 'ficha' ? '' : descAbas()) + corpo;
+  if (DESC.aba === 'ficha') descRecalcular();
+}
+
+// ---------- LISTA ----------
+function descFiltrar() {
+  const f = DESC.filtro, q = (f.q || '').toLowerCase();
+  return DESC.lista.filter(function (r) { return (!f.ano || String(r.ano) === f.ano) && (!f.tri || String(r.trimestre) === f.tri) && (!f.tipo || r.tipo === f.tipo) && (!q || [r.unidade, r.contrato, r.sigla_oss, r.sei_processo].join(' ').toLowerCase().indexOf(q) > -1); });
+}
+function descHtmlLista() {
+  const anos = Array.from(new Set(DESC.lista.map(function (r) { return String(r.ano); }))).sort().reverse();
+  const f = DESC.filtro, ls = descFiltrar();
+  const filtros = '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:end;margin-bottom:14px;">' +
+    '<div style="width:110px;">' + dCampo('Ano', '<select onchange="DESC.filtro.ano=this.value;descDesenhar()" style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;"><option value="">Todos</option>' + anos.map(function (a) { return '<option' + (f.ano === a ? ' selected' : '') + '>' + a + '</option>'; }).join('') + '</select>') + '</div>' +
+    '<div style="width:110px;">' + dCampo('Trimestre', '<select onchange="DESC.filtro.tri=this.value;descDesenhar()" style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;"><option value="">Todos</option>' + [1, 2, 3, 4].map(function (t) { return '<option value="' + t + '"' + (f.tri === String(t) ? ' selected' : '') + '>' + t + 'º</option>'; }).join('') + '</select>') + '</div>' +
+    '<div style="width:130px;">' + dCampo('Tipo', '<select onchange="DESC.filtro.tipo=this.value;descDesenhar()" style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;"><option value="">Todos</option>' + ['HOSPITAL', 'UPA', 'UPAE'].map(function (t) { return '<option' + (f.tipo === t ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>') + '</div>' +
+    '<div style="flex:1;min-width:180px;">' + dCampo('Buscar', '<input value="' + dEsc(f.q) + '" oninput="DESC.filtro.q=this.value;clearTimeout(window._dq);window._dq=setTimeout(descDesenhar,300)" placeholder="unidade, contrato, OSS ou SEI" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">') + '</div>' +
+    '<button class="btn btn-primary" onclick="descAbrir(null)"><i class="ti ti-plus"></i> Novo desconto</button></div>';
+  const totA = ls.reduce(function (s, r) { return s + (r.resumo ? r.resumo.apontado : 0); }, 0), totD = ls.reduce(function (s, r) { return s + (r.resumo ? r.resumo.a_descontar : 0); }, 0), nAl = ls.reduce(function (s, r) { return s + (r.resumo ? r.resumo.alertas_erro : 0); }, 0);
+  const kpi = '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px;">' + [['Registros', ls.length], ['Total apontado', brl(totA)], ['Total a descontar', brl(totD)], ['Alertas graves', nAl]].map(function (k) { return '<div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:10px 16px;min-width:140px;"><div style="font-size:0.72rem;color:#6c757d;">' + k[0] + '</div><div style="font-size:1.15rem;font-weight:700;">' + k[1] + '</div></div>'; }).join('') + '</div>';
+  if (!ls.length) return filtros + '<div style="background:#fff;border:1px dashed #ced4da;border-radius:8px;padding:30px;text-align:center;color:#6c757d;">Nenhum registro ainda. Clique em <strong>Novo desconto</strong> para lançar o primeiro (por exemplo, o 1º trimestre de 2025).</div>';
+  const grupos = {};
+  ls.forEach(function (r) { const k = r.ano + ' · ' + r.trimestre + 'º trimestre'; (grupos[k] = grupos[k] || []).push(r); });
+  const html = Object.keys(grupos).sort().reverse().map(function (k) {
+    const linhas = grupos[k].sort(function (a, b) { return String(a.unidade).localeCompare(String(b.unidade)); }).map(function (r) {
+      const s = r.resumo || {};
+      return '<tr style="cursor:pointer;" onclick="descAbrir(' + r.id + ')"><td><strong>' + dEsc(r.unidade) + '</strong><div style="font-size:0.72rem;color:#6c757d;">' + dEsc(r.tipo || '') + ' · C.G ' + dEsc(r.contrato || '—') + ' · ' + dEsc(r.sigla_oss || '') + '</div></td>' +
+        '<td style="font-size:0.78rem;">' + dEsc(r.sei_processo || '—') + '</td><td style="text-align:right;">' + brl(s.apontado || 0) + '</td><td style="text-align:right;font-weight:700;">' + brl(s.a_descontar || 0) + '</td>' +
+        '<td style="font-size:0.8rem;">' + dEsc(s.proxima_acao || '') + '</td><td>' + (s.alertas_erro ? '<span class="badge-status" style="background:#f8d7da;color:#842029;">' + s.alertas_erro + ' grave(s)</span>' : s.alertas ? '<span class="badge-status" style="background:#fff3cd;color:#664d03;">' + s.alertas + ' aviso(s)</span>' : '<span class="badge-status">ok</span>') + '</td></tr>';
+    }).join('');
+    return '<h3 style="margin:18px 0 8px;font-size:0.95rem;">' + dEsc(k) + '</h3><div style="overflow-x:auto;background:#fff;border:1px solid #dee2e6;border-radius:8px;"><table style="width:100%;border-collapse:collapse;font-size:0.85rem;" class="desc-tab"><thead><tr style="background:#f8f9fa;text-align:left;"><th style="padding:8px;">Unidade</th><th>SEI</th><th style="text-align:right;">Apontado</th><th style="text-align:right;">A descontar</th><th>Próxima ação</th><th>Situação</th></tr></thead><tbody>' + linhas + '</tbody></table></div>';
+  }).join('');
+  return '<style>.desc-tab td,.desc-tab th{padding:8px;border-top:1px solid #eef0f2;vertical-align:top}.desc-tab tbody tr:hover{background:#f8f9fa}</style>' + filtros + kpi + html;
+}
+
+// ---------- PAINEL ----------
+function descHtmlPainel() {
+  const por = {}, acoes = {};
+  DESC.lista.forEach(function (r) { const k = r.ano + '-T' + r.trimestre; const m = por[k] = por[k] || { n: 0, ap: 0, de: 0 }; m.n++; m.ap += r.resumo.apontado; m.de += r.resumo.a_descontar; const a = r.resumo.proxima_acao.replace(/ até .*/, ''); acoes[a] = (acoes[a] || 0) + 1; });
+  const tr = Object.keys(por).sort().reverse().map(function (k) { return '<tr><td>' + k + '</td><td style="text-align:right;">' + por[k].n + '</td><td style="text-align:right;">' + brl(por[k].ap) + '</td><td style="text-align:right;font-weight:700;">' + brl(por[k].de) + '</td></tr>'; }).join('');
+  const ac = Object.keys(acoes).sort(function (a, b) { return acoes[b] - acoes[a]; }).map(function (a) { return '<tr><td>' + dEsc(a) + '</td><td style="text-align:right;">' + acoes[a] + '</td></tr>'; }).join('');
+  const venc = DESC.lista.filter(function (r) { return r.resumo.prazo_defesa && !r.defesa && dParse(r.resumo.prazo_defesa) >= dParse(dIso(new Date())) && dParse(r.resumo.prazo_defesa) <= dAdd(dParse(dIso(new Date())), 10); });
+  return '<style>.desc-tab td,.desc-tab th{padding:8px;border-top:1px solid #eef0f2}</style>' +
+    dCartao('Por trimestre', '<table class="desc-tab" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="text-align:left;"><th>Trimestre</th><th style="text-align:right;">Registros</th><th style="text-align:right;">Apontado</th><th style="text-align:right;">A descontar</th></tr></thead><tbody>' + (tr || '<tr><td colspan="4" style="color:#6c757d;">Sem dados.</td></tr>') + '</tbody></table>') +
+    dCartao('O que cada registro está esperando', '<table class="desc-tab" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><tbody>' + (ac || '<tr><td style="color:#6c757d;">Sem dados.</td></tr>') + '</tbody></table>') +
+    dCartao('Prazos de defesa que vencem nos próximos 10 dias', venc.length ? venc.map(function (r) { return '<div style="padding:4px 0;font-size:0.85rem;">' + dEsc(r.unidade) + ' (' + r.ano + ' T' + r.trimestre + ') — vence em <strong>' + dBr(r.resumo.prazo_defesa) + '</strong></div>'; }).join('') : '<span style="color:#6c757d;font-size:0.85rem;">Nenhum.</span>');
+}
+
+// ---------- FICHA ----------
+async function descAbrir(id) {
+  if (id === null) { DESC.atual = { id: '', unidade: '', tipo: 'HOSPITAL', ano: new Date().getFullYear(), trimestre: 1, defesa: '', recurso: '', base_legal_conferida: '', ata_revisada: '' }; DESC.itens = []; DESC.eventos = []; }
+  else { const r = await api('descontos/obter', { id: id }); if (!r.ok) { mostrarToast(r.erro || 'Erro ao abrir.'); return; } DESC.atual = r.desconto; DESC.itens = r.itens || []; DESC.eventos = r.eventos || []; }
+  DESC.aba = 'ficha'; DESC._sujo = false; DESC._redesenharItens = true; descDesenhar();
+}
+function descHtmlFicha() {
+  const a = DESC.atual;
+  const dados = dCartao('Identificação', dGrade(190,
+    dCampo('Unidade', dIn('f_unidade', a.unidade)) + dCampo('Tipo', dSel('f_tipo', a.tipo, [['HOSPITAL', 'Hospital'], ['UPA', 'UPA'], ['UPAE', 'UPAE'], ['OUTRO', 'Outro']])) +
+    dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
+    dCampo('CNES', dIn('f_cnes', a.cnes, 'text', 'placeholder="7 dígitos"'), 'usado nas conferências externas') + dCampo('Ano', dIn('f_ano', a.ano, 'number')) +
+    dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) + dCampo('Processo SEI', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"'))));
+  const parecer = dCartao('1. Parecer da CTAI', dGrade(190, dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))));
+  const notif = dCartao('2. Notificação e defesa', dGrade(190,
+    dCampo('Base legal conferida com o contrato vigente?', dSel('f_base_legal_conferida', a.base_legal_conferida, SIM_NAO)) + dCampo('Data de envio da notificação', dIn('f_notificacao_envio', a.notificacao_envio, 'date')) +
+    dCampo('Ciência expressa da OSS', dIn('f_ciencia_data', a.ciencia_data, 'date'), 'deixe vazio se não houve') + dCampo('Apresentou defesa?', dSel('f_defesa', a.defesa, SIM_NAO)) + dCampo('Data da defesa', dIn('f_defesa_data', a.defesa_data, 'date'))) + '<div id="d_prazos" style="margin-top:10px;"></div>');
+  const julg = dCartao('3. Julgamento e Ata', dGrade(190,
+    dCampo('Pré-julgamento (Grupo Técnico / CASSCG)', dIn('f_grupo_tecnico_data', a.grupo_tecnico_data, 'date')) + dCampo('Reunião da Comissão', dIn('f_comissao_data', a.comissao_data, 'date')) +
+    dCampo('Ata revisada?', dSel('f_ata_revisada', a.ata_revisada, SIM_NAO)) + dCampo('Documento SEI da Ata', dIn('f_ata_sei', a.ata_sei)) +
+    dCampo('Ata enviada à OSS em', dIn('f_ata_envio_oss', a.ata_envio_oss, 'date')) + dCampo('Ciência da Ata pela OSS', dIn('f_ata_ciencia_data', a.ata_ciencia_data, 'date'), 'vazio se não houve') + dCampo('Processo enviado à GAFCG em', dIn('f_envio_gafcg', a.envio_gafcg, 'date'))));
+  const rec = dCartao('4. Recurso e execução', dGrade(190,
+    dCampo('A OSS pediu recurso?', dSel('f_recurso', a.recurso, SIM_NAO)) + dCampo('Data do recurso', dIn('f_recurso_data', a.recurso_data, 'date')) + dCampo('Decisão do recurso em', dIn('f_recurso_decisao_data', a.recurso_decisao_data, 'date')) +
+    dCampo('Execução (GAOCG)', dSel('f_execucao_tipo', a.execucao_tipo, [['', '—'], ['superavitario', 'Superavitário: deduz das parcelas'], ['deficitario', 'Deficitário: prestação de contas']])) +
+    dCampo('Data da execução', dIn('f_execucao_data', a.execucao_data, 'date')) + dCampo('LE / OB', dIn('f_execucao_ref', a.execucao_ref))) +
+    '<div style="margin-top:10px;">' + dCampo('Observações', '<textarea id="f_observacoes" oninput="descMudou()" rows="2" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(a.observacoes) + '</textarea>') + '</div>');
+  const ev = DESC.eventos.length ? dCartao('Histórico', DESC.eventos.slice().reverse().map(function (e) { return '<div style="font-size:0.78rem;padding:2px 0;color:#495057;">' + dEsc(String(e.quando).slice(0, 16).replace('T', ' ')) + ' — ' + dEsc(e.usuario) + ' ' + dEsc(e.evento) + (e.detalhe ? ': ' + dEsc(e.detalhe) : '') + '</div>'; }).join('')) : '';
+  return '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button><button class="btn btn-primary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
+    '<button class="btn btn-secondary btn-sm" onclick="descTexto(\'notificacao\')">Gerar notificação</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'ata\')">Gerar Ata</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'recurso\')">Gerar análise de recurso</button><span id="d_sujo" style="font-size:0.78rem;color:#842029;"></span></div>' +
+    '<div id="d_resumo"></div>' + dados + parecer + notif + dCartao('Apontamentos do parecer', '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button></div><p style="font-size:0.74rem;color:#6c757d;margin:8px 0 0;">Acatado = o apontamento da CTAI é mantido e entra no desconto. Não acatado = é afastado. Em produção, a compensação feita dentro do prazo abate o valor.</p>') + julg + rec +
+    '<div id="d_texto"></div>' + ev;
+}
+function descLerFicha() {
+  const a = DESC.atual, g = function (id) { const e = document.getElementById('f_' + id); return e ? e.value : ''; };
+  ['unidade', 'tipo', 'sigla_oss', 'contrato', 'cnes', 'ano', 'trimestre', 'sei_processo', 'parecer_sei', 'parecer_data', 'base_legal_conferida', 'notificacao_envio', 'ciencia_data', 'defesa', 'defesa_data', 'grupo_tecnico_data', 'comissao_data', 'ata_revisada', 'ata_sei', 'ata_envio_oss', 'ata_ciencia_data', 'envio_gafcg', 'recurso', 'recurso_data', 'recurso_decisao_data', 'execucao_tipo', 'execucao_data', 'execucao_ref', 'observacoes'].forEach(function (c) { if (document.getElementById('f_' + c)) a[c] = g(c); });
+  DESC.itens.forEach(function (it, i) { ['indicador', 'valor_apontado', 'valor_compensado', 'data_compensacao', 'prazo_compensacao', 'decisao', 'justificativa_decisao', 'fonte_externa', 'chave_externa', 'valor_informado', 'valor_referencia'].forEach(function (c) { const e = document.getElementById('i_' + c + '_' + i); if (e) it[c] = e.value; }); });
+}
+function descMudou() { DESC._sujo = true; const s = document.getElementById('d_sujo'); if (s) s.textContent = 'Alterações não salvas'; clearTimeout(window._dr); window._dr = setTimeout(descRecalcular, 250); }
+function descAddItem(tipo) { descLerFicha(); DESC.itens.push({ tipo: tipo, indicador: '', valor_apontado: '', decisao: '' }); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
+function descRemItem(i) { descLerFicha(); DESC.itens.splice(i, 1); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
+function descRecalcular() {
+  const a = DESC.atual; if (!a || DESC.aba !== 'ficha') return;
+  descLerFicha();
+  const pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm), t = f.totais;
+  // prazos
+  const p = f.prazos, pz = document.getElementById('d_prazos');
+  if (pz) pz.innerHTML = '<div style="font-size:0.82rem;background:#f8f9fa;border-radius:6px;padding:8px 10px;">' + (p.ciencia ? 'Ciência ' + (p.ciencia_presumida ? '<em>presumida</em>' : 'registrada') + ' em <strong>' + dBr(p.ciencia) + '</strong> · prazo de defesa até <strong>' + dBr(p.prazo_defesa) + '</strong> (' + pm.dias_defesa + ' dias úteis' + (pm.feriados_extras ? '' : '; só feriados nacionais') + ')' : 'Informe a data de envio da notificação para calcular o prazo.') + '</div>';
+  // resumo
+  const cor = { erro: '#f8d7da', aviso: '#fff3cd', info: '#e7f1ff' };
+  const rs = document.getElementById('d_resumo');
+  if (rs) rs.innerHTML = '<div style="background:#fff;border:1px solid #dee2e6;border-left:4px solid #5c636a;border-radius:8px;padding:14px;margin-bottom:14px;"><div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:8px;">' +
+    [['Produção apontada', brl(t.prod.apontado)], ['Compensado', brl(t.prod.compensado)], ['Qualidade apontada', brl(t.qual.apontado)], ['Valor a descontar', '<strong style="font-size:1.1rem;">' + brl(f.a_descontar) + '</strong>']].map(function (k) { return '<div><div style="font-size:0.7rem;color:#6c757d;">' + k[0] + '</div><div>' + k[1] + '</div></div>'; }).join('') + '</div>' +
+    '<div style="font-size:0.85rem;"><strong>Próxima ação:</strong> ' + dEsc(f.proxima_acao) + '</div>' +
+    (t.pct_qualidade_sobre_producao !== null ? '<div style="font-size:0.74rem;color:#6c757d;margin-top:2px;">Qualidade equivale a ' + t.pct_qualidade_sobre_producao + '% da produção apontada.</div>' : '') +
+    (f.alertas.length ? '<div style="margin-top:8px;">' + f.alertas.map(function (x) { return '<div style="background:' + cor[x.nivel] + ';border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x.msg) + '</div>'; }).join('') + '</div>' : '') + '</div>';
+  // itens: só redesenha a lista quando a estrutura muda; senão atualiza os valores no lugar (não tira o cursor do campo)
+  const box = document.getElementById('d_itens'); if (!box) return;
+  if (!DESC._redesenharItens && box.children.length === DESC.itens.length && DESC.itens.length) {
+    DESC.itens.forEach(function (it, i) { const l = t.linhas[i] || {}, e = document.getElementById('i_efet_' + i); if (e) e.innerHTML = 'A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : ''); const m = document.getElementById('i_ext_msg_' + i); if (m && it.valor_referencia !== '' && it.valor_referencia !== undefined && !/Faltam|Não há/.test(m.textContent)) m.innerHTML = descMsgExterno(it); });
+    return;
+  }
+  DESC._redesenharItens = false;
+  if (!DESC.itens.length) { box.innerHTML = '<p style="color:#6c757d;font-size:0.85rem;margin:0;">Nenhum apontamento. Use os botões abaixo.</p>'; return; }
+  const trim = [1, 2, 3].map(function (k) { return a.ano + '-' + String((+a.trimestre - 1) * 3 + k).padStart(2, '0'); });
+  box.innerHTML = DESC.itens.map(function (it, i) {
+    const l = t.linhas[i] || {}, prod = it.tipo === 'producao';
+    const ext = '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:0.78rem;color:#495057;">Conferência com fonte externa (CNES, SIH, SIA)' + (it.fonte_externa ? ' — ' + dEsc(it.fonte_externa) : '') + '</summary><div style="margin-top:8px;">' + dGrade(150,
+      dCampo('Fonte', dSel('i_fonte_externa_' + i, it.fonte_externa, [['', '—']].concat(DESC_FONTES.map(function (x) { return [x.fonte, x.nome]; })))) + dCampo('Chave do dado', dIn('i_chave_externa_' + i, it.chave_externa, 'text', 'placeholder="ex.: saidas"')) +
+      dCampo('Valor informado pela unidade', dIn('i_valor_informado_' + i, it.valor_informado)) + dCampo('Valor na fonte', dIn('i_valor_referencia_' + i, it.valor_referencia)) +
+      '<div style="align-self:end;"><button class="btn btn-secondary btn-sm" onclick="descBuscarRef(' + i + ')">Buscar nos dados importados</button></div>') +
+      '<div id="i_ext_msg_' + i + '" style="font-size:0.8rem;margin-top:6px;">' + (it.valor_referencia !== '' && it.valor_referencia !== undefined ? descMsgExterno(it) : '') + '</div></div></details>';
+    return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:' + (l.fora_prazo_compensacao ? '#fff5f5' : '#fff') + ';"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;"><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span><button class="btn btn-sm btn-secondary" onclick="descRemItem(' + i + ')" title="Remover"><i class="ti ti-trash"></i></button></div>' +
+      dGrade(prod ? 150 : 190, dCampo('Indicador', dIn('i_indicador_' + i, it.indicador)) + dCampo('Valor apontado (R$)', dIn('i_valor_apontado_' + i, it.valor_apontado)) +
+        (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '') +
+        dCampo('Decisão', dSel('i_decisao_' + i, it.decisao, Object.keys(DESC_ROTULOS_DEC).map(function (k) { return [k, DESC_ROTULOS_DEC[k]]; }))) + dCampo('Fundamento da decisão', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao))) +
+      '<div id="i_efet_' + i + '" style="font-size:0.8rem;margin-top:6px;">A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : '') + '</div>' + ext + '</div>';
+  }).join('');
+}
+function descMsgExterno(it) { const c = compararExterno(it.valor_informado !== '' && it.valor_informado !== undefined ? it.valor_informado : it.valor_apontado, it.valor_referencia, dPmapa().tolerancia_externa_pct); return '<span style="color:' + (c.ok === false ? '#842029' : '#0f5132') + ';">' + dEsc(c.msg) + '</span>'; }
+async function descBuscarRef(i) {
+  descLerFicha(); const it = DESC.itens[i], a = DESC.atual, m = document.getElementById('i_ext_msg_' + i);
+  if (!a.cnes || !it.fonte_externa || !it.chave_externa) { m.innerHTML = 'Preencha o CNES da unidade, a fonte e a chave do dado.'; return; }
+  const comps = [1, 2, 3].map(function (k) { return a.ano + '-' + String((+a.trimestre - 1) * 3 + k).padStart(2, '0'); });
+  const r = await api('descontos/ref-consultar', { cnes: a.cnes, fonte: it.fonte_externa, chave: it.chave_externa, competencias: comps });
+  if (!r.ok) { m.innerHTML = dEsc(r.erro); return; }
+  const achadas = r.referencias.map(function (x) { return x.competencia; }), falta = comps.filter(function (c) { return achadas.indexOf(c) === -1; });
+  if (!achadas.length) { m.innerHTML = '<span style="color:#842029;">Não há dado de ' + dEsc(it.fonte_externa) + ' para o CNES ' + dEsc(a.cnes) + ' em ' + comps.join(', ') + '. Baixe manualmente e importe na aba "Fontes externas".</span>'; return; }
+  const soma = r.referencias.reduce(function (s, x) { return s + num(x.valor); }, 0);
+  document.getElementById('i_valor_referencia_' + i).value = r2(soma);
+  it.valor_referencia = r2(soma);
+  m.innerHTML = (falta.length ? '<span style="color:#664d03;">Faltam competências: ' + falta.join(', ') + '. A soma abaixo é parcial.</span><br>' : '') + descMsgExterno(it);
+  descMudou();
+}
+async function descSalvar() {
+  descLerFicha();
+  const r = await api('descontos/salvar', { registro: DESC.atual, itens: DESC.itens });
+  if (!r.ok) { mostrarToast(r.erro || 'Não salvou.'); return; }
+  DESC.atual.id = r.id; DESC._sujo = false; const s = document.getElementById('d_sujo'); if (s) s.textContent = ''; mostrarToast('Salvo.');
+}
+async function descVoltar() { if (DESC._sujo && !confirm('Há alterações não salvas. Sair mesmo assim?')) return; DESC._sujo = false; await renderDescontos(); }
+function descTexto(tipo) {
+  descLerFicha(); const a = DESC.atual, pm = dPmapa(), f = calcularFicha(a, DESC.itens, pm);
+  const campo = 'texto_' + tipo, existente = a[campo];
+  let txt = existente;
+  if (!txt || confirm('Já existe um texto salvo. Gerar de novo e substituir o rascunho na tela?')) txt = tipo === 'ata' ? gerarAta(a, DESC.itens, f, pm) : tipo === 'recurso' ? gerarAnaliseRecurso(a, DESC.itens, f, pm) : gerarNotificacao(a, DESC.itens, f, pm);
+  a[campo] = txt;
+  const nome = { notificacao: 'Notificação', ata: 'Ata de julgamento', recurso: 'Análise de recurso' }[tipo];
+  document.getElementById('d_texto').innerHTML = dCartao(nome + ' (rascunho para revisão)', '<p style="font-size:0.78rem;color:#6c757d;margin:0 0 8px;">O texto é montado com os dados da ficha. O que não foi preenchido fica entre [colchetes]. Modelo provisório: ajuste ao padrão oficial da DGMCG.</p><textarea id="d_txt_area" rows="22" oninput="DESC.atual.' + campo + '=this.value;descMudou()" style="width:100%;padding:10px;border:1px solid #ced4da;border-radius:6px;font-family:Arial,sans-serif;font-size:0.88rem;line-height:1.5;box-sizing:border-box;">' + dEsc(txt) + '</textarea><div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-sm btn-primary" onclick="descSalvar()">Salvar texto</button><button class="btn btn-sm btn-secondary" onclick="descCopiarTexto()">Copiar</button><button class="btn btn-sm btn-secondary" onclick="descBaixarDoc(\'' + tipo + '\')">Baixar .doc</button></div>');
+  document.getElementById('d_texto').scrollIntoView({ behavior: 'smooth' }); descMudou();
+}
+function descCopiarTexto() { const t = document.getElementById('d_txt_area'); if (!t) return; t.select(); try { document.execCommand('copy'); mostrarToast('Texto copiado.'); } catch (e) { mostrarToast('Selecione e copie manualmente.'); } }
+function descBaixarDoc(tipo) {
+  const t = (document.getElementById('d_txt_area') || {}).value || '', a = DESC.atual;
+  const html = '<html><head><meta charset="utf-8"></head><body style="font-family:Arial;font-size:12pt">' + t.split('\n').map(function (l) { return '<p style="margin:0 0 6pt">' + (dEsc(l) || '&nbsp;') + '</p>'; }).join('') + '</body></html>';
+  const blob = new Blob(['﻿', html], { type: 'application/msword' }), u = URL.createObjectURL(blob), el = document.createElement('a');
+  el.href = u; el.download = tipo + '_' + String(a.unidade || 'unidade').replace(/[^\w]+/g, '_') + '_' + a.ano + 'T' + a.trimestre + '.doc'; document.body.appendChild(el); el.click(); el.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 3000);
+}
+
+// ---------- FONTES EXTERNAS ----------
+function descHtmlFontes() {
+  const tab = DESC_FONTES.map(function (f) { return '<tr><td><strong>' + f.fonte + '</strong><div style="font-size:0.72rem;color:#6c757d;">' + dEsc(f.nome) + '</div></td><td style="font-size:0.8rem;">' + dEsc(f.uso) + '</td><td style="font-size:0.78rem;">' + dEsc(f.chaves) + '</td><td style="font-size:0.78rem;">' + dEsc(f.onde) + '</td></tr>'; }).join('');
+  const rs = DESC.resumoRef.length ? DESC.resumoRef.map(function (x) { return '<tr><td>' + dEsc(x.fonte) + '</td><td>' + dEsc(x.cnes) + '</td><td style="font-size:0.78rem;">' + x.competencias.join(', ') + '</td><td style="text-align:right;">' + x.linhas + '</td></tr>'; }).join('') : '<tr><td colspan="4" style="color:#6c757d;">Nada importado ainda.</td></tr>';
+  return '<style>.desc-tab td,.desc-tab th{padding:8px;border-top:1px solid #eef0f2;vertical-align:top}</style>' +
+    dCartao('Como estes dados chegam', '<p style="font-size:0.85rem;margin:0 0 8px;">Os dados do CNES, SIH e SIA são públicos, mas a maior parte vem em <strong>arquivos</strong> (.dbc) do DATASUS, não em API. O Analista ainda não está ligado a eles: por ora, baixe o arquivo, converta para planilha/CSV e importe aqui. Uma vez importado, o dado fica guardado e as conferências dos descontos o usam sozinhas.</p><div style="margin-bottom:8px;"><button class="btn btn-secondary btn-sm" onclick="descTestarApi()"><i class="ti ti-plug-connected"></i> Testar API do DATASUS a partir deste computador</button></div><div id="d_api_res" style="font-size:0.8rem;"></div>') +
+    dCartao('Fontes que o processo usa', '<div style="overflow-x:auto;"><table class="desc-tab" style="width:100%;border-collapse:collapse;"><thead><tr style="text-align:left;"><th>Fonte</th><th>Para quê</th><th>Chaves sugeridas</th><th>Onde baixar</th></tr></thead><tbody>' + tab + '</tbody></table></div>') +
+    dCartao('Importar dados (CSV)', '<p style="font-size:0.82rem;margin:0 0 8px;">Colunas: <code>fonte, cnes, competencia, chave, valor</code> (competência em AAAA-MM; separador vírgula ou ponto e vírgula). Uma linha por unidade, mês e chave. Reenviar a mesma combinação atualiza o valor.</p><input type="file" accept=".csv,.txt" onchange="descLerCsv(this.files[0])"><div style="margin:8px 0;"><button class="btn btn-secondary btn-sm" onclick="descModeloCsv()">Baixar modelo do CSV</button></div><div id="d_csv_prev"></div>') +
+    dCartao('O que já foi importado', '<table class="desc-tab" style="width:100%;border-collapse:collapse;font-size:0.85rem;"><thead><tr style="text-align:left;"><th>Fonte</th><th>CNES</th><th>Competências</th><th style="text-align:right;">Linhas</th></tr></thead><tbody>' + rs + '</tbody></table>') +
+    dCartao('O que falta baixar', descHtmlFalta());
+}
+function descHtmlFalta() {
+  const f = DESC.falta || [];
+  if (!f.length) return '<p style="font-size:0.85rem;margin:0;color:#0f5132;">Nada pendente: todo apontamento ligado a uma fonte externa tem os dados do trimestre importados (ou nenhum apontamento foi ligado a fonte ainda).</p>';
+  return '<p style="font-size:0.82rem;margin:0 0 6px;">Estes dados são necessários para conferir apontamentos já lançados e ainda não foram importados. Baixe manualmente e importe acima:</p><table class="desc-tab" style="width:100%;border-collapse:collapse;font-size:0.82rem;"><thead><tr style="text-align:left;"><th>Unidade</th><th>Trimestre</th><th>Fonte</th><th>CNES</th><th>Chave</th><th>Competências que faltam</th></tr></thead><tbody>' + f.map(function (x) { return '<tr><td>' + dEsc(x.unidade) + '</td><td>' + x.ano + ' T' + x.trimestre + '</td><td>' + dEsc(x.fonte) + '</td><td>' + dEsc(x.cnes || 'informar o CNES') + '</td><td>' + dEsc(x.chave) + '</td><td>' + dEsc(x.competencias.join(', ')) + '</td></tr>'; }).join('') + '</tbody></table>';
+}
+async function descTestarApi() {
+  const el = document.getElementById('d_api_res'); el.textContent = 'Testando…';
+  const urls = ['https://apidadosabertos.saude.gov.br/cnes/estabelecimentos?limit=1', 'https://apidadosabertos.saude.gov.br/v1/cnes/estabelecimentos?limit=1', 'https://apidadosabertos.saude.gov.br/'];
+  const out = [];
+  for (const u of urls) {
+    try { const c = new AbortController(); setTimeout(function () { c.abort(); }, 8000); const r = await fetch(u, { signal: c.signal }); out.push('<div>' + dEsc(u) + ' → HTTP ' + r.status + '</div>'); }
+    catch (e) { out.push('<div>' + dEsc(u) + ' → não respondeu ao navegador (' + dEsc(e.name === 'AbortError' ? 'tempo esgotado' : 'bloqueio de rede ou de CORS') + ')</div>'); }
+  }
+  el.innerHTML = out.join('') + '<div style="margin-top:6px;color:#6c757d;">Se aparecer HTTP 200, a API pode ser usada direto do navegador; se for bloqueio, o caminho é importar arquivos ou pedir à ATI uma ponte no servidor.</div>';
+}
+function descModeloCsv() {
+  const csv = 'fonte,cnes,competencia,chave,valor\nCNES-LT,2530538,2025-01,leitos_sus,120\nSIH,2530538,2025-01,saidas,540\n';
+  const u = URL.createObjectURL(new Blob(['﻿' + csv], { type: 'text/csv' })), a = document.createElement('a'); a.href = u; a.download = 'modelo_fontes_externas.csv'; a.click(); setTimeout(function () { URL.revokeObjectURL(u); }, 3000);
+}
+function descLerCsv(arq) {
+  if (!arq) return; const rd = new FileReader();
+  rd.onload = function () {
+    const txt = String(rd.result).replace(/^﻿/, ''), linhas = txt.split(/\r?\n/).filter(function (l) { return l.trim(); });
+    const sep = (linhas[0].match(/;/g) || []).length > (linhas[0].match(/,/g) || []).length ? ';' : ',';
+    const cab = linhas[0].split(sep).map(function (x) { return x.trim().toLowerCase(); }), need = ['fonte', 'cnes', 'competencia', 'chave', 'valor'];
+    const falt = need.filter(function (n) { return cab.indexOf(n) === -1; });
+    if (falt.length) { document.getElementById('d_csv_prev').innerHTML = '<span style="color:#842029;">Faltam colunas: ' + falt.join(', ') + '.</span>'; return; }
+    DESC._csv = linhas.slice(1).map(function (l) { const c = l.split(sep), o = {}; cab.forEach(function (h, i) { o[h] = (c[i] || '').trim(); }); return o; });
+    DESC._csvNome = arq.name;
+    document.getElementById('d_csv_prev').innerHTML = '<p style="font-size:0.82rem;">' + DESC._csv.length + ' linha(s) lida(s) de ' + dEsc(arq.name) + '. Primeira: ' + dEsc(JSON.stringify(DESC._csv[0] || {})) + '</p><button class="btn btn-primary btn-sm" onclick="descEnviarCsv()">Importar</button>';
+  };
+  rd.readAsText(arq, 'utf-8');
+}
+async function descEnviarCsv() {
+  const L = DESC._csv || [], lote = 800; let n = 0, at = 0, ig = 0;
+  for (let i = 0; i < L.length; i += lote) {
+    const r = await api('descontos/ref-importar', { linhas: L.slice(i, i + lote), arquivo: DESC._csvNome }, { timeoutMs: 60000 });
+    if (!r.ok) { mostrarToast(r.erro || 'Falhou.'); return; } n += r.novos; at += r.atualizados; ig += r.ignoradas;
+  }
+  mostrarToast('Importado: ' + n + ' novas, ' + at + ' atualizadas, ' + ig + ' ignoradas.'); DESC._csv = null; descIrAba('fontes');
+}
+
+// ---------- PARÂMETROS ----------
+function descHtmlParams() {
+  const adm = typeof usuarioAtual !== 'undefined' && usuarioAtual && usuarioAtual.perfil === 'admin';
+  const linhas = (DESC.params || []).map(function (p, i) {
+    return '<tr><td style="width:210px;"><strong>' + dEsc(p.chave) + '</strong></td><td style="width:260px;"><input id="p_valor_' + i + '" value="' + dEsc(p.valor) + '" ' + (adm ? '' : 'disabled') + ' style="width:100%;padding:6px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;"></td><td style="width:130px;"><select id="p_conf_' + i + '" ' + (adm ? '' : 'disabled') + ' style="width:100%;padding:6px;"><option value="sim"' + (p.confirmado === 'sim' ? ' selected' : '') + '>Confirmado</option><option value="nao"' + (p.confirmado !== 'sim' ? ' selected' : '') + '>A confirmar</option></select></td><td style="font-size:0.78rem;color:#6c757d;">' + dEsc(p.nota) + '</td></tr>';
+  }).join('');
+  return '<style>.desc-tab td{padding:8px;border-top:1px solid #eef0f2;vertical-align:top}</style>' + dCartao('Prazos e regras', '<p style="font-size:0.82rem;margin:0 0 8px;">Valores usados nos cálculos. Os marcados "A confirmar" ainda não têm base normativa localizada; mude aqui quando a regra for confirmada.</p><div style="overflow-x:auto;"><table class="desc-tab" style="width:100%;border-collapse:collapse;"><tbody>' + linhas + '</tbody></table></div>' + (adm ? '<div style="margin-top:10px;"><button class="btn btn-primary btn-sm" onclick="descSalvarParams()">Salvar parâmetros</button></div>' : '<p style="font-size:0.78rem;color:#6c757d;">Só o administrador altera.</p>'));
+}
+async function descSalvarParams() {
+  const lista = DESC.params.map(function (p, i) { return { chave: p.chave, valor: document.getElementById('p_valor_' + i).value, confirmado: document.getElementById('p_conf_' + i).value }; });
+  const r = await api('descontos/parametros-salvar', { parametros: lista });
+  if (!r.ok) { mostrarToast(r.erro || 'Não salvou.'); return; } DESC.params = r.parametros; DESC.pmapa = paramsMapa(r.parametros); mostrarToast('Parâmetros salvos.'); descDesenhar();
+}
+// ===== FIM DA TELA =====
