@@ -176,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.40';
-const VERSAO_RAIOX_DATA = '10/11/2026 18:00';
+const VERSAO_RAIOX = 'v0.41';
+const VERSAO_RAIOX_DATA = '10/11/2026 23:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -253,23 +253,74 @@ function abrirAba(a) {
 }
 
 // ==================== ENTRADA (tela inicial) ====================
+const FONTE_ROT = { ia: 'Leitura geral dos contratos (IA)', codigo: 'Conferência automática (regras)', gaocg: 'Comparação com o cadastro do GAOCG', ctai: 'Pareceres da CTAI (IA)' };
+const FONTE_FILTRO = { ia: 'ia', codigo: 'codigo', gaocg: 'gaocg', ctai: 'parecer' };
+const FAIXAS = [
+  ['desc', 'Parece descumprir norma', 'O diagnóstico jurídico indicou descumprimento. Vão primeiro para a revisão.', 'var(--bordo)'],
+  ['esc', 'Alcance a esclarecer', 'Faltam informações para dizer, ou envolvem empenho/dotação, ou o TCE-PE já tratou o assunto.', '#b8860b'],
+  ['orgao', 'Órgão de controle citado, sem norma indicada', 'Algum órgão (TCE-PE, CGE-PE, MPPE, MPCO) poderia questionar, mas nenhuma norma foi indicada.', '#2F6F8F'],
+  ['sem', 'Sem alcance jurídico aparente', 'Parecem falhas de forma ou de digitação.', '#5B6770'],
+  ['pend', 'Ainda sem diagnóstico', 'O diagnóstico da Lei 15.210 ainda não passou por eles. Não dá para dizer nada.', '#9AA3A8']
+];
+const ehFinanca = a => a.origem === 'gaocg' || /dota[cç][aã]o|empenho|or[cç]ament/i.test([a.titulo, a.descricao].join(' '));
+function fonteDe(a) { return ehParecerCtai(a) ? 'ctai' : (a.origem === 'gaocg' || a.origem === 'codigo') ? a.origem : 'ia'; }
+function faixaDe(a) {
+  const v = a.lei_diag ? a.lei_diag.veredito : '', fin = ehFinanca(a);
+  if (v === 'descumpre' && a.lei_diag.rev_estado !== 'corrigido') return 'desc';
+  if (!a.lei_diag && !fin) return 'pend';
+  if (v === 'falta_info' || (fin && (a.orgaos || a.gravidade === 'alta')) || a.tce_ref) return 'esc';
+  if (a.orgaos) return 'orgao';
+  return 'sem';
+}
+function mapaHtml(base) {
+  const fontes = Object.keys(FONTE_ROT), cont = {};
+  fontes.forEach(f => { cont[f] = { total: 0, alta: 0 }; FAIXAS.forEach(x => { cont[f][x[0]] = 0; }); });
+  base.forEach(a => { const f = fonteDe(a), c = cont[f]; c.total++; if (a.gravidade === 'alta') c.alta++; c[faixaDe(a)]++; });
+  const tot = FAIXAS.map(x => base.filter(a => faixaDe(a) === x[0]).length);
+  const linhas = fontes.map(f => `<tr><td class="rot" style="text-align:left"><b>${esc(FONTE_ROT[f])}</b><div class="dica">${fmt(cont[f].alta)} de gravidade alta</div></td><td><b>${fmt(cont[f].total)}</b></td>${FAIXAS.map(x => `<td style="${cont[f][x[0]] ? 'cursor:pointer' : 'color:#aaa'}" ${cont[f][x[0]] ? `onclick="irAchados({origem:'${FONTE_FILTRO[f]}'})" title="Abrir os achados desta origem"` : ''}>${fmt(cont[f][x[0]])}</td>`).join('')}</tr>`).join('');
+  const fin = base.filter(ehFinanca), finOrg = fin.filter(a => a.orgaos).length, finTce = fin.filter(a => a.tce_ref).length;
+  const tipos = {}; base.forEach(a => { const t0 = TIPO_ROT[a.tipo] || a.tipo || 'sem tipo', t = t0.charAt(0).toUpperCase() + t0.slice(1); tipos[t] = (tipos[t] || 0) + 1; });
+  const tipoL = Object.entries(tipos).sort((x, y) => y[1] - x[1]).slice(0, 8);
+  const un = {}; base.forEach(a => { const u = a.unidade || 'Sem unidade'; (un[u] = un[u] || { n: 0, alta: 0 }).n++; if (a.gravidade === 'alta') un[u].alta++; });
+  const unL = Object.entries(un).sort((x, y) => y[1].n - x[1].n).slice(0, 8);
+  const anos = {}; base.filter(ehParecerCtai).forEach(a => { const m = /^q:(\d{4})/.exec(a.escopo || ''); const y = m ? m[1] : 'Sem ano'; anos[y] = (anos[y] || 0) + 1; });
+  const anoL = Object.entries(anos).sort();
+  return `<div class="bloco"><h3 style="margin:0 0 4px">1. Quantos achados existem e de onde vieram</h3>
+    <p class="dica" style="font-size:.86rem">Cada linha é uma forma diferente de ler os contratos. Cada coluna diz se existe sinal de que o achado pode ter alcance jurídico. <b>Um sinal não é uma conclusão.</b> Clique em um número para abrir os achados daquela origem.</p>
+    <div style="overflow-x:auto"><table class="rx-mat"><thead><tr><th class="rot">Origem do achado</th><th>Total</th>${FAIXAS.map(x => `<th title="${esc(x[2])}" style="border-top:4px solid ${x[3]}">${esc(x[1])}</th>`).join('')}</tr></thead>
+    <tbody>${linhas}<tr style="background:#efebe3"><td class="rot"><b>Todas as origens</b></td><td><b>${fmt(base.length)}</b></td>${tot.map(n => `<td><b>${fmt(n)}</b></td>`).join('')}</tr></tbody></table></div>
+    <details style="margin-top:8px"><summary>O que significa cada coluna</summary><ul class="dica" style="font-size:.86rem;line-height:1.5">${FAIXAS.map(x => `<li><b>${esc(x[1])}:</b> ${esc(x[2])}</li>`).join('')}</ul></details></div>
+    <div class="bloco"><h3 style="margin:0 0 4px">2. Achados de dotação e empenho (finanças públicas)</h3>
+    <p style="margin:4px 0">${fmt(fin.length)} achados tratam de dotação, empenho ou orçamento (todos os do GAOCG e outros que citam esses termos). ${fmt(finOrg)} citam algum órgão de controle e ${fmt(finTce)} tocam assuntos que o TCE-PE já tratou.</p>
+    <p class="dica" style="font-size:.86rem">Atenção: estes achados são, em geral, divergências entre contrato, dotação e nota de empenho. O alcance jurídico deles costuma estar nas normas de finanças públicas (por exemplo, a Lei federal 4.320/1964, arts. 58 a 60, sobre empenho), e não na lei estadual das OSS (15.210/2013). Qual norma se aplica é decisão do jurídico; o texto oficial deve ser conferido.</p></div>
+    <div class="bloco"><h3 style="margin:0 0 4px">3. Que tipo de problema e onde ele aparece</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px">
+    <div><b>Tipos mais frequentes</b><table class="rx-mat" style="margin-top:6px"><tbody>${tipoL.map(x => `<tr><td class="rot" style="text-align:left">${esc(x[0])}</td><td>${fmt(x[1])}</td></tr>`).join('')}</tbody></table></div>
+    <div><b>Unidades com mais achados</b><table class="rx-mat" style="margin-top:6px"><tbody>${unL.map(x => `<tr style="cursor:pointer" onclick="irAchados({unidade:'${esc(x[0]).replace(/'/g, '&#39;')}'})"><td class="rot" style="text-align:left">${esc(x[0])}</td><td>${fmt(x[1].n)}</td><td class="dica">${fmt(x[1].alta)} alta(s)</td></tr>`).join('')}</tbody></table></div></div></div>
+    <div class="bloco"><h3 style="margin:0 0 4px">4. Se o problema se repete ao longo do tempo</h3>
+    ${anoL.length ? `<p style="margin:4px 0">Pareceres da CTAI com achados, por ano do parecer: ${anoL.map(x => `<b>${esc(x[0])}</b>: ${fmt(x[1])}`).join(' · ')}.</p>` : '<p class="dica">Ainda não há pareceres da CTAI lidos.</p>'}
+    <p class="dica" style="font-size:.86rem">Para os demais achados o sistema ainda não guarda a data do documento de origem com segurança, então não apresentamos uma linha do tempo deles para não induzir a erro. O aviso "o assunto aparece de novo depois do apontamento do TCE-PE" já existe em cada achado.</p></div>`;
+}
 async function telaEntrada() {
   $('conteudo').innerHTML = carregando('Carregando...');
   const nome = (($('quem') || {}).textContent || '').split(' ')[0];
   const gestor = PAPEL !== 'analista';
-  const [ra, rf] = await Promise.all([gestor ? api('raiox/achados', {}) : Promise.resolve({ ok: false }), api('raiox/fatias-listar', {})]);
+  const [ra, rf, rl] = await Promise.all([gestor ? api('raiox/achados', {}) : Promise.resolve({ ok: false }), api('raiox/fatias-listar', {}), gestor ? api('raiox/lei-obter', {}) : Promise.resolve({ ok: false })]);
   if (abaAtual !== 'entrada') return;
   const fs = (rf && rf.ok !== false && rf.fatias) || [];
   const abertas = fs.filter(f => f.situacao !== 'devolvida');
-  let tiles = '';
+  let tiles = '', mapa = '';
   if (gestor && ra && ra.ok !== false) {
     achados = prepararAchados(ra.achados || []);
+    const dm = {}; ((rl && rl.ok !== false && rl.itens) || []).forEach(i => { dm[i.id] = i; }); achados.forEach(a => { a.lei_diag = dm[a.id] || null; });
     const vis = achados.filter(visivel).filter(a => a.conf_estado !== 'resolvido');
     const atr = abertas.filter(f => pnIso(f) && pnIso(f) < hojeIso(0)).length;
     tiles = `<div class="tiles">
       <div class="tile"><h3>Achados a tratar</h3><div class="grande">${fmt(vis.length)}</div></div>
+      <div class="tile"><h3>Já conferidos pela equipe</h3><div class="grande">${fmt(vis.filter(a => a.conferido === 'sim').length)}</div></div>
       <div class="tile"><h3>Distribuições abertas</h3><div class="grande">${fmt(abertas.length)}</div></div>
       ${atr ? `<div class="tile"><h3>Com prazo vencido</h3><div class="grande" style="color:var(--bordo)">${fmt(atr)}</div></div>` : ''}</div>`;
+    mapa = mapaHtml(vis);
   } else {
     tiles = `<div class="tiles"><div class="tile"><h3>Distribuições com você</h3><div class="grande">${fmt(abertas.length)}</div></div></div>`;
   }
@@ -277,7 +328,7 @@ async function telaEntrada() {
   const atalhos = PAPEL === 'analista'
     ? atalho('minhas', 'ti-inbox', 'Minhas distribuições', 'Abra o lote que recebeu, confira cada achado e responda: Procede, Não procede ou Resolvido.')
     : atalho('painel', 'ti-layout-dashboard', 'Painel do coordenador', 'Distribuir achados com prazo, acompanhar quem está tratando e definir as regras de aviso.')
-      + atalho('achados', 'ti-list-search', 'Achados', 'Todos os pontos encontrados nos contratos, com filtros por setor, órgão e tema.')
+      + atalho('achados', 'ti-list-search', 'Achados', 'Todos os pontos encontrados, com filtros por origem, setor, órgão e tema.')
       + atalho('lei', 'ti-scale', 'Lei 15.210', 'Diagnóstico jurídico dos achados e dos pareceres da CTAI, com revisão pelo jurídico.')
       + atalho('pareceres', 'ti-file-text', 'Pareceres da CTAI', 'Os pareceres lidos e os achados que vieram deles.')
       + atalho('fatias', 'ti-send', 'Distribuições e pareceres', 'O que foi enviado, os pareceres recebidos e as devoluções.')
@@ -286,11 +337,13 @@ async function telaEntrada() {
       + atalho('chaves', 'ti-key', 'Chaves de IA', 'Guardar as chaves usadas na leitura e no diagnóstico.');
   const primeiro = PAPEL === 'analista'
     ? 'Abra "Minhas distribuições", escolha um lote e confira os achados um a um. Dê sempre o motivo ao marcar Resolvido.'
-    : 'Abra o Painel, veja os avisos de prazo e distribua os achados que ainda estão sem distribuição. Depois acompanhe as respostas e revise o diagnóstico da Lei 15.210 pelos que parecem descumprir.';
+    : 'Leia o mapa acima. Depois abra a aba "Lei 15.210" e comece pelos achados da primeira coluna ("Parece descumprir norma"), confirmando ou corrigindo cada um. Os da coluna "Ainda sem diagnóstico" só entram na análise quando o diagnóstico rodar neles.';
   $('conteudo').innerHTML = `<div class="bloco"><h2><i class="ti ti-home"></i> Olá${nome ? ', ' + esc(nome) : ''} <small>Raio-X dos contratos de gestão</small></h2>
-    <p style="margin:6px 0">O Raio-X lê os documentos dos contratos de gestão e aponta pontos que merecem conferência: valores que não batem, prazos contraditórios, anexos que faltam. Também compara com a Lei estadual 15.210/2013 e com o que o TCE-PE já cobrou.</p>
-    <p class="dica">Cada ponto é um indício feito por leitura automática. Quem decide é a equipe: ninguém é acusado por este sistema.</p></div>
+    <p style="margin:6px 0"><b>Do que se trata.</b> A Secretaria de Saúde de Pernambuco entrega a gestão de hospitais e UPAs a organizações sociais de saúde (OSS), por meio de <b>contratos de gestão</b>. Esses contratos têm muitos documentos: o contrato, os termos aditivos, as notas de empenho e os pareceres da comissão que os acompanha (a CTAI). O Raio-X lê esses documentos e aponta pontos que merecem conferência.</p>
+    <p style="margin:6px 0"><b>A pergunta que esta tela ajuda a responder.</b> Quantos pontos existem, que tipo de problema são, onde aparecem, se se repetem e até onde podem alcançar: infringem a lei das OSS (Lei estadual 15.210/2013), um decreto ou outra norma? Podem gerar penalidade ou prejuízo? <b>Hoje isso ainda não se sabe.</b> Esta tela existe para mapear.</p>
+    <div style="background:#fff7e0;border:1px solid #e6cf8a;border-radius:8px;padding:10px 14px;margin:10px 0"><b>Importante:</b> tudo aqui é <b>indício feito por leitura automática</b>, e a IA pode errar. O sistema não conclui que houve infração, dano ou penalidade e não acusa ninguém. Quem confirma, descarta ou decide o que fazer é a equipe, em especial o jurídico.</div></div>
     <div class="bloco">${tiles}</div>
+    ${mapa}
     <div class="bloco"><h3 style="margin:0 0 8px">Por onde começar</h3><p>${esc(primeiro)}</p></div>
     <div class="bloco"><h3 style="margin:0 0 8px">Atalhos</h3><div class="tiles">${atalhos}</div></div>`;
 }
@@ -1350,6 +1403,7 @@ async function telaAchados() {
     if (f.setor && $('f-setor')) $('f-setor').value = f.setor === 'Sem setor' ? '__sem' : f.setor;
     if (f.orgao && $('f-orgao')) $('f-orgao').value = f.orgao;
     if (f.unidade && $('f-unidade')) $('f-unidade').value = f.unidade;
+    if (f.origem && $('f-orig')) $('f-orig').value = f.origem;
     if (f.lei && $('f-lei')) { $('f-lei').value = f.lei; const dt = document.querySelector('.mais-filtros'); if (dt) dt.open = true; }
   }
   pintarAchados();
