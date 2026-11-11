@@ -16,9 +16,15 @@ async function dbCarregar(forcar) {
   if (typeof HIST !== 'undefined') { HIST.lista = DBANCO.lista; HIST.erratas = DBANCO.erratas; }
   return true;
 }
+var DB_STOP = { de: 1, da: 1, do: 1, das: 1, dos: 1, e: 1, '-': 1, hospital: 1, upa: 1, upae: 1 };
+function dbTokens(s) { return dbNorm(s).replace(/[^a-z0-9 ]/g, ' ').split(' ').filter(function (t) { return t && !DB_STOP[t]; }); }
+// acha o parecer pela unidade (nome igual ou parecido: "Hospital Dom Helder Câmara" = "Hospital Metropolitano Sul Dom Hélder Câmara")
 function dbAchar(unidade, ano, tri) {
-  var u = dbNorm(unidade);
-  return (DBANCO.lista || []).find(function (p) { return dbNorm(p.unidade) === u && Number(p.ano) === Number(ano) && Number(p.trimestre) === Number(tri); });
+  var u = dbNorm(unidade), mesmo = (DBANCO.lista || []).filter(function (p) { return Number(p.ano) === Number(ano) && Number(p.trimestre) === Number(tri); });
+  var ex = mesmo.find(function (p) { return dbNorm(p.unidade) === u; }); if (ex) return ex;
+  var tu = dbTokens(unidade); if (!tu.length) return null;
+  var c = mesmo.filter(function (p) { var tp = dbTokens(p.unidade), curto = tu.length <= tp.length ? tu : tp, longo = tu.length <= tp.length ? tp : tu; return curto.length >= 2 && curto.every(function (t) { return longo.indexOf(t) > -1; }) && (p.tipo_unidade === 'OUTRO' || !DESC.atual || !DESC.atual.tipo || p.tipo_unidade === DESC.atual.tipo || true); });
+  return c.length === 1 ? c[0] : null;
 }
 function dbAnteriores(unidade, ano, tri, n) {
   var u = dbNorm(unidade), per = Number(ano) * 10 + Number(tri);
@@ -62,7 +68,8 @@ async function descPuxarBanco() {
   try {
     if (!(await dbCarregar(true))) { mostrarToast('Não consegui abrir o banco do Histórico CTAI.'); return; }
     var p = dbAchar(a.unidade, a.ano, a.trimestre);
-    if (!p) { mostrarToast('O parecer de ' + a.unidade + ' (' + a.trimestre + 'º tri/' + a.ano + ') ainda não está no Histórico CTAI. Carregue na tela "Histórico CTAI".'); DESC._banco = { faltando: true }; descDesenhar(); return; }
+    if (!p) { var disp = (DBANCO.lista || []).filter(function (x) { return Number(x.ano) === Number(a.ano) && Number(x.trimestre) === Number(a.trimestre); }).map(function (x) { return x.unidade; }).sort(); DESC._banco = { faltando: true, disp: disp }; mostrarToast('Não achei o parecer de ' + a.unidade + ' (' + a.trimestre + 'º tri/' + a.ano + ') no banco.'); descDesenhar(); return; }
+    if (dbNorm(p.unidade) !== dbNorm(a.unidade)) { a.unidade = p.unidade; DESC.fichaCampos = null; DESC._fichaUnidade = ''; }
     if (DESC.itens.length && !confirm('Já há apontamentos lançados. Trocar pelos do parecer guardado no banco?')) return;
     var det = await api('historico/obter', { id: p.id });
     if (!det || det.ok === false) { mostrarToast((det && det.erro) || 'Erro ao ler o parecer no banco.'); return; }
@@ -85,7 +92,7 @@ function descHtmlBanco() {
   var a = DESC.atual, b = DESC._banco;
   var cab = '<div style="background:#eef6ff;border:1px solid #cfe2ff;border-radius:8px;padding:12px;margin-bottom:12px;"><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;"><div style="font-size:0.85rem;"><strong><i class="ti ti-database"></i> Banco dos pareceres da CTAI</strong><div style="color:#495057;margin-top:2px;">Traz o nº do parecer, a OSS, o contrato e os apontamentos do parecer de ' + dEsc(a.unidade || 'a unidade') + ' no ' + dEsc(a.trimestre || '?') + 'º trimestre de ' + dEsc(a.ano || '?') + ', sem digitar.</div></div><button class="btn btn-primary btn-sm" onclick="descPuxarBanco()"><i class="ti ti-download"></i> Trazer do banco</button></div>';
   if (!b) return cab + '</div>';
-  if (b.faltando) return cab + '<div style="margin-top:8px;font-size:0.82rem;color:#842029;">Este parecer ainda não foi carregado no Histórico CTAI. Carregue o arquivo na tela "Histórico CTAI" e volte aqui.</div></div>';
+  if (b.faltando) return cab + '<div style="margin-top:8px;font-size:0.82rem;color:#842029;">Não achei o parecer desta unidade neste trimestre e ano. ' + (b.disp && b.disp.length ? 'No banco, para ' + dEsc(a.trimestre) + 'º tri/' + dEsc(a.ano) + ', há: ' + b.disp.map(dEsc).join('; ') + '.' : 'Não há nenhum parecer de ' + dEsc(a.trimestre) + 'º tri/' + dEsc(a.ano) + ' no banco. Carregue na tela "Histórico CTAI" ou mude o ano/trimestre.') + '</div></div>';
   var p = b.parecer, h = [];
   // situação da soma / errata
   var st = typeof histStatusSoma === 'function' ? histStatusSoma(p) : { cod: p.confere === 'sim' ? 'ok' : 'aberta', txt: p.confere === 'sim' ? 'Confere' : 'Divergência de soma', cor: p.confere === 'sim' ? 'verde' : 'verm' };

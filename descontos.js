@@ -864,7 +864,7 @@ function descAjudaPasso(p) {
 }
 function descCorpoPasso(p) {
   const a = DESC.atual;
-  if (p === 0) return '<datalist id="d_lista_unid">' + descUnidadesConhecidas().map(function (x) { return '<option value="' + dEsc(x.unidade) + '">'; }).join('') + '</datalist>' + dGrade(200,
+  if (p === 0) return descHtmlBanco() + '<datalist id="d_lista_unid">' + descUnidadesConhecidas().map(function (x) { return '<option value="' + dEsc(x.unidade) + '">'; }).join('') + '</datalist>' + dGrade(200,
     dCampo('Unidade', dIn('f_unidade', a.unidade, 'text', 'list="d_lista_unid" onchange="descAutoUnidade()"'), 'comece a digitar o nome') + dCampo('Tipo', dSel('f_tipo', a.tipo, [['HOSPITAL', 'Hospital'], ['UPA', 'UPA'], ['UPAE', 'UPAE'], ['OUTRO', 'Outro']])) +
     dCampo('Ano', dIn('f_ano', a.ano, 'number')) + dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) +
     dCampo('Processo SEI do desconto', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"')) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
