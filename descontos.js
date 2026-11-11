@@ -426,7 +426,7 @@ function descDesenhar() {
   else if (DESC.aba === 'painel') corpo = descHtmlPainel();
   else if (DESC.aba === 'fontes') corpo = descHtmlFontes();
   else if (DESC.aba === 'params') corpo = descHtmlParams();
-  else if (DESC.aba === 'ficha') corpo = descHtmlFicha();
+  else if (DESC.aba === 'ficha') corpo = DESC.modo === 'completa' ? descHtmlFicha() : descHtmlFluxo();
   c.innerHTML = (DESC.aba === 'ficha' ? '' : descAbas()) + corpo;
   if (DESC.aba === 'ficha') descRecalcular();
 }
@@ -479,7 +479,7 @@ function descHtmlPainel() {
 async function descAbrir(id) {
   if (id === null) { DESC.atual = { id: '', unidade: '', tipo: 'HOSPITAL', ano: new Date().getFullYear(), trimestre: 1, defesa: '', recurso: '', base_legal_conferida: '', ata_revisada: '' }; DESC.itens = []; DESC.eventos = []; }
   else { const r = await api('descontos/obter', { id: id }); if (!r.ok) { mostrarToast(r.erro || 'Erro ao abrir.'); return; } DESC.atual = r.desconto; DESC.itens = r.itens || []; DESC.eventos = r.eventos || []; }
-  DESC.aba = 'ficha'; DESC._sujo = false; DESC._redesenharItens = true; descDesenhar();
+  DESC.aba = 'ficha'; DESC._sujo = false; DESC.modo = 'fluxo'; DESC._defesa = ''; DESC.passo = id === null ? 0 : descPrimeiroPendente(); descEntrarPasso(); descDesenhar();
 }
 function descHtmlFicha() {
   const a = DESC.atual;
@@ -502,7 +502,7 @@ function descHtmlFicha() {
     dCampo('Data da execução', dIn('f_execucao_data', a.execucao_data, 'date')) + dCampo('LE / OB', dIn('f_execucao_ref', a.execucao_ref))) +
     '<div style="margin-top:10px;">' + dCampo('Observações', '<textarea id="f_observacoes" oninput="descMudou()" rows="2" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(a.observacoes) + '</textarea>') + '</div>');
   const ev = DESC.eventos.length ? dCartao('Histórico', DESC.eventos.slice().reverse().map(function (e) { return '<div style="font-size:0.78rem;padding:2px 0;color:#495057;">' + dEsc(String(e.quando).slice(0, 16).replace('T', ' ')) + ' — ' + dEsc(e.usuario) + ' ' + dEsc(e.evento) + (e.detalhe ? ': ' + dEsc(e.detalhe) : '') + '</div>'; }).join('')) : '';
-  return '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button><button class="btn btn-primary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
+  return '<div style="margin-bottom:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Voltar</button><button class="btn btn-secondary btn-sm" onclick="descLerFicha();DESC.modo=\'fluxo\';descEntrarPasso();descDesenhar()">Voltar ao passo a passo</button><button class="btn btn-primary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
     '<button class="btn btn-secondary btn-sm" onclick="descTexto(\'notificacao\')">Gerar notificação</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'ata\')">Gerar Ata</button><button class="btn btn-secondary btn-sm" onclick="descTexto(\'recurso\')">Gerar análise de recurso</button><span id="d_sujo" style="font-size:0.78rem;color:#842029;"></span></div>' +
     '<div id="d_resumo"></div>' + dados + parecer + notif + dCartao('Apontamentos do parecer', '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button><button class="btn btn-secondary btn-sm" onclick="descSugerirTodas()"><i class="ti ti-wand"></i> Sugerir decisão de todos</button></div><p style="font-size:0.74rem;color:#6c757d;margin:8px 0 0;">Acatado = a defesa da OSS foi acatada e o apontamento cai. Não acatado = a defesa não foi acatada (ou não houve) e o apontamento é mantido. Em produção, a compensação feita dentro do prazo também abate o valor.</p>') + julg + rec +
     '<div id="d_texto"></div>' + ev;
@@ -525,6 +525,7 @@ function descRecalcular() {
   // resumo
   const cor = { erro: '#f8d7da', aviso: '#fff3cd', info: '#e7f1ff' };
   const rs = document.getElementById('d_resumo');
+  const aa = document.getElementById('d_alerta_ata'); if (aa) { const pend = DESC.itens.filter(function (x) { return !x.decisao; }).length; aa.innerHTML = pend ? '<div style="background:#f8d7da;border-radius:6px;padding:8px 12px;font-size:0.84rem;margin-bottom:10px;">' + pend + ' apontamento(s) ainda sem decisão. Volte ao passo 5 antes de gerar a Ata.</div>' : ''; }
   if (rs) rs.innerHTML = '<div style="background:#fff;border:1px solid #dee2e6;border-left:4px solid #5c636a;border-radius:8px;padding:14px;margin-bottom:14px;"><div style="display:flex;gap:22px;flex-wrap:wrap;margin-bottom:8px;">' +
     [['Produção apontada', brl(t.prod.apontado)], ['Compensado', brl(t.prod.compensado)], ['Qualidade apontada', brl(t.qual.apontado)], ['Valor a descontar', '<strong style="font-size:1.1rem;">' + brl(f.a_descontar) + '</strong>']].map(function (k) { return '<div><div style="font-size:0.7rem;color:#6c757d;">' + k[0] + '</div><div>' + k[1] + '</div></div>'; }).join('') + '</div>' +
     '<div style="font-size:0.85rem;"><strong>Próxima ação:</strong> ' + dEsc(f.proxima_acao) + '</div>' +
@@ -539,27 +540,36 @@ function descRecalcular() {
   DESC._redesenharItens = false;
   if (!DESC.itens.length) { box.innerHTML = '<p style="color:#6c757d;font-size:0.85rem;margin:0;">Nenhum apontamento. Use os botões abaixo.</p>'; return; }
   const trim = [1, 2, 3].map(function (k) { return a.ano + '-' + String((+a.trimestre - 1) * 3 + k).padStart(2, '0'); });
-  box.innerHTML = DESC.itens.map(function (it, i) {
-    const l = t.linhas[i] || {}, prod = it.tipo === 'producao', pp = prod ? percProducao(it) : null, ta = function (id, v, rows) { return '<textarea id="i_' + id + '_' + i + '" rows="' + rows + '" oninput="descMudou()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">' + dEsc(v) + '</textarea>'; };
-    const ext = '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:0.78rem;color:#495057;">Conferência com fonte externa (CNES, SIH, SIA)' + (it.fonte_externa ? ' — ' + dEsc(it.fonte_externa) : '') + '</summary><div style="margin-top:8px;">' + dGrade(150,
-      dCampo('Fonte', dSel('i_fonte_externa_' + i, it.fonte_externa, [['', '—']].concat(DESC_FONTES.map(function (x) { return [x.fonte, x.nome]; })))) + dCampo('Chave do dado', dIn('i_chave_externa_' + i, it.chave_externa, 'text', 'placeholder="ex.: saidas"')) +
-      dCampo('Valor informado pela unidade', dIn('i_valor_informado_' + i, it.valor_informado)) + dCampo('Valor na fonte', dIn('i_valor_referencia_' + i, it.valor_referencia)) +
-      '<div style="align-self:end;"><button class="btn btn-secondary btn-sm" onclick="descBuscarRef(' + i + ')">Buscar nos dados importados</button></div>') +
-      '<div id="i_ext_msg_' + i + '" style="font-size:0.8rem;margin-top:6px;">' + (it.valor_referencia !== '' && it.valor_referencia !== undefined ? descMsgExterno(it) : '') + '</div></div></details>';
-    const sugPrazo = prod && !it.prazo_compensacao && a.ano && a.trimestre ? prazoCompensacaoSugerido(a.ano, a.trimestre, dPmapa().trimestres_compensacao) : '';
-    const bloco = prod ? '<div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:6px;"><div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">Dados da meta (para conferir o atingimento)</div>' + dGrade(130,
-      dCampo('Meta do trimestre', dIn('i_meta_trimestre_' + i, it.meta_trimestre)) + dCampo('Realizado mês 1', dIn('i_realizado_1_' + i, it.realizado_1)) + dCampo('Realizado mês 2', dIn('i_realizado_2_' + i, it.realizado_2)) + dCampo('Realizado mês 3', dIn('i_realizado_3_' + i, it.realizado_3)) + dCampo('% que consta no parecer', dIn('i_pct_parecer_' + i, it.pct_parecer))) +
-      '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:6px;"></div>' + (sugPrazo ? '<div style="font-size:0.78rem;margin-top:4px;color:#495057;">Prazo de compensação sugerido: <strong>' + dBr(sugPrazo) + '</strong> (fim do ' + dPmapa().trimestres_compensacao + 'º trimestre seguinte; regra a confirmar) <button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'i_prazo_compensacao_' + i + '\').value=\'' + sugPrazo + '\';descMudou()">Usar</button></div>' : '') + '</div>' : '';
-    const decisao = '<div style="margin-top:10px;padding:10px;border:1px solid #dee2e6;border-radius:6px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><div style="font-size:0.78rem;font-weight:700;">Decisão e fundamentação</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerir(' + i + ')"><i class="ti ti-wand"></i> Sugerir decisão</button><button class="btn btn-secondary btn-sm" onclick="descIA(' + i + ')"><i class="ti ti-sparkles"></i> Redigir análise com IA</button><button class="btn btn-secondary btn-sm" onclick="descCopiarFund(' + i + ')"><i class="ti ti-copy"></i> Copiar texto completo</button></div></div>' +
-      '<div id="i_avisos_' + i + '" style="margin-bottom:6px;"></div>' + dGrade(200, dCampo('Decisão', dSel('i_decisao_' + i, it.decisao, Object.keys(DESC_ROTULOS_DEC).map(function (k) { return [k, DESC_ROTULOS_DEC[k]]; }))) + dCampo('Valor acatado (R$)', dIn('i_valor_acatado_' + i, it.valor_acatado), 'vazio = tudo, quando a defesa for acatada') + dCampo('Julgamento revisado?', dSel('i_julgamento_revisado_' + i, it.julgamento_revisado, SIM_NAO))) +
-      '<div style="margin-top:8px;">' + dCampo('Abertura da fundamentação', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao)) + '</div><div style="margin-top:8px;">' + dCampo('Resumo do Recurso', ta('resumo_defesa', it.resumo_defesa, 3)) + '</div><div style="margin-top:8px;">' + dCampo('Análise Técnica e Probatória', ta('analise_tecnica', it.analise_tecnica, 5)) + '</div><div style="margin-top:8px;">' + dCampo('Fundamentação Jurídica e Contratual', ta('fundamentacao_juridica', it.fundamentacao_juridica, 4)) + '</div></div>';
-    return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:' + (l.fora_prazo_compensacao ? '#fff5f5' : '#fff') + ';"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;"><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span><button class="btn btn-sm btn-secondary" onclick="descRemItem(' + i + ')" title="Remover"><i class="ti ti-trash"></i></button></div>' +
-      dGrade(prod ? 150 : 190, dCampo('Indicador', dIn('i_indicador_' + i, it.indicador)) + dCampo('Valor apontado (R$)', dIn('i_valor_apontado_' + i, it.valor_apontado)) +
-        (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '')) +
-      bloco + decisao +
-      '<div id="i_efet_' + i + '" style="font-size:0.8rem;margin-top:8px;">A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : '') + '</div>' + ext + '</div>';
-  }).join('');
+  box.innerHTML = DESC.itens.map(function (it, i) { return descHtmlItem(it, i, t, DESC.modoItens || 'todos'); }).join('');
   DESC.itens.forEach(function (it, i) { descAtualizarPct(i); });
+}
+function descHtmlItem(it, i, t, modo) {
+  const a = DESC.atual, l = t.linhas[i] || {}, prod = it.tipo === 'producao';
+  const ta = function (id, v, rows) { return '<textarea id="i_' + id + '_' + i + '" rows="' + rows + '" oninput="descMudou()" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;font-size:0.85rem;box-sizing:border-box;">' + dEsc(v) + '</textarea>'; };
+  const efet = '<div id="i_efet_' + i + '" style="font-size:0.8rem;margin-top:8px;">A descontar neste apontamento: <strong>' + brl(l.efetivado || 0) + '</strong>' + (l.fora_prazo_compensacao ? ' <span style="color:#842029;">· fora do prazo de compensação</span>' : '') + (l.comp_fora_prazo ? ' <span style="color:#664d03;">· compensação fora do prazo</span>' : '') + '</div>';
+  const ext = '<details style="margin-top:8px;"><summary style="cursor:pointer;font-size:0.78rem;color:#495057;">Conferência com fonte externa (CNES, SIH, SIA)' + (it.fonte_externa ? ' — ' + dEsc(it.fonte_externa) : '') + '</summary><div style="margin-top:8px;">' + dGrade(150,
+    dCampo('Fonte', dSel('i_fonte_externa_' + i, it.fonte_externa, [['', '—']].concat(DESC_FONTES.map(function (x) { return [x.fonte, x.nome]; })))) + dCampo('Chave do dado', dIn('i_chave_externa_' + i, it.chave_externa, 'text', 'placeholder="ex.: saidas"')) +
+    dCampo('Valor informado pela unidade', dIn('i_valor_informado_' + i, it.valor_informado)) + dCampo('Valor na fonte', dIn('i_valor_referencia_' + i, it.valor_referencia)) +
+    '<div style="align-self:end;"><button class="btn btn-secondary btn-sm" onclick="descBuscarRef(' + i + ')">Buscar nos dados importados</button></div>') +
+    '<div id="i_ext_msg_' + i + '" style="font-size:0.8rem;margin-top:6px;">' + (it.valor_referencia !== '' && it.valor_referencia !== undefined ? descMsgExterno(it) : '') + '</div></div></details>';
+  const sugPrazo = prod && !it.prazo_compensacao && a.ano && a.trimestre ? prazoCompensacaoSugerido(a.ano, a.trimestre, dPmapa().trimestres_compensacao) : '';
+  const entrada = '<div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;"><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span><button class="btn btn-sm btn-secondary" onclick="descRemItem(' + i + ')" title="Remover"><i class="ti ti-trash"></i></button></div>' +
+    dGrade(prod ? 150 : 190, dCampo('Indicador', dIn('i_indicador_' + i, it.indicador)) + dCampo('Valor apontado (R$)', dIn('i_valor_apontado_' + i, it.valor_apontado)) +
+      (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '')) +
+    (prod ? '<div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:6px;"><div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">Dados da meta (para conferir o atingimento)</div>' + dGrade(130,
+      dCampo('Meta do trimestre', dIn('i_meta_trimestre_' + i, it.meta_trimestre)) + dCampo('Realizado mês 1', dIn('i_realizado_1_' + i, it.realizado_1)) + dCampo('Realizado mês 2', dIn('i_realizado_2_' + i, it.realizado_2)) + dCampo('Realizado mês 3', dIn('i_realizado_3_' + i, it.realizado_3)) + dCampo('% que consta no parecer', dIn('i_pct_parecer_' + i, it.pct_parecer))) +
+      '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:6px;"></div>' + (sugPrazo ? '<div style="font-size:0.78rem;margin-top:4px;color:#495057;">Prazo de compensação sugerido: <strong>' + dBr(sugPrazo) + '</strong> (fim do ' + dPmapa().trimestres_compensacao + 'º trimestre seguinte; regra a confirmar) <button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'i_prazo_compensacao_' + i + '\').value=\'' + sugPrazo + '\';descMudou()">Usar</button></div>' : '') + '</div>' : '');
+  const textos = '<div style="margin-top:8px;">' + dCampo('Abertura da fundamentação', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao)) + '</div><div style="margin-top:8px;">' + dCampo('Resumo do Recurso', ta('resumo_defesa', it.resumo_defesa, 3)) + '</div><div style="margin-top:8px;">' + dCampo('Análise Técnica e Probatória', ta('analise_tecnica', it.analise_tecnica, 5)) + '</div><div style="margin-top:8px;">' + dCampo('Fundamentação Jurídica e Contratual', ta('fundamentacao_juridica', it.fundamentacao_juridica, 4)) + '</div>';
+  const botoesTexto = '<button class="btn btn-secondary btn-sm" onclick="descSugerir(' + i + ')"><i class="ti ti-wand"></i> Refazer proposta</button><button class="btn btn-secondary btn-sm" onclick="descIA(' + i + ')"><i class="ti ti-sparkles"></i> Redigir análise com IA</button><button class="btn btn-secondary btn-sm" onclick="descCopiarFund(' + i + ')"><i class="ti ti-copy"></i> Copiar texto completo</button>';
+  const sel = function (v, rot, cor) { return '<button class="btn" style="flex:1;min-width:160px;padding:10px;font-weight:700;border:2px solid ' + (it.decisao === v ? cor : '#ced4da') + ';background:' + (it.decisao === v ? cor : '#fff') + ';color:' + (it.decisao === v ? '#fff' : '#495057') + ';" onclick="descDecidir(' + i + ',\'' + v + '\')">' + rot + '</button>'; };
+  if (modo === 'entrada') return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:' + (l.fora_prazo_compensacao ? '#fff5f5' : '#fff') + ';">' + entrada + efet + ext + '</div>';
+  const decisao = '<div id="i_avisos_' + i + '" style="margin:8px 0;">' + (it._avisos || []).map(function (x) { return '<div style="background:#fff3cd;border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x) + '</div>'; }).join('') + '</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0;">' + sel('acatado', 'Acatar a defesa (apontamento cai)', '#198754') + sel('nao_acatado', 'Não acatar (apontamento mantido)', '#842029') + '</div>' +
+    (it.decisao === 'acatado' ? '<div style="max-width:260px;margin-bottom:8px;">' + dCampo('Valor acatado (R$)', dIn('i_valor_acatado_' + i, it.valor_acatado), 'vazio = tudo') + '</div>' : '') +
+    '<details ' + (it._abrir ? 'open' : '') + ' style="margin-top:6px;"><summary style="cursor:pointer;font-size:0.82rem;font-weight:700;">Texto da decisão' + (it._proposto ? ' <span class="badge-status" style="background:#e7f1ff;color:#084298;">proposta automática: revise</span>' : '') + '</summary><div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">' + botoesTexto + '</div>' + textos + '</div></details>' +
+    '<div style="max-width:220px;margin-top:8px;">' + dCampo('Julgamento revisado?', dSel('i_julgamento_revisado_' + i, it.julgamento_revisado, SIM_NAO)) + '</div>' + efet;
+  if (modo === 'decisao') return '<div style="border:1px solid #dee2e6;border-radius:8px;padding:14px;margin-bottom:12px;background:#fff;border-left:4px solid ' + (it.decisao === 'acatado' ? '#198754' : it.decisao === 'nao_acatado' ? '#842029' : '#ced4da') + ';"><div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;"><div><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span> <strong>' + dEsc(it.indicador || '(sem nome)') + '</strong></div><div style="font-size:0.9rem;">Apontado: <strong>' + brl(num(it.valor_apontado)) + '</strong></div></div>' + (prod ? '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:4px;"></div>' : '') + decisao + '</div>';
+  return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:#fff;">' + entrada + decisao.replace(efet, '') + efet + ext + '</div>';
 }
 function descAtualizarPct(i) {
   const it = DESC.itens[i], e = document.getElementById('i_pct_' + i); if (!e || it.tipo !== 'producao') return;
@@ -573,9 +583,8 @@ function descSugerir(i, silencioso) {
   if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; }
   it.fundamentacao_juridica = r.juridica;
   if (r.decisao) it.decisao = r.decisao;
+  it._avisos = r.avisos; it._proposto = true; it._abrir = true;
   DESC._redesenharItens = true; descRecalcular();
-  const av = document.getElementById('i_avisos_' + i);
-  if (av) av.innerHTML = r.avisos.map(function (x) { return '<div style="background:#fff3cd;border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x) + '</div>'; }).join('') + '<div style="font-size:0.74rem;color:#6c757d;margin-top:4px;">Rascunho montado por regras a partir das decisões já tomadas (' + dEsc(r.regra) + '). Revise antes de usar.</div>';
   descMudou();
 }
 function descCopiarFund(i) { descLerFicha(); const t = textoFundamentacao(DESC.itens[i]); const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); mostrarToast('Texto copiado no formato da ficha.'); } catch (e) { mostrarToast('Não consegui copiar.'); } ta.remove(); }
@@ -583,8 +592,8 @@ function descSugerirTodas() { descLerFicha(); if (!DESC.itens.length) { mostrarT
 async function descIA(i) {
   descLerFicha(); const a = DESC.atual, it = DESC.itens[i];
   if (typeof invocarIAComFallback !== 'function') { mostrarToast('A IA não está disponível nesta tela.'); return; }
-  const defesa = prompt('Cole aqui o texto da defesa da OSS (ou deixe vazio se não houve defesa). Ele é enviado à IA; não inclua dados pessoais.', DESC._defesa || '');
-  if (defesa === null) return; DESC._defesa = defesa;
+  let defesa = DESC._defesa || '';
+  if (!defesa && sim(a.defesa)) { defesa = prompt('Cole aqui o texto da defesa da OSS. Ele é enviado à IA; não inclua dados pessoais.', '') || ''; if (!defesa) return; DESC._defesa = defesa; }
   const base = sugerirDecisao(a, it, dPmapa()), pp = it.tipo === 'producao' ? percProducao(it) : null;
   const prompt_ = 'Você ajuda a redigir a análise de uma decisão sobre desconto em Contrato de Gestão de saúde (SES-PE). Use SOMENTE os fatos abaixo; não invente números, artigos nem documentos. Se faltar informação, escreva [informar].\n\n' +
     'Unidade: ' + a.unidade + ' | OSS: ' + (a.sigla_oss || '[informar]') + ' | Contrato: ' + (a.contrato || '[informar]') + ' | Período: ' + a.trimestre + 'º trimestre de ' + a.ano + '\nIndicador (' + it.tipo + '): ' + it.indicador + ' | Valor apontado: ' + brl(num(it.valor_apontado)) + '\nParecer: ' + (a.parecer_numero ? 'Parecer Técnico CTAI nº ' + a.parecer_numero : '[informar]') + '\n' +
@@ -596,8 +605,8 @@ async function descIA(i) {
   if (!m1 || !m2) { mostrarToast('A IA respondeu fora do formato; nada foi alterado.'); return; }
   it.justificativa_decisao = base.abertura; it.resumo_defesa = m1[1].trim(); it.analise_tecnica = m2[1].trim(); it.fundamentacao_juridica = base.juridica;
   DESC._redesenharItens = true; descRecalcular();
-  const av = document.getElementById('i_avisos_' + i);
-  if (av) av.innerHTML = '<div style="background:#e7f1ff;border-radius:4px;padding:5px 9px;font-size:0.8rem;">A IA sugere: ' + dEsc(m3 ? m3[1].trim() : '—') + '. A decisão é sua: ajuste os textos e escolha acatado ou não acatado.</div>';
+  it._avisos = ['A IA sugere: ' + (m3 ? m3[1].trim() : '—') + '. A decisão é sua: ajuste os textos e escolha acatar ou não.']; it._abrir = true;
+  DESC._redesenharItens = true; descRecalcular();
   descMudou();
 }
 function descMsgExterno(it) { const c = compararExterno(it.valor_informado !== '' && it.valor_informado !== undefined ? it.valor_informado : it.valor_apontado, it.valor_referencia, dPmapa().tolerancia_externa_pct); return '<span style="color:' + (c.ok === false ? '#842029' : '#0f5132') + ';">' + dEsc(c.msg) + '</span>'; }
@@ -615,11 +624,12 @@ async function descBuscarRef(i) {
   m.innerHTML = (falta.length ? '<span style="color:#664d03;">Faltam competências: ' + falta.join(', ') + '. A soma abaixo é parcial.</span><br>' : '') + descMsgExterno(it);
   descMudou();
 }
-async function descSalvar() {
+async function descSalvar(silencioso) {
   descLerFicha();
   const r = await api('descontos/salvar', { registro: DESC.atual, itens: DESC.itens });
-  if (!r.ok) { mostrarToast(r.erro || 'Não salvou.'); return; }
-  DESC.atual.id = r.id; DESC._sujo = false; const s = document.getElementById('d_sujo'); if (s) s.textContent = ''; mostrarToast('Salvo.');
+  if (!r.ok) { mostrarToast(r.erro || 'Não salvou.'); return false; }
+  DESC.atual.id = r.id; DESC._sujo = false; const s = document.getElementById('d_sujo'); if (s) s.textContent = ''; if (!silencioso) mostrarToast('Salvo.');
+  return true;
 }
 async function descVoltar() { if (DESC._sujo && !confirm('Há alterações não salvas. Sair mesmo assim?')) return; DESC._sujo = false; await renderDescontos(); }
 function descTexto(tipo) {
@@ -638,6 +648,142 @@ function descBaixarDoc(tipo) {
   const html = '<html><head><meta charset="utf-8"></head><body style="font-family:Arial;font-size:12pt">' + t.split('\n').map(function (l) { return '<p style="margin:0 0 6pt">' + (dEsc(l) || '&nbsp;') + '</p>'; }).join('') + '</body></html>';
   const blob = new Blob(['﻿', html], { type: 'application/msword' }), u = URL.createObjectURL(blob), el = document.createElement('a');
   el.href = u; el.download = tipo + '_' + String(a.unidade || 'unidade').replace(/[^\w]+/g, '_') + '_' + a.ano + 'T' + a.trimestre + '.doc'; document.body.appendChild(el); el.click(); el.remove(); setTimeout(function () { URL.revokeObjectURL(u); }, 3000);
+}
+
+// ---------- FLUXO GUIADO (passo a passo) ----------
+// Unidades conhecidas (conferidas na tela do AppSheet, 4º tri/2024); o sistema também aprende com os registros já lançados.
+var DESC_CATALOGO = [
+  { unidade: 'Hospital Dom Malan', tipo: 'HOSPITAL', contrato: '027/2022' }, { unidade: 'Hospital Dom Helder Câmara', tipo: 'HOSPITAL', contrato: '018/2022' },
+  { unidade: 'Hospital Miguel Arraes', tipo: 'HOSPITAL', contrato: '023/2022' }, { unidade: 'Hospital Pelópidas da Silveira', tipo: 'HOSPITAL', contrato: '017/2022' },
+  { unidade: 'Hospital Mestre Vitalino', tipo: 'HOSPITAL', contrato: 'EMERGENCIAL' }, { unidade: 'Hospital Nossa Senhora das Graças', tipo: 'HOSPITAL', contrato: '024/2022', sigla_oss: 'FGH', nome_oss: 'Fundação Gestão Hospitalar Martiniano Fernandes', cnes: '' },
+  { unidade: 'Hospital Regional Emília Câmara', tipo: 'HOSPITAL', contrato: '002/2017' }, { unidade: 'Hospital Ermírio Coutinho', tipo: 'HOSPITAL', contrato: '014/2022' },
+  { unidade: 'Hospital João Murilo de Oliveira', tipo: 'HOSPITAL', contrato: '026/2022' }, { unidade: 'Hospital Regional Ruy de Barros Correia', tipo: 'HOSPITAL', contrato: '001/2016' },
+  { unidade: 'Hospital Sílvio Magalhães', tipo: 'HOSPITAL', contrato: '019/2022' }, { unidade: 'Hospital Regional Fernando Bezerra', tipo: 'HOSPITAL', contrato: '002/2021' },
+  { unidade: 'UPA Igarassu', tipo: 'UPA', contrato: '002/2022' }, { unidade: 'UPA Caxangá', tipo: 'UPA', contrato: '007/2022' }, { unidade: 'UPA Curado', tipo: 'UPA', contrato: '004/2022' },
+  { unidade: 'UPA Engenho Velho', tipo: 'UPA', contrato: '010/2022' }, { unidade: 'UPA Ibura', tipo: 'UPA', contrato: '015/2022' }, { unidade: 'UPA Olinda', tipo: 'UPA', contrato: '001/2022' }
+];
+var DESC_PASSOS = [
+  { id: 'unidade', nome: 'Unidade e período', ic: 'ti-building-hospital' }, { id: 'parecer', nome: 'Parecer e apontamentos', ic: 'ti-file-analytics' },
+  { id: 'notificacao', nome: 'Notificação à OSS', ic: 'ti-send' }, { id: 'defesa', nome: 'Defesa da OSS', ic: 'ti-shield-check' },
+  { id: 'decisao', nome: 'Decisão: acatar ou não', ic: 'ti-scale' }, { id: 'ata', nome: 'Ata e envio', ic: 'ti-file-text' }, { id: 'fim', nome: 'Recurso e execução', ic: 'ti-flag-check' }
+];
+function descStatusPassos() {
+  const a = DESC.atual, it = DESC.itens, f = calcularFicha(a, it, dPmapa()), p = f.prazos, hoje = dParse(dIso(new Date()));
+  const decidido = it.length > 0 && it.every(function (x) { return x.decisao; });
+  const revisada = sim(a.ata_revisada) || (it.length > 0 && it.every(function (x) { return sim(x.julgamento_revisado); }));
+  return [
+    !!(a.unidade && a.ano && a.trimestre && a.sei_processo),
+    it.length > 0 && !!a.parecer_numero,
+    !!a.notificacao_envio,
+    sim(a.defesa) || nao(a.defesa) || (p.prazo_defesa && hoje > dParse(p.prazo_defesa)),
+    decidido,
+    revisada && !!a.ata_envio_oss && !!a.envio_gafcg,
+    (nao(a.recurso) || !!a.recurso_decisao_data) && !!a.execucao_data
+  ];
+}
+function descPrimeiroPendente() { const s = descStatusPassos(); const k = s.indexOf(false); return k === -1 ? s.length - 1 : k; }
+function descHtmlFluxo() {
+  const a = DESC.atual, st = descStatusPassos(), p = DESC.passo;
+  const lateral = DESC_PASSOS.map(function (x, k) {
+    const feito = st[k], atual = k === p;
+    return '<a href="#" onclick="descIrPasso(' + k + ',true);return false;" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;text-decoration:none;color:' + (atual ? '#fff' : '#343a40') + ';background:' + (atual ? '#5c636a' : 'transparent') + ';margin-bottom:2px;font-size:0.86rem;"><span style="width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:0.78rem;flex:none;background:' + (feito ? '#198754' : atual ? 'rgba(255,255,255,0.25)' : '#e9ecef') + ';color:' + (feito || atual ? '#fff' : '#6c757d') + ';">' + (feito ? '✓' : (k + 1)) + '</span>' + dEsc(x.nome) + '</a>';
+  }).join('');
+  const titulo = a.unidade ? '<div style="font-size:0.78rem;color:#6c757d;margin:0 0 8px 4px;">' + dEsc(a.unidade) + ' · ' + a.ano + ' T' + a.trimestre + '</div>' : '';
+  const rodape = '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;"><button class="btn btn-secondary btn-sm" ' + (p === 0 ? 'disabled' : '') + ' onclick="descIrPasso(' + (p - 1) + ',true)"><i class="ti ti-arrow-left"></i> Passo anterior</button><button class="btn btn-secondary btn-sm" onclick="descSalvar()"><i class="ti ti-device-floppy"></i> Salvar</button>' +
+    (p < DESC_PASSOS.length - 1 ? '<button class="btn btn-primary" onclick="descContinuar()">Salvar e continuar <i class="ti ti-arrow-right"></i></button>' : '<button class="btn btn-primary" onclick="descConcluir()"><i class="ti ti-check"></i> Salvar e concluir</button>') + '<span id="d_sujo" style="font-size:0.78rem;color:#842029;align-self:center;"></span></div>';
+  return '<div style="margin-bottom:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descVoltar()"><i class="ti ti-arrow-left"></i> Lista</button><button class="btn btn-secondary btn-sm" onclick="descModoCompleto()">Ver ficha completa</button></div>' +
+    '<div id="d_resumo"></div>' +
+    '<div style="display:grid;grid-template-columns:minmax(200px,250px) 1fr;gap:18px;align-items:start;" class="desc-fluxo"><div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:12px;position:sticky;top:8px;"><div style="font-size:0.72rem;color:#6c757d;font-weight:700;text-transform:uppercase;margin:0 0 6px 4px;">Fluxo do desconto</div>' + titulo + lateral + '</div>' +
+    '<div><div style="background:#fff;border:1px solid #dee2e6;border-radius:8px;padding:18px;margin-bottom:12px;"><h3 style="margin:0 0 4px;font-size:1.05rem;"><i class="ti ' + DESC_PASSOS[p].ic + '"></i> ' + (p + 1) + '. ' + DESC_PASSOS[p].nome + '</h3><div style="font-size:0.82rem;color:#6c757d;margin-bottom:14px;">' + descAjudaPasso(p) + '</div>' + descCorpoPasso(p) + '</div>' + rodape + '</div></div>' +
+    '<style>@media(max-width:820px){.desc-fluxo{grid-template-columns:1fr !important}}</style>';
+}
+function descAjudaPasso(p) {
+  return ['Informe a unidade e o trimestre. O restante preenche sozinho quando a unidade já é conhecida.', 'Leia o parecer da CTAI e lance os apontamentos. Dá para trazê-los automaticamente do arquivo do parecer.',
+    'Registre o envio da notificação; o prazo de defesa é calculado em dias úteis.', 'A OSS apresentou defesa? Sem defesa, o sistema propõe manter os apontamentos.',
+    'Para cada apontamento, acate a defesa ou não. A proposta de decisão já vem escrita; revise e ajuste.', 'Gere a Ata, revise o julgamento e registre os envios à OSS e à GAFCG.', 'Acompanhe o recurso da OSS e a execução do desconto (LE/OB) com a GAOCG.'][p];
+}
+function descCorpoPasso(p) {
+  const a = DESC.atual;
+  if (p === 0) return '<datalist id="d_lista_unid">' + descUnidadesConhecidas().map(function (x) { return '<option value="' + dEsc(x.unidade) + '">'; }).join('') + '</datalist>' + dGrade(200,
+    dCampo('Unidade', dIn('f_unidade', a.unidade, 'text', 'list="d_lista_unid" onchange="descAutoUnidade()"'), 'comece a digitar o nome') + dCampo('Tipo', dSel('f_tipo', a.tipo, [['HOSPITAL', 'Hospital'], ['UPA', 'UPA'], ['UPAE', 'UPAE'], ['OUTRO', 'Outro']])) +
+    dCampo('Ano', dIn('f_ano', a.ano, 'number')) + dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) +
+    dCampo('Processo SEI do desconto', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"')) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
+    dCampo('OSS (nome completo)', dIn('f_nome_oss', a.nome_oss, 'text', 'placeholder="ex.: Fundação Gestão Hospitalar Martiniano Fernandes"')) + dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('CNES', dIn('f_cnes', a.cnes, 'text', 'placeholder="7 dígitos"'), 'para as conferências externas'));
+  if (p === 1) return dGrade(200, dCampo('Nº do parecer da CTAI', dIn('f_parecer_numero', a.parecer_numero, 'text', 'placeholder="ex.: 048/2025"')) + dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))) +
+    '<details style="margin:14px 0;background:#f8f9fa;border-radius:6px;padding:10px 12px;"><summary style="cursor:pointer;font-weight:700;font-size:0.88rem;"><i class="ti ti-wand"></i> Ler o parecer automaticamente (PDF, Word ou texto colado)</summary><div style="margin-top:10px;"><input type="file" id="d_parecer_arq" accept=".pdf,.docx,.doc,.txt,.html,.htm"><textarea id="d_parecer_txt" rows="3" placeholder="ou cole aqui o trecho do parecer com os apontamentos" style="width:100%;margin-top:8px;padding:8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;"></textarea><div style="margin-top:8px;"><button class="btn btn-primary btn-sm" onclick="descLerParecer()">Ler apontamentos</button> <span id="d_parecer_st" style="font-size:0.8rem;color:#6c757d;"></span></div><div style="font-size:0.74rem;color:#6c757d;margin-top:6px;">A IA sugere os apontamentos e valores; confira cada um abaixo antes de seguir. Dados pessoais são mascarados antes do envio.</div></div></details>' +
+    '<div id="d_itens"></div><div style="margin-top:8px;display:flex;gap:8px;"><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'producao\')">+ Produção</button><button class="btn btn-secondary btn-sm" onclick="descAddItem(\'qualidade\')">+ Qualidade</button></div>';
+  if (p === 2) return dGrade(200, dCampo('Base legal conferida com o contrato vigente?', dSel('f_base_legal_conferida', a.base_legal_conferida, SIM_NAO)) + dCampo('Data de envio da notificação', dIn('f_notificacao_envio', a.notificacao_envio, 'date')) + dCampo('Ciência expressa da OSS', dIn('f_ciencia_data', a.ciencia_data, 'date'), 'vazio se não houve')) +
+    '<div id="d_prazos" style="margin-top:10px;"></div><div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'notificacao\')"><i class="ti ti-file-text"></i> Gerar a notificação</button></div><div id="d_texto"></div>';
+  if (p === 3) return dGrade(200, dCampo('A OSS apresentou defesa?', dSel('f_defesa', a.defesa, SIM_NAO)) + dCampo('Data da defesa', dIn('f_defesa_data', a.defesa_data, 'date'))) + '<div id="d_prazos" style="margin-top:10px;"></div>' +
+    (sim(a.defesa) ? '<div style="margin-top:12px;">' + dCampo('Texto da defesa da OSS (opcional; usado só para a IA analisar, não fica salvo)', '<textarea id="d_defesa_txt" rows="6" oninput="DESC._defesa=this.value" style="width:100%;padding:8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(DESC._defesa || '') + '</textarea>') + '<div style="margin-top:8px;"><button class="btn btn-secondary btn-sm" onclick="descIATodos()"><i class="ti ti-sparkles"></i> Analisar todos os apontamentos com IA</button></div></div>'
+      : nao(a.defesa) ? '<div style="margin-top:12px;background:#e7f1ff;border-radius:6px;padding:10px;font-size:0.85rem;">Sem defesa: no próximo passo o sistema propõe manter todos os apontamentos, com o texto no padrão das decisões anteriores.</div>' : '');
+  if (p === 4) {
+    const t = calcularTotais(DESC.itens, dIso(new Date())), n = { ac: 0, na: 0, pe: 0 };
+    DESC.itens.forEach(function (x) { if (x.decisao === 'acatado') n.ac++; else if (x.decisao === 'nao_acatado') n.na++; else n.pe++; });
+    return '<div id="d_dec_resumo" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;"><span class="badge-status" style="background:#d1e7dd;color:#0f5132;">' + n.ac + ' defesa(s) acatada(s)</span><span class="badge-status" style="background:#f8d7da;color:#842029;">' + n.na + ' não acatado(s)</span><span class="badge-status">' + n.pe + ' pendente(s)</span></div>' +
+      (DESC.itens.length ? '' : '<p style="color:#6c757d;">Sem apontamentos. Volte ao passo 2.</p>') + '<div id="d_itens"></div>' + (DESC.itens.length ? '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerirTodas()"><i class="ti ti-wand"></i> Refazer propostas de todos</button><button class="btn btn-secondary btn-sm" onclick="descRevisarTodos()"><i class="ti ti-checks"></i> Marcar todos como revisados</button></div>' : '');
+  }
+  if (p === 5) return '<div id="d_alerta_ata"></div>' + dGrade(200, dCampo('Julgamento revisado (Ata)?', dSel('f_ata_revisada', a.ata_revisada, SIM_NAO), 'ou marque revisado em cada apontamento') + dCampo('Reunião da Comissão', dIn('f_comissao_data', a.comissao_data, 'date')) + dCampo('Pré-julgamento (Grupo Técnico / CASSCG)', dIn('f_grupo_tecnico_data', a.grupo_tecnico_data, 'date')) +
+    dCampo('Documento SEI da Ata', dIn('f_ata_sei', a.ata_sei)) + dCampo('Ata enviada à OSS em', dIn('f_ata_envio_oss', a.ata_envio_oss, 'date')) + dCampo('Ciência da Ata pela OSS', dIn('f_ata_ciencia_data', a.ata_ciencia_data, 'date'), 'vazio se não houve') + dCampo('Processo enviado à GAFCG em', dIn('f_envio_gafcg', a.envio_gafcg, 'date'))) +
+    '<div id="d_prazos" style="margin-top:10px;"></div><div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'ata\')"><i class="ti ti-file-text"></i> Gerar a Ata</button></div><div id="d_texto"></div>';
+  return dGrade(200, dCampo('A OSS pediu recurso?', dSel('f_recurso', a.recurso, SIM_NAO)) + dCampo('Data do recurso', dIn('f_recurso_data', a.recurso_data, 'date')) + dCampo('Decisão do recurso em', dIn('f_recurso_decisao_data', a.recurso_decisao_data, 'date')) +
+    dCampo('Execução (GAOCG)', dSel('f_execucao_tipo', a.execucao_tipo, [['', '—'], ['superavitario', 'Superavitário: deduz das parcelas'], ['deficitario', 'Deficitário: prestação de contas']])) + dCampo('Data da execução', dIn('f_execucao_data', a.execucao_data, 'date')) + dCampo('LE / OB', dIn('f_execucao_ref', a.execucao_ref))) +
+    '<div id="d_prazos" style="margin-top:10px;"></div>' + (sim(a.recurso) ? '<div style="margin-top:12px;"><button class="btn btn-secondary btn-sm" onclick="descTexto(\'recurso\')"><i class="ti ti-file-text"></i> Gerar a análise de recurso</button></div><div id="d_texto"></div>' : '') +
+    '<div style="margin-top:12px;">' + dCampo('Observações', '<textarea id="f_observacoes" oninput="descMudou()" rows="2" style="width:100%;padding:6px 8px;border:1px solid #ced4da;border-radius:4px;box-sizing:border-box;">' + dEsc(a.observacoes) + '</textarea>') + '</div>';
+}
+function descUnidadesConhecidas() {
+  const m = {}; DESC_CATALOGO.forEach(function (x) { m[x.unidade.toLowerCase()] = x; });
+  DESC.lista.forEach(function (r) { m[String(r.unidade).toLowerCase()] = { unidade: r.unidade, tipo: r.tipo, contrato: r.contrato, sigla_oss: r.sigla_oss, nome_oss: r.nome_oss, cnes: r.cnes }; });
+  return Object.keys(m).map(function (k) { return m[k]; }).sort(function (x, y) { return x.unidade.localeCompare(y.unidade); });
+}
+function descAutoUnidade() {
+  descLerFicha(); const a = DESC.atual, k = String(a.unidade || '').trim().toLowerCase(), c = descUnidadesConhecidas().find(function (x) { return x.unidade.toLowerCase() === k; });
+  if (!c) return;
+  ['tipo', 'contrato', 'sigla_oss', 'nome_oss', 'cnes'].forEach(function (f) { if (c[f] && !a[f]) a[f] = c[f]; });
+  if (c.tipo) a.tipo = c.tipo;
+  const old = DESC.lista.find(function (r) { return String(r.unidade).toLowerCase() === k && Number(r.ano) === Number(a.ano) && Number(r.trimestre) === Number(a.trimestre); });
+  if (old && !a.id) mostrarToast('Já existe registro desta unidade neste trimestre. Abra pela lista para continuar.');
+  descDesenhar(); descMudou();
+}
+async function descIrPasso(k, salvar) {
+  if (k < 0 || k >= DESC_PASSOS.length) return;
+  descLerFicha();
+  if (salvar && DESC._sujo && DESC.atual.unidade && DESC.atual.ano && DESC.atual.trimestre) await descSalvar(true);
+  DESC.passo = k; descEntrarPasso(); descDesenhar();
+  window.scrollTo(0, 0); const c = document.getElementById('content'); if (c && c.scrollTo) c.scrollTo(0, 0);
+}
+function descEntrarPasso() {
+  const k = DESC.passo; DESC.modoItens = k === 1 ? 'entrada' : k === 4 ? 'decisao' : 'todos'; DESC._redesenharItens = true;
+  if (k === 4) { // já traz a proposta pronta
+    DESC.itens.forEach(function (it) { if (!it.decisao && !it.resumo_defesa && !it.analise_tecnica) { const r = sugerirDecisao(DESC.atual, it, dPmapa()); if (r.abertura || r.resumo || r.analise) { it.justificativa_decisao = r.abertura; it.resumo_defesa = r.resumo; it.analise_tecnica = r.analise; } it.fundamentacao_juridica = r.juridica; if (r.decisao) it.decisao = r.decisao; it._avisos = r.avisos; it._proposto = true; } });
+  }
+}
+async function descContinuar() { descLerFicha(); const ok = await descSalvar(); if (ok) descIrPasso(DESC.passo + 1, false); }
+async function descConcluir() { descLerFicha(); const ok = await descSalvar(); if (ok) { DESC._sujo = false; await renderDescontos(); } }
+function descModoCompleto() { descLerFicha(); DESC.modo = 'completa'; DESC.modoItens = 'todos'; DESC._redesenharItens = true; descDesenhar(); }
+function descDecidir(i, v) { descLerFicha(); const it = DESC.itens[i]; it.decisao = it.decisao === v ? '' : v; DESC._redesenharItens = true; descRecalcular(); descAtualizarResumoDecisao(); descMudou(); }
+function descAtualizarResumoDecisao() { const e = document.getElementById('d_dec_resumo'); if (!e) return; const n = { ac: 0, na: 0, pe: 0 }; DESC.itens.forEach(function (x) { if (x.decisao === 'acatado') n.ac++; else if (x.decisao === 'nao_acatado') n.na++; else n.pe++; }); e.innerHTML = '<span class="badge-status" style="background:#d1e7dd;color:#0f5132;">' + n.ac + ' defesa(s) acatada(s)</span><span class="badge-status" style="background:#f8d7da;color:#842029;">' + n.na + ' não acatado(s)</span><span class="badge-status">' + n.pe + ' pendente(s)</span>'; }
+function descRevisarTodos() { descLerFicha(); DESC.itens.forEach(function (it) { it.julgamento_revisado = 'sim'; }); DESC._redesenharItens = true; descRecalcular(); descMudou(); }
+async function descIATodos() { descLerFicha(); for (let i = 0; i < DESC.itens.length; i++) { await descIA(i); } mostrarToast('Análise da IA concluída. Revise no passo 5.'); }
+async function descLerParecer() {
+  const st = document.getElementById('d_parecer_st'), arq = (document.getElementById('d_parecer_arq') || {}).files, a = DESC.atual;
+  if (typeof invocarIAComFallback !== 'function') { st.textContent = 'A IA não está disponível.'; return; }
+  let texto = ((document.getElementById('d_parecer_txt') || {}).value || '').trim();
+  try {
+    if (arq && arq[0]) { st.textContent = 'Lendo o arquivo…'; texto = await extrairTextoArquivo(arq[0].name, await arq[0].arrayBuffer(), null); }
+    if (!texto) { st.textContent = 'Anexe o parecer ou cole o trecho dos apontamentos.'; return; }
+    st.textContent = 'A IA está lendo os apontamentos…';
+    const pr = 'Do Parecer Técnico da CTAI abaixo, extraia os apontamentos de desconto do contrato de gestão (indicadores de PRODUÇÃO e de QUALIDADE não cumpridos). Use SOMENTE o que está no texto; se faltar um dado, use null. Não invente valores.\n' +
+      'Responda APENAS com JSON válido neste formato: {"parecer_numero":"ex. 048/2025 ou null","apontamentos":[{"tipo":"producao ou qualidade","indicador":"nome do indicador","valor_apontado":numero em reais ou null,"meta_trimestre":numero ou null,"realizado":[mes1,mes2,mes3] ou null,"percentual":numero ou null}]}\n\nPARECER:\n' + texto.slice(0, 60000);
+    const resp = await invocarIAComFallback(pr, true); let s = typeof resp === 'string' ? resp : JSON.stringify(resp);
+    const m = /\{[\s\S]*\}/.exec(s.replace(/```json|```/g, '')); if (!m) throw new Error('resposta fora do formato');
+    const o = JSON.parse(m[0]), lista = Array.isArray(o.apontamentos) ? o.apontamentos : [];
+    if (!lista.length) { st.textContent = 'A IA não encontrou apontamentos. Lance à mão ou cole o trecho certo.'; return; }
+    descLerFicha();
+    if (o.parecer_numero && !a.parecer_numero) a.parecer_numero = String(o.parecer_numero);
+    lista.forEach(function (x) { const r = x.realizado || []; DESC.itens.push({ tipo: x.tipo === 'qualidade' ? 'qualidade' : 'producao', indicador: x.indicador || '', valor_apontado: x.valor_apontado === null || x.valor_apontado === undefined ? '' : x.valor_apontado, meta_trimestre: x.meta_trimestre === null || x.meta_trimestre === undefined ? '' : x.meta_trimestre, realizado_1: r[0] === undefined || r[0] === null ? '' : r[0], realizado_2: r[1] === undefined || r[1] === null ? '' : r[1], realizado_3: r[2] === undefined || r[2] === null ? '' : r[2], pct_parecer: x.percentual === null || x.percentual === undefined ? '' : x.percentual, decisao: '' }); });
+    DESC._redesenharItens = true; descDesenhar(); mostrarToast(lista.length + ' apontamento(s) lido(s). Confira os valores.'); descMudou();
+  } catch (e) { st.textContent = 'Não consegui ler: ' + (e.message || e) + '. Lance os apontamentos à mão.'; }
 }
 
 // ---------- FONTES EXTERNAS ----------
