@@ -5373,7 +5373,7 @@ async function _verificarAvisoRelato() {
     const rl = await api('relatos/listar', null, { fundo: true });
     if (rl && rl.ok) _relatosMeus = rl.relatos || [];
     _atualizarSeloRelato();
-    if (r.mostrar) abrirAvisoRelato();
+    // Aviso automático "Conte como o seu trabalho acontece" retirado a pedido (a tela "Meu trabalho" segue no menu).
   } catch (e) { /* sem aviso desta vez */ }
 }
 
