@@ -201,7 +201,7 @@ function histDesenhar() {
 // ---------- IMPORTAR ----------
 function histHtmlImportar() {
   var caixa = hCartao('1. Solte os pareceres aqui', '<p style="margin:0 0 10px;font-size:0.85rem;color:#495057;">Arquivos Word (.docx) dos pareceres técnicos da CTAI, um ou vários de uma vez. O sistema lê as tabelas de resultados e de descontos, <strong>confere se a soma bate com o total do próprio parecer</strong> e mostra o resultado antes de guardar. Nada é guardado sem você marcar.</p>' +
-    '<label style="display:block;border:2px dashed #adb5bd;border-radius:8px;padding:26px;text-align:center;cursor:pointer;background:#f8f9fa;" ondragover="event.preventDefault()" ondrop="event.preventDefault();histLer(event.dataTransfer.files)"><i class="ti ti-file-upload" style="font-size:1.6rem;"></i><div style="margin-top:6px;font-size:0.9rem;">Clique ou arraste os arquivos .docx</div><input type="file" multiple accept=".docx,.md,.txt" style="display:none" onchange="histLer(this.files);this.value=\'\'"></label><div id="hist-prog" style="margin-top:8px;font-size:0.82rem;color:#6c757d;"></div>');
+    '<label style="display:block;border:2px dashed #adb5bd;border-radius:8px;padding:26px;text-align:center;cursor:pointer;background:#f8f9fa;" ondragover="event.preventDefault()" ondrop="event.preventDefault();histLer(event.dataTransfer.files)"><i class="ti ti-file-upload" style="font-size:1.6rem;"></i><div style="margin-top:6px;font-size:0.9rem;">Clique ou arraste os arquivos .docx (ou um .zip com eles)</div><input type="file" multiple accept=".docx,.md,.txt,.zip" style="display:none" onchange="histLer(this.files);this.value=\'\'"></label><div id="hist-prog" style="margin-top:8px;font-size:0.82rem;color:#6c757d;"></div>');
   if (!HIST.fila.length) return caixa;
   var existentes = {}; HIST.lista.forEach(function (p) { existentes[p.chave] = p; });
   var n = HIST.fila.filter(function (f) { return f.marcado; }).length;
@@ -223,6 +223,19 @@ function histHtmlImportar() {
 async function histLer(arquivos) {
   var lista = Array.prototype.slice.call(arquivos || []); if (!lista.length) return;
   var prog = function (t) { var e = document.getElementById('hist-prog'); if (e) e.textContent = t; };
+  // zip: abre e usa só os .docx de dentro (ignora temporários e pastas)
+  var expandida = [];
+  for (var z = 0; z < lista.length; z++) {
+    if (/\.zip$/i.test(lista[z].name) && typeof JSZip !== 'undefined') {
+      prog('Abrindo ' + lista[z].name + '…');
+      try {
+        var zip = await JSZip.loadAsync(await lista[z].arrayBuffer());
+        var nomes = Object.keys(zip.files).filter(function (n) { var b = n.split('/').pop(); return !zip.files[n].dir && /\.docx$/i.test(b) && b.indexOf('~$') !== 0; });
+        for (var k = 0; k < nomes.length; k++) { var blob = await zip.files[nomes[k]].async('blob'); expandida.push(new File([blob], nomes[k].split('/').pop())); }
+      } catch (e) { prog('Não consegui abrir o zip: ' + (e.message || e)); }
+    } else expandida.push(lista[z]);
+  }
+  lista = expandida; if (!lista.length) { histDesenhar(); return; }
   for (var i = 0; i < lista.length; i++) {
     var f = lista[i]; prog('Lendo ' + (i + 1) + ' de ' + lista.length + ': ' + f.name + '…');
     try {
