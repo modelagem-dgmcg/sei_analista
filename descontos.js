@@ -224,9 +224,9 @@ function _listaItens(itens, tipo, calc, comFundamento) {
     s += '; ' + dec + '; valor a descontar ' + brl(l.efetivado) + '.';
     if (comFundamento) {
       if (it.justificativa_decisao) s += '\n  ' + it.justificativa_decisao;
-      if (it.resumo_defesa) s += '\n  Resumo da defesa: ' + it.resumo_defesa;
-      if (it.analise_tecnica) s += '\n  Análise técnica e probatória: ' + it.analise_tecnica;
-      if (it.fundamentacao_juridica) s += '\n  Fundamentação jurídica e contratual: ' + it.fundamentacao_juridica;
+      if (it.resumo_defesa) s += '\n  Resumo do Recurso: ' + it.resumo_defesa;
+      if (it.analise_tecnica) s += '\n  Análise Técnica e Probatória: ' + it.analise_tecnica;
+      if (it.fundamentacao_juridica) s += '\n  Fundamentação Jurídica e Contratual: ' + it.fundamentacao_juridica;
     }
     out.push(s);
   });
@@ -327,9 +327,11 @@ function classificarIndicador(it) {
   if (/educa[cç][aã]o permanente|comprova|ileg[ií]vel|document/.test(n)) return 'comprovacao';
   return 'qualidade_geral';
 }
+function _nomeOss(rec) { var n = String(rec.nome_oss || '').trim(), g = String(rec.sigla_oss || '').trim(); return n ? n + (g ? ' (' + g + ')' : '') : _v(g, 'OSS'); }
+function _unidadeMedida(it) { var w = String(it.indicador || '').trim().split(/\s+/)[0].toLowerCase(); return /^(saídas|saidas|consultas|cirurgias|atendimentos|exames|partos|procedimentos|internações|internacoes)$/.test(w) ? w : 'registros'; }
 function _refParecer(rec) { return 'Parecer Técnico CTAI nº ' + _v(rec.parecer_numero, 'nº do parecer') + (rec.parecer_sei ? ' (documento SEI ' + rec.parecer_sei + ')' : ''); }
 function sugerirDecisao(rec, it, pm, hoje) {
-  var p = calcularPrazos(rec, pm), regra = classificarIndicador(it), av = [], sigla = _v(rec.sigla_oss, 'OSS'), tri = _trimLabel(rec);
+  var p = calcularPrazos(rec, pm), regra = classificarIndicador(it), av = [], sigla = _nomeOss(rec), tri = _trimLabel(rec);
   var temDefesa = sim(rec.defesa), semDefesa = nao(rec.defesa), r = { regra: regra, decisao: '', abertura: '', resumo: '', analise: '', juridica: DESC_BASE_JURIDICA[regra], avisos: av };
   if (!temDefesa && !semDefesa) { av.push('Informe na ficha se a OSS apresentou defesa; sem isso a decisão não pode ser sugerida.'); return r; }
   var pp = it.tipo === 'producao' ? percProducao(it) : null, lim = +pm.limiar_producao_pct || 85;
@@ -344,9 +346,9 @@ function sugerirDecisao(rec, it, pm, hoje) {
       ? 'A Organização Social de Saúde (OSS) ' + sigla + ' não encaminhou defesa administrativa ou recurso tempestivo referente ao não atingimento da meta apontada pela comissão no ' + tri + '. Constata-se a inércia formal da contratada, inexistindo justificativa protocolada para afastar o descumprimento apurado no período.'
       : 'A Organização Social contratada não apresentou defesa administrativa nem justificativa formal referente ao apontamento do indicador "' + _v(it.indicador, 'indicador') + '" no período.';
     if (regra === 'producao_meta') {
-      var ms = DESC_MESES[(+rec.trimestre || 1) - 1], m = pp.meses;
-      var vals = m.every(function (x) { return x !== null; }) ? ms[0] + ': ' + m[0] + '; ' + ms[1] + ': ' + m[1] + '; ' + ms[2] + ': ' + m[2] : '[quantitativos mensais]';
-      r.analise = 'De acordo com o ' + _refParecer(rec) + ', a unidade registrou, no indicador "' + _v(it.indicador, 'indicador') + '", os seguintes quantitativos de ' + _v(rec.ano, 'ano') + ' (' + vals + '), alcançando um percentual trimestral de ' + (pp.pct !== null ? String(pp.pct).replace('.', ',') + '%' : '[percentual]') + ' da meta. Diante da ausência de defesa administrativa ou de comprovação de excludentes de responsabilidade, como a inexistência de demanda validada pela contratante, prevalece a verdade material dos registros oficiais, confirmando-se que a unidade não atingiu o patamar mínimo contratual de ' + lim + '% de execução. Em decorrência do descumprimento, mantém-se integralmente o apontamento de desconto.';
+      var ms = DESC_MESES[(+rec.trimestre || 1) - 1], m = pp.meses, un = _unidadeMedida(it);
+      var vals = m.every(function (x) { return x !== null; }) ? m[0] + ' ' + un + ' em ' + ms[0] + ', ' + m[1] + ' em ' + ms[1] + ' e ' + m[2] + ' em ' + ms[2] + ' de ' + _v(rec.ano, 'ano') : '[quantitativos mensais] de ' + _v(rec.ano, 'ano');
+      r.analise = 'De acordo com o ' + _refParecer(rec) + ', a unidade registrou ' + vals + ', alcançando um percentual trimestral de ' + (pp.pct !== null ? String(pp.pct).replace('.', ',') + '%' : '[percentual]') + ' da meta. Diante da ausência de defesa administrativa ou de comprovação de excludentes de responsabilidade — como a inexistência de demanda validada pela contratante —, prevalece a verdade material dos registros oficiais, confirmando-se que a unidade não atingiu o patamar mínimo contratual de ' + lim + '% de execução. Em decorrência do descumprimento, mantém-se integralmente o apontamento de desconto.';
     } else if (regra === 'prestacao_contas') {
       r.analise = 'Conforme verificado pela Gerência de Acompanhamento Contábil Financeiro dos Contratos de Gestão e registrado no ' + _refParecer(rec) + ', o relatório referente à(s) competência(s) [informar] foi entregue fora do prazo estipulado. Sem justificativa ou prova de força maior, resta caracterizado o descumprimento do indicador de qualidade na(s) referida(s) competência(s). Dessa forma, ratifica-se o apontamento de desconto.';
     } else if (regra === 'comprovacao') {
@@ -366,6 +368,14 @@ function sugerirDecisao(rec, it, pm, hoje) {
     : 'De acordo com o ' + _refParecer(rec) + ', [descrever o apurado]. [Confrontar cada argumento da defesa com os documentos e concluir.]';
   av.push('Com defesa apresentada, a decisão de mérito é sua: o sistema só monta a estrutura e confere prazo, números e fontes externas.');
   return r;
+}
+function textoFundamentacao(it) {
+  var p = [];
+  if (it.justificativa_decisao) p.push(it.justificativa_decisao);
+  if (it.resumo_defesa) p.push('Resumo do Recurso:\n' + it.resumo_defesa);
+  if (it.analise_tecnica) p.push('Análise Técnica e Probatória: \n' + it.analise_tecnica);
+  if (it.fundamentacao_juridica) p.push('Fundamentação Jurídica e Contratual: \n' + it.fundamentacao_juridica);
+  return p.join('\n\n');
 }
 // ===== FIM DO NÚCLEO =====
 
@@ -475,7 +485,7 @@ function descHtmlFicha() {
   const a = DESC.atual;
   const dados = dCartao('Identificação', dGrade(190,
     dCampo('Unidade', dIn('f_unidade', a.unidade)) + dCampo('Tipo', dSel('f_tipo', a.tipo, [['HOSPITAL', 'Hospital'], ['UPA', 'UPA'], ['UPAE', 'UPAE'], ['OUTRO', 'Outro']])) +
-    dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
+    dCampo('OSS (nome completo)', dIn('f_nome_oss', a.nome_oss, 'text', 'placeholder="ex.: Fundação Gestão Hospitalar Martiniano Fernandes"')) + dCampo('Sigla da OSS', dIn('f_sigla_oss', a.sigla_oss)) + dCampo('Contrato de Gestão (C.G)', dIn('f_contrato', a.contrato, 'text', 'placeholder="ex.: 024/2022"')) +
     dCampo('CNES', dIn('f_cnes', a.cnes, 'text', 'placeholder="7 dígitos"'), 'usado nas conferências externas') + dCampo('Ano', dIn('f_ano', a.ano, 'number')) +
     dCampo('Trimestre', dSel('f_trimestre', a.trimestre, [[1, '1º'], [2, '2º'], [3, '3º'], [4, '4º']])) + dCampo('Processo SEI', dIn('f_sei_processo', a.sei_processo, 'text', 'placeholder="0000000000.000000/0000-00"'))));
   const parecer = dCartao('1. Parecer da CTAI', dGrade(190, dCampo('Nº do parecer da CTAI', dIn('f_parecer_numero', a.parecer_numero, 'text', 'placeholder="ex.: 048/2025"')) + dCampo('Documento SEI do parecer', dIn('f_parecer_sei', a.parecer_sei), 'número do documento, não só o processo') + dCampo('Data do parecer', dIn('f_parecer_data', a.parecer_data, 'date'))));
@@ -499,7 +509,7 @@ function descHtmlFicha() {
 }
 function descLerFicha() {
   const a = DESC.atual, g = function (id) { const e = document.getElementById('f_' + id); return e ? e.value : ''; };
-  ['unidade', 'parecer_numero', 'tipo', 'sigla_oss', 'contrato', 'cnes', 'ano', 'trimestre', 'sei_processo', 'parecer_sei', 'parecer_data', 'base_legal_conferida', 'notificacao_envio', 'ciencia_data', 'defesa', 'defesa_data', 'grupo_tecnico_data', 'comissao_data', 'ata_revisada', 'ata_sei', 'ata_envio_oss', 'ata_ciencia_data', 'envio_gafcg', 'recurso', 'recurso_data', 'recurso_decisao_data', 'execucao_tipo', 'execucao_data', 'execucao_ref', 'observacoes'].forEach(function (c) { if (document.getElementById('f_' + c)) a[c] = g(c); });
+  ['unidade', 'nome_oss', 'parecer_numero', 'tipo', 'sigla_oss', 'contrato', 'cnes', 'ano', 'trimestre', 'sei_processo', 'parecer_sei', 'parecer_data', 'base_legal_conferida', 'notificacao_envio', 'ciencia_data', 'defesa', 'defesa_data', 'grupo_tecnico_data', 'comissao_data', 'ata_revisada', 'ata_sei', 'ata_envio_oss', 'ata_ciencia_data', 'envio_gafcg', 'recurso', 'recurso_data', 'recurso_decisao_data', 'execucao_tipo', 'execucao_data', 'execucao_ref', 'observacoes'].forEach(function (c) { if (document.getElementById('f_' + c)) a[c] = g(c); });
   DESC.itens.forEach(function (it, i) { ['indicador', 'valor_apontado', 'valor_compensado', 'data_compensacao', 'prazo_compensacao', 'decisao', 'justificativa_decisao', 'fonte_externa', 'chave_externa', 'valor_informado', 'valor_referencia', 'valor_acatado', 'meta_trimestre', 'realizado_1', 'realizado_2', 'realizado_3', 'pct_parecer', 'resumo_defesa', 'analise_tecnica', 'fundamentacao_juridica', 'julgamento_revisado'].forEach(function (c) { const e = document.getElementById('i_' + c + '_' + i); if (e) it[c] = e.value; }); });
 }
 function descMudou() { DESC._sujo = true; const s = document.getElementById('d_sujo'); if (s) s.textContent = 'Alterações não salvas'; clearTimeout(window._dr); window._dr = setTimeout(descRecalcular, 250); }
@@ -540,9 +550,9 @@ function descRecalcular() {
     const bloco = prod ? '<div style="margin-top:10px;padding:10px;background:#f8f9fa;border-radius:6px;"><div style="font-size:0.78rem;font-weight:700;margin-bottom:6px;">Dados da meta (para conferir o atingimento)</div>' + dGrade(130,
       dCampo('Meta do trimestre', dIn('i_meta_trimestre_' + i, it.meta_trimestre)) + dCampo('Realizado mês 1', dIn('i_realizado_1_' + i, it.realizado_1)) + dCampo('Realizado mês 2', dIn('i_realizado_2_' + i, it.realizado_2)) + dCampo('Realizado mês 3', dIn('i_realizado_3_' + i, it.realizado_3)) + dCampo('% que consta no parecer', dIn('i_pct_parecer_' + i, it.pct_parecer))) +
       '<div id="i_pct_' + i + '" style="font-size:0.8rem;margin-top:6px;"></div>' + (sugPrazo ? '<div style="font-size:0.78rem;margin-top:4px;color:#495057;">Prazo de compensação sugerido: <strong>' + dBr(sugPrazo) + '</strong> (fim do ' + dPmapa().trimestres_compensacao + 'º trimestre seguinte; regra a confirmar) <button class="btn btn-secondary btn-sm" onclick="document.getElementById(\'i_prazo_compensacao_' + i + '\').value=\'' + sugPrazo + '\';descMudou()">Usar</button></div>' : '') + '</div>' : '';
-    const decisao = '<div style="margin-top:10px;padding:10px;border:1px solid #dee2e6;border-radius:6px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><div style="font-size:0.78rem;font-weight:700;">Decisão e fundamentação</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerir(' + i + ')"><i class="ti ti-wand"></i> Sugerir decisão</button><button class="btn btn-secondary btn-sm" onclick="descIA(' + i + ')"><i class="ti ti-sparkles"></i> Redigir análise com IA</button></div></div>' +
+    const decisao = '<div style="margin-top:10px;padding:10px;border:1px solid #dee2e6;border-radius:6px;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px;"><div style="font-size:0.78rem;font-weight:700;">Decisão e fundamentação</div><div style="display:flex;gap:6px;flex-wrap:wrap;"><button class="btn btn-secondary btn-sm" onclick="descSugerir(' + i + ')"><i class="ti ti-wand"></i> Sugerir decisão</button><button class="btn btn-secondary btn-sm" onclick="descIA(' + i + ')"><i class="ti ti-sparkles"></i> Redigir análise com IA</button><button class="btn btn-secondary btn-sm" onclick="descCopiarFund(' + i + ')"><i class="ti ti-copy"></i> Copiar texto completo</button></div></div>' +
       '<div id="i_avisos_' + i + '" style="margin-bottom:6px;"></div>' + dGrade(200, dCampo('Decisão', dSel('i_decisao_' + i, it.decisao, Object.keys(DESC_ROTULOS_DEC).map(function (k) { return [k, DESC_ROTULOS_DEC[k]]; }))) + dCampo('Valor acatado (R$)', dIn('i_valor_acatado_' + i, it.valor_acatado), 'vazio = tudo, quando a defesa for acatada') + dCampo('Julgamento revisado?', dSel('i_julgamento_revisado_' + i, it.julgamento_revisado, SIM_NAO))) +
-      '<div style="margin-top:8px;">' + dCampo('Abertura da fundamentação', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao)) + '</div><div style="margin-top:8px;">' + dCampo('Resumo da defesa', ta('resumo_defesa', it.resumo_defesa, 3)) + '</div><div style="margin-top:8px;">' + dCampo('Análise técnica e probatória', ta('analise_tecnica', it.analise_tecnica, 5)) + '</div><div style="margin-top:8px;">' + dCampo('Fundamentação jurídica e contratual', ta('fundamentacao_juridica', it.fundamentacao_juridica, 4)) + '</div></div>';
+      '<div style="margin-top:8px;">' + dCampo('Abertura da fundamentação', dIn('i_justificativa_decisao_' + i, it.justificativa_decisao)) + '</div><div style="margin-top:8px;">' + dCampo('Resumo do Recurso', ta('resumo_defesa', it.resumo_defesa, 3)) + '</div><div style="margin-top:8px;">' + dCampo('Análise Técnica e Probatória', ta('analise_tecnica', it.analise_tecnica, 5)) + '</div><div style="margin-top:8px;">' + dCampo('Fundamentação Jurídica e Contratual', ta('fundamentacao_juridica', it.fundamentacao_juridica, 4)) + '</div></div>';
     return '<div style="border:1px solid #e9ecef;border-radius:6px;padding:10px;margin-bottom:10px;background:' + (l.fora_prazo_compensacao ? '#fff5f5' : '#fff') + ';"><div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:8px;"><span class="rx-tag">' + (prod ? 'Produção' : 'Qualidade') + '</span><button class="btn btn-sm btn-secondary" onclick="descRemItem(' + i + ')" title="Remover"><i class="ti ti-trash"></i></button></div>' +
       dGrade(prod ? 150 : 190, dCampo('Indicador', dIn('i_indicador_' + i, it.indicador)) + dCampo('Valor apontado (R$)', dIn('i_valor_apontado_' + i, it.valor_apontado)) +
         (prod ? dCampo('Valor compensado (R$)', dIn('i_valor_compensado_' + i, it.valor_compensado)) + dCampo('Data da compensação', dIn('i_data_compensacao_' + i, it.data_compensacao, 'date')) + dCampo('Prazo para compensação', dIn('i_prazo_compensacao_' + i, it.prazo_compensacao, 'date')) : '')) +
@@ -568,6 +578,7 @@ function descSugerir(i, silencioso) {
   if (av) av.innerHTML = r.avisos.map(function (x) { return '<div style="background:#fff3cd;border-radius:4px;padding:5px 9px;font-size:0.8rem;margin-top:4px;">' + dEsc(x) + '</div>'; }).join('') + '<div style="font-size:0.74rem;color:#6c757d;margin-top:4px;">Rascunho montado por regras a partir das decisões já tomadas (' + dEsc(r.regra) + '). Revise antes de usar.</div>';
   descMudou();
 }
+function descCopiarFund(i) { descLerFicha(); const t = textoFundamentacao(DESC.itens[i]); const ta = document.createElement('textarea'); ta.value = t; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); mostrarToast('Texto copiado no formato da ficha.'); } catch (e) { mostrarToast('Não consegui copiar.'); } ta.remove(); }
 function descSugerirTodas() { descLerFicha(); if (!DESC.itens.length) { mostrarToast('Não há apontamentos.'); return; } if (!confirm('Montar o rascunho de decisão de todos os apontamentos? Textos já escritos serão substituídos.')) return; DESC.itens.forEach(function (_, i) { descSugerir(i, true); }); }
 async function descIA(i) {
   descLerFicha(); const a = DESC.atual, it = DESC.itens[i];
