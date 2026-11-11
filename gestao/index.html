@@ -707,8 +707,8 @@ async function telaUsuarios() {
   if (resCh.ok) { _chaves = resCh.chaves || []; _chavesUsuarios = resCh.usuarios || []; _servicosIA = resCh.servicos || {}; }
   const ativos = _usuarios.filter(u => u.ativo).length;
   const acesso = u => {
-    const lista = u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs'] : ['analista']);
-    return lista.map(a => a === 'gestao' ? 'Gestão' : a === 'docs' ? 'Docs' : 'Analista').join(' + ') + (u.apps ? '' : ' <span style="color:var(--mudo);">(padrão)</span>');
+    const lista = u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs', 'descontos'] : ['analista']);
+    return lista.map(a => a === 'gestao' ? 'Gestão' : a === 'docs' ? 'Acervo' : a === 'raiox' ? 'Raio-X' : a === 'descontos' ? 'Descontos' : 'Analista').join(' + ') + (u.apps ? '' : ' <span style="color:var(--mudo);">(padrão)</span>');
   };
   c.innerHTML = `${_avisoUsuarios ? `<div class="ok-msg">${esc(_avisoUsuarios)}</div>` : ''}
     <div class="bloco">
@@ -735,7 +735,7 @@ async function telaUsuarios() {
 
 function formUsuario(id) {
   const u = id ? _usuarios.find(x => x.id === id) : null;
-  const lista = u ? (u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs'] : ['analista'])) : ['analista'];
+  const lista = u ? (u.apps ? u.apps.split(',') : (u.perfil === 'admin' ? ['analista', 'gestao', 'docs', 'descontos'] : ['analista'])) : ['analista'];
   const gerencias = [...new Set(_usuarios.map(x => x.gerencia).filter(Boolean))].sort();
   const fundo = document.createElement('div');
   fundo.className = 'janela-fundo'; fundo.id = 'janela-usuario';
@@ -751,6 +751,7 @@ function formUsuario(id) {
     <label class="marcar"><input type="checkbox" id="fu-app-analista" ${lista.includes('analista') ? 'checked' : ''}> Analista</label>
     <label class="marcar"><input type="checkbox" id="fu-app-gestao" ${lista.includes('gestao') ? 'checked' : ''}> Gestão <span class="dica" style="margin:0;">(só administradores)</span></label>
     <label class="marcar"><input type="checkbox" id="fu-app-docs" ${lista.includes('docs') ? 'checked' : ''}> Acervo <span class="dica" style="margin:0;">(quem alimenta e consulta a base de documentos)</span></label>
+    <label class="marcar"><input type="checkbox" id="fu-app-descontos" ${lista.includes('descontos') || (u && u.perfil === 'admin') ? 'checked' : ''}> Descontos <span class="dica" style="margin:0;">(telas Descontos e Histórico CTAI; administrador sempre tem)</span></label>
     <label class="marcar"><input type="checkbox" id="fu-app-raiox" ${lista.includes('raiox') ? 'checked' : ''}> Raio-X <span class="dica" style="margin:0;">(escrutínio geral; só quem for liberado)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
@@ -766,19 +767,20 @@ function formUsuario(id) {
 }
 
 function ajustarAcessoGestao() {
-  const admin = $('fu-perfil').value === 'admin', cx = $('fu-app-gestao');
+  const admin = $('fu-perfil').value === 'admin', cx = $('fu-app-gestao'), cd = $('fu-app-descontos');
   cx.disabled = !admin;
   if (!admin) cx.checked = false;
+  if (cd) { cd.disabled = admin; if (admin) cd.checked = true; }
 }
 function fecharJanela() { $('janela-usuario')?.remove(); }
 
 async function salvarUsuario(id) {
   const erro = $('fu-erro'); erro.classList.add('hidden');
   const perfil = $('fu-perfil').value;
-  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null, $('fu-app-docs').checked ? 'docs' : null, $('fu-app-raiox').checked ? 'raiox' : null].filter(Boolean);
+  const marcados = [$('fu-app-analista').checked ? 'analista' : null, $('fu-app-gestao').checked ? 'gestao' : null, $('fu-app-docs').checked ? 'docs' : null, $('fu-app-descontos').checked ? 'descontos' : null, $('fu-app-raiox').checked ? 'raiox' : null].filter(Boolean);
   if (!marcados.length) { erro.textContent = 'Marque pelo menos um aplicativo.'; erro.classList.remove('hidden'); return; }
   // Se o acesso marcado é o padrão do perfil, grava vazio (padrão); senão grava a lista.
-  const padrao = perfil === 'admin' ? 'analista,gestao,docs' : 'analista';
+  const padrao = perfil === 'admin' ? 'analista,gestao,docs,descontos' : 'analista';
   const corpo = { nome_usuario: $('fu-nome').value.trim(), gerencia_usuario: $('fu-gerencia').value.trim(), perfil_usuario: perfil,
     apps_usuario: marcados.join(',') === padrao ? '' : marcados.join(',') };
   corpo.ia_escolhas = escolhasIA();

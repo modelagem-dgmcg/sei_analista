@@ -765,6 +765,9 @@ function _mostrarBotaoGestao() {
   const temAcesso = !!usuarioAtual && usuarioAtual.perfil === 'admin' && (!apps.length || apps.includes('gestao'));
   const item = document.getElementById('nav-admin');
   if (item) item.style.display = temAcesso ? '' : 'none';
+  // Descontos e Histórico CTAI: só administrador ou quem recebeu o acesso "descontos" em Gestão > Usuários
+  const temDesc = !!usuarioAtual && (usuarioAtual.perfil === 'admin' || apps.includes('descontos'));
+  ['nav-descontos', 'nav-historico'].forEach(function (id) { const n = document.getElementById(id); if (n) n.style.display = temDesc ? '' : 'none'; });
 }
 
 // ==================== MENU ADMINISTRAÇÃO (só perfil admin) ====================
