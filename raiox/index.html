@@ -176,8 +176,8 @@
 // ============================================================
 // RAIO-X — lógica da página
 // ============================================================
-const VERSAO_RAIOX = 'v0.41';
-const VERSAO_RAIOX_DATA = '10/11/2026 23:00';
+const VERSAO_RAIOX = 'v0.42';
+const VERSAO_RAIOX_DATA = '11/11/2026 04:00';
 const API_URL = 'https://script.google.com/macros/s/AKfycbzzcJEAQPUCwY5YC2o1O5bj500pRE2mOFfZrLCy-e2kFzIgoDkebamJBgQK_yV2Ez0b/exec';
 const JANELAS_MAX = 8;           // por escopo (cada janela ~110 mil caracteres)
 const CHUNK_IA = 30000;          // caracteres por chamada à IA
@@ -1310,6 +1310,37 @@ async function diagnosticarTudo() {
   LD.rodando = false; window.onbeforeunload = null; try { if (trava) trava.release(); } catch (e) {}
   pintarLei();
 }
+
+// ---------- diagnóstico em segundo plano (servidor) ----------
+const LJ = { job: null, timer: null, n: 0 };
+function ljTexto() {
+  const j = LJ.job; if (!j) return 'Nenhuma rodada em segundo plano foi iniciada ainda.';
+  if (j.ativo) return `<span class="spinner"></span>Rodando no servidor desde ${esc(fmtData(j.iniciado_em))}. Já feitos nesta rodada: <b>${fmt(j.feitos || 0)}</b> de ${fmt(j.faltavam || 0)}. Última atividade: ${esc(fmtData(j.atualizado_em))}.${j.ultimo_erro ? ' Último aviso: ' + esc(j.ultimo_erro) : ''}`;
+  if (j.pausado) return `<span style="color:var(--bordo)">Parada: ${esc(j.pausado)}</span> Feitos nesta rodada: ${fmt(j.feitos || 0)}.`;
+  return `Última rodada terminou em ${esc(fmtData(j.concluido_em))}. Feitos: ${fmt(j.feitos || 0)}.`;
+}
+async function ljAtualizar(recarregar) {
+  const r = await api('raiox/lei-job-estado', {});
+  if (abaAtual !== 'lei') { clearInterval(LJ.timer); LJ.timer = null; return; }
+  if (r && r.ok !== false) {
+    const estavaAtivo = LJ.job && LJ.job.ativo; LJ.job = r.job;
+    const el = $('lj-msg'); if (el) el.innerHTML = ljTexto();
+    if (r.job && r.job.ativo) { if (!LJ.timer) LJ.timer = setInterval(() => ljAtualizar(), 30000); LJ.n++; }
+    else { if (LJ.timer) { clearInterval(LJ.timer); LJ.timer = null; } }
+    if (recarregar || (estavaAtivo && !(r.job && r.job.ativo)) || (r.job && r.job.ativo && LJ.n % 4 === 0)) { if (!LD.rodando) await telaLeiRecarregar(); }
+  }
+}
+async function telaLeiRecarregar() {
+  const d = await api('raiox/lei-obter', {}); if (abaAtual !== 'lei' || !d || d.ok === false) return;
+  const mapa = {}; (d.itens || []).forEach(i => { mapa[i.id] = i; }); achados.forEach(a => { a.lei_diag = mapa[a.id] || null; }); pintarLei();
+}
+async function ljIniciar() {
+  const r = await api('raiox/lei-job-iniciar', {});
+  if (r.ok === false) { const el = $('lj-msg'); if (el) el.innerHTML = `<span style="color:var(--bordo)">${esc(r.erro)}</span>`; return; }
+  if (r.iniciado === false) { const el = $('lj-msg'); if (el) el.textContent = r.mensagem || 'Nada a fazer.'; return; }
+  await ljAtualizar(true);
+}
+async function ljParar() { await api('raiox/lei-job-parar', {}); await ljAtualizar(true); }
 function pintarLeiProgresso() { const el = $('ld-msg'); if (el) el.innerHTML = '<span class="spinner"></span>' + esc(LD.msg); }
 
 // ---------- tela ----------
@@ -1321,7 +1352,7 @@ async function telaLei() {
   achados = prepararAchados(r.achados || []); LEI_SEL = ''; LD.msg = '';
   const mapa = {}; ((d && d.ok !== false && d.itens) || []).forEach(i => { mapa[i.id] = i; });
   achados.forEach(a => { a.lei_diag = mapa[a.id] || null; });
-  pintarLei();
+  pintarLei(); ljAtualizar();
 }
 function leiDoArtigo(id) { return achados.filter(visivel).filter(a => id === 'sem' ? !artigosDe(a).length : artigosDe(a).includes(id)); }
 function pintarLei() {
@@ -1350,6 +1381,10 @@ function pintarLei() {
     <div class="tiles"><div class="tile"><h3>Achados a analisar</h3><div class="grande">${fmt(vis.length)}</div></div><div class="tile"><h3>Já diagnosticados</h3><div class="grande">${fmt(feitos)}</div></div>
       <div class="tile"><h3>Parecem descumprir</h3><div class="grande" style="color:var(--bordo)">${fmt(nDesc)}</div></div><div class="tile"><h3>Revisados pelo jurídico</h3><div class="grande">${fmt(nRev)}</div></div></div>
     <div class="acoes"><label class="auto" style="margin:0">Rodar até <select id="ld-lim" style="width:auto"><option value="0">todos</option><option value="80" ${LD.lim==='80'?'selected':''}>80</option><option value="240" ${LD.lim==='240'?'selected':''}>240</option><option value="600" ${LD.lim==='600'?'selected':''}>600</option></select> por rodada</label><button class="btn btn-principal" onclick="LD.lim=$('ld-lim').value;diagnosticarTudo()" ${LD.rodando || !pend ? 'disabled' : ''}><i class="ti ti-sparkles"></i> ${!pend ? 'Diagnóstico completo' : (feitos ? 'Continuar o diagnóstico' : 'Rodar o diagnóstico') + ' (' + fmt(pend) + ' pendentes)'}</button>${LD.rodando ? ' <button class="btn btn-sm btn-claro" onclick="LD.parar=true">Pausar</button>' : ''}</div><div class="dica" id="ld-msg">${LD.rodando ? '<span class="spinner"></span>' : ''}${esc(LD.msg)}</div>
+    <div style="border:1px solid var(--borda);border-radius:8px;padding:10px 14px;margin:10px 0;background:#f7fafb"><b><i class="ti ti-server"></i> Rodar em segundo plano (no servidor)</b>
+      <div class="dica">O servidor do Google faz o diagnóstico sozinho, em lotes, usando a DeepSeek (ou outra chave liberada). Pode fechar esta aba e o navegador. Volte depois: o que já foi feito está gravado.</div>
+      <div class="acoes"><button class="btn btn-principal" onclick="ljIniciar()" ${LJ.job && LJ.job.ativo || !pend ? 'disabled' : ''}><i class="ti ti-player-play"></i> Rodar em segundo plano</button>${LJ.job && LJ.job.ativo ? ' <button class="btn btn-sm btn-claro" onclick="ljParar()">Parar</button>' : ''}</div>
+      <div class="dica" id="lj-msg">${ljTexto()}</div></div>
     <div class="dica">Os achados ainda sem diagnóstico aparecem na tabela pela ligação por palavras (menos precisa). "TCE-PE" conta os achados que têm referência dos processos do Tribunal de Contas já mapeados no sistema.</div>
     <div class="rolagem"><table class="tabela"><thead><tr><th rowspan="2">Norma</th><th colspan="3" style="text-align:center">Achados do Raio-X</th><th colspan="3" style="text-align:center">Pareceres da CTAI</th><th rowspan="2">Com referência TCE-PE</th><th rowspan="2">Sem diagnóstico</th><th rowspan="2"></th></tr>
       <tr><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th><th>Descumpre</th><th>Faltam info.</th><th>Cumpre</th></tr></thead><tbody>
