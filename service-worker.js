@@ -1,4 +1,4 @@
-const CACHE_NAME = 'sei-analista-shell-v32';
+const CACHE_NAME = 'sei-analista-shell-v33';
 const APP_SHELL = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ const APP_SHELL = [
   './descontos.js',
   './historico.js',
   './desc_banco.js',
+  './contratos_drive.js',
   './manifest.webmanifest',
   './icons/mascote-analista.png'
 ];
