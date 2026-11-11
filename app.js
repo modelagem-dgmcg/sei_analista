@@ -5390,7 +5390,7 @@ function _atualizarSeloRelato() {
     b.removeAttribute('style'); b.style.display = usuarioAtual ? 'inline-block' : 'none'; b.title = dica;
   }
   if (pill) {
-    pill.style.display = usuarioAtual && !g.concluido ? 'inline-flex' : 'none';
+    pill.style.display = 'none'; // aviso "Meu trabalho: prazo..." do topo retirado a pedido (o selo do menu e a tela "Meu trabalho" seguem)
     pill.className = 'prazo-pill prazo-' + g.nivel;
     pill.innerHTML = '<i class="ti ti-hourglass-high"></i> Meu trabalho: ' + escHtml(g.curto) + ' · ' + g.feitas + ' de ' + g.total;
     pill.title = dica;
