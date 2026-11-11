@@ -435,7 +435,7 @@ async function showView(v, subCaixa = 'entrada') {
     dashboard_concluidos: 'Registro de Concluídos',
     dashboard_panorama: 'Painel Geral',
     dashboard_perguntas: 'Perguntas sobre achados',
-    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho', admin: 'Administração', descontos: 'Processo de Descontos'
+    novo: 'Importar Processo', config: 'Configurações', relato: 'Meu trabalho', admin: 'Administração', descontos: 'Processo de Descontos', historico: 'Histórico dos pareceres da CTAI'
   };
   const tituloKey = v === 'dashboard' ? 'dashboard_' + subCaixa : v;
   let pageTitle = document.getElementById('page-title');
@@ -470,6 +470,8 @@ async function showView(v, subCaixa = 'entrada') {
     await renderAdministracao(content);
   } else if (v === 'descontos') {
     if (typeof renderDescontos === 'function') await renderDescontos();
+  } else if (v === 'historico') {
+    if (typeof renderHistorico === 'function') await renderHistorico();
   } else if (v === 'relato') {
     await renderRelato(content);
   } else if (v === 'config') {

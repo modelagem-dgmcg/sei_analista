@@ -1,10 +1,11 @@
-const CACHE_NAME = 'sei-analista-shell-v21';
+const CACHE_NAME = 'sei-analista-shell-v22';
 const APP_SHELL = [
   './',
   './index.html',
   './style.css',
   './app.js',
   './descontos.js',
+  './historico.js',
   './manifest.webmanifest',
   './icons/mascote-analista.png'
 ];
