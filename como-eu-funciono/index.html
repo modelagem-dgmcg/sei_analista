@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Como eu funciono</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap" rel="stylesheet">
+<style>
+/* Layout: uma coluna de cartões para ler no celular, com uma faixa fixa no topo
+   que conta quantos cartões faltam para o chocolate. */
+:root{
+  --fundo:#eceaea;
+  --cartao:#ffffff;
+  --tinta:#26232a;
+  --tinta-suave:#5d5862;
+  --linha:#d8d4d6;
+  --bordo:#8a1f38;
+  --bordo-fundo:#f6e9ec;
+  --display:"Bricolage Grotesque","Trebuchet MS",Verdana,sans-serif;
+  --corpo:"Atkinson Hyperlegible",Verdana,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --fundo:#19171b;
+    --cartao:#242127;
+    --tinta:#efecee;
+    --tinta-suave:#b3adb6;
+    --linha:#3a363e;
+    --bordo:#e58a9d;
+    --bordo-fundo:#35212a;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --fundo:#19171b;
+  --cartao:#242127;
+  --tinta:#efecee;
+  --tinta-suave:#b3adb6;
+  --linha:#3a363e;
+  --bordo:#e58a9d;
+  --bordo-fundo:#35212a;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:64px}
+body{margin:0;background:var(--fundo);color:var(--tinta);font-family:var(--corpo);font-size:1.0625rem;line-height:1.55}
+img{max-width:100%;height:auto;display:block}
+a{color:var(--bordo)}
+a:focus-visible,summary:focus-visible{outline:3px solid var(--bordo);outline-offset:3px;border-radius:4px}
+
+.faixa{position:sticky;top:0;z-index:5;background:var(--fundo);border-bottom:1px solid var(--linha);padding:10px 16px 12px}
+.faixa-dentro{max-width:34rem;margin:0 auto;display:grid;gap:8px}
+.faixa-texto{font-size:.875rem;color:var(--tinta-suave);font-variant-numeric:tabular-nums}
+.faixa-texto strong{color:var(--bordo)}
+.trilho{height:6px;border-radius:3px;background:var(--linha);overflow:hidden}
+.avanco{height:100%;width:0;background:var(--bordo);border-radius:3px;transition:width .25s ease}
+
+main{max-width:34rem;margin:0 auto;padding:20px 16px 48px;display:grid;gap:20px}
+.cartao{background:var(--cartao);border:1px solid var(--linha);border-radius:14px;padding:22px 20px;display:grid;gap:14px}
+.cartao h1,.cartao h2{font-family:var(--display);margin:0;text-wrap:balance;line-height:1.12}
+.cartao h1{font-size:2.5rem;font-weight:800;letter-spacing:-.01em}
+.cartao h2{font-size:1.5rem;font-weight:600}
+.cartao p{margin:0}
+.cartao ul{margin:0;padding-left:1.15em;display:grid;gap:8px}
+.cartao li::marker{color:var(--bordo)}
+.suave{color:var(--tinta-suave)}
+
+figure{margin:0;display:grid;gap:8px}
+figure img{border-radius:10px;width:100%}
+figure.alta img{max-height:26rem;object-fit:cover;object-position:center top}
+figcaption{font-size:.9375rem;font-style:italic;color:var(--tinta-suave);border-left:3px solid var(--bordo);padding-left:10px}
+
+.serio{border-left:5px solid var(--bordo)}
+.serio p{font-size:1.1875rem}
+.entende{list-style:none;padding:0}
+.entende li{padding:12px 0;border-top:1px solid var(--linha)}
+.entende li:first-child{border-top:0;padding-top:0}
+.entende strong{color:var(--bordo)}
+.chave{display:inline-block;font-family:var(--display);font-weight:600;background:var(--bordo-fundo);color:var(--bordo);padding:1px 8px;border-radius:6px}
+
+details{border-top:1px solid var(--linha);padding-top:12px}
+summary{cursor:pointer;font-weight:700;color:var(--bordo)}
+details ul{margin-top:12px;font-size:1rem}
+
+.premio{background:var(--bordo-fundo);border-color:var(--bordo)}
+.premio h2{color:var(--bordo);font-size:1.875rem;font-weight:800}
+footer{max-width:34rem;margin:0 auto;padding:0 16px 32px;font-size:.875rem;color:var(--tinta-suave)}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}.avanco{transition:none}}
+</style>
+</head>
+<body>
+
+<div class="faixa" role="status" aria-live="polite">
+  <div class="faixa-dentro">
+    <div class="faixa-texto" id="faixa-texto">Role até o fim: tem chocolate.</div>
+    <div class="trilho"><div class="avanco" id="avanco"></div></div>
+  </div>
+</div>
+
+<main>
+
+<section class="cartao">
+  <h1>Como eu funciono</h1>
+  <p>Uma explicação curta sobre o meu jeito de trabalhar. Leva uns 3 minutos e tem chocolate no fim.</p>
+</section>
+
+<section class="cartao">
+  <h2>Se você trabalha comigo, talvez já tenha notado:</h2>
+  <ul>
+    <li>Eu pergunto muito. Eu sei. Você também sabe.</li>
+    <li>Ofereço ajuda ou solução sem ninguém pedir.</li>
+    <li>Explico rápido e, às vezes, já estou vários passos adiante.</li>
+    <li>Aviso quando algo me parece errado.</li>
+    <li>Passo a maior parte do tempo de cara fechada.</li>
+  </ul>
+  <p>Nada disso é para aparecer, me intrometer ou demonstrar raiva. Há uma explicação, e ela está logo abaixo.</p>
+</section>
+
+<section class="cartao serio">
+  <h2>De onde vem</h2>
+  <p>Sou autista e tenho TDAH, com laudo. São condições biológicas: não escolhi e não posso mudar.</p>
+  <p>Elas deixam mais forte a minha vontade de ajudar e de resolver rápido e bem feito. O rosto sério também vem daí: é só o meu rosto em repouso, não é com você.</p>
+</section>
+
+<section class="cartao">
+  <h2>Vejo o conjunto antes dos detalhes</h2>
+  <p>Relaciono o que estou vendo com o que já vi. É assim que minha cabeça trabalha.</p>
+</section>
+
+<section class="cartao">
+  <h2>Percebo rápido quando algo foge do padrão</h2>
+  <p>Primeiro noto que alguma coisa não bate, depois procuro onde está o erro. Com situações e pessoas acontece o mesmo, e costumo notar cedo quando algo vai dar problema.</p>
+</section>
+
+<section class="cartao">
+  <h2>Para mim é difícil só apontar e não resolver</h2>
+  <p>Quando encontro um problema, já começo a pensar na solução. Então organizo o que é confuso em fluxo, tabela ou ferramenta que outra pessoa consiga usar.</p>
+</section>
+
+<section class="cartao">
+  <h2>O que eu faço com isso</h2>
+  <p>Foi assim que nasceram o Analista, o Analista CTAI, o Raio-X, o Acervo, o Gestão e a função de Descontos.</p>
+  <p>Não sei programar. Construo com apoio de inteligência artificial: digo o que precisa existir, cobro e corrijo quando ela erra.</p>
+  <p>A IA erra. Eu confiro. Ela erra de novo. Por isso confiro o mesmo dado em 4 ou 5 modelos de IA, conforme o caso, e também no documento original e na norma.</p>
+</section>
+
+<section class="cartao">
+  <h2>Penso primeiro em quem vai usar</h2>
+  <p>Antes de montar qualquer coisa, eu me coloco no lugar de quem vai receber. Quero que a pessoa abra, entenda e resolva, sem manual e sem perder tempo.</p>
+  <p>Por isso cuido do que parece detalhe: o que aparece primeiro na tela, se a leitura cansa, quantos passos faltam até terminar. Cada passo que eu tiro é um trabalho que a pessoa deixa de ter.</p>
+  <p>Faço assim com um sistema e também com uma planilha, um documento ou uma tarefa que vou passar adiante.</p>
+  <p>Estudei UX Design na PUC Minas e reparo em serviços bem resolvidos, no Brasil e fora dele: um parque que organiza a fila sem ninguém se perder, uma companhia aérea que conduz o passageiro da compra ao desembarque, um autoatendimento que se explica sozinho. É daí que tiro as ideias.</p>
+</section>
+
+<section class="cartao">
+  <h2>O que isso me custa</h2>
+  <p>Minha atenção fica ligada quase o tempo todo. Reparo em muita coisa ao mesmo tempo, até sem querer, e conferir tudo em várias fontes exige tempo, energia e esforço mental.</p>
+</section>
+
+<section class="cartao serio">
+  <p>Isso cansa mais do que parece, e às vezes preciso de um tempo quieto para me recuperar.</p>
+</section>
+
+<section class="cartao">
+  <h2>Meus limites</h2>
+  <ul>
+    <li>Dependo da IA para construir as ferramentas.</li>
+    <li>Tenho muitas ideias ao mesmo tempo e não consigo levar todas até o fim sozinho.</li>
+    <li>As ferramentas ainda dependem de mim para ajustes.</li>
+  </ul>
+</section>
+
+<section class="cartao">
+  <h2>Como a gente se entende</h2>
+  <ul class="entende">
+    <li><strong>Pergunto muito porque</strong> você tem mais tempo de SES e conhece o serviço melhor do que eu. É com você que confirmo se o que estou vendo faz sentido. Se não for a hora, diga <span class="chave">me mande um e-mail</span> ou só <span class="chave">pauta</span>. Eu entendo que é para ver depois, registro por escrito e não insisto. Funciona na primeira tentativa.</li>
+    <li><strong>Se eu explicar rápido demais</strong> ou parecer exagero, peça para eu voltar e ir por partes. Não me ofendo.</li>
+    <li><strong>Pode me dar retorno negativo</strong>: não acho ruim. Só peço que, antes de concluir que fiz de propósito, me pergunte. Quando a crítica é sobre a minha vontade de ajudar, dói e frustra mais do que parece.</li>
+  </ul>
+</section>
+
+<section class="cartao serio">
+  <p>Estou tentando me ajustar, e é desafiador. Busco acompanhamento psicológico para isso.</p>
+</section>
+
+<section class="cartao">
+  <h2>Quer conferir?</h2>
+  <p>Não precisa acreditar só em mim. A pesquisa descreve coisas parecidas.</p>
+  <details>
+    <summary>Ver os estudos (em inglês)</summary>
+    <ul>
+      <li>O desentendimento entre autistas e não autistas acontece dos dois lados da conversa. <a href="https://kar.kent.ac.uk/62639">Milton, 2012</a></li>
+      <li>Quem não é autista forma impressão pior sobre pessoas autistas em poucos instantes, e a causa está no jeito, não na inteligência nem na confiabilidade. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC5286449">Sasson e colegas, 2017</a></li>
+      <li>O rosto de pessoas autistas mostra expressão com menos frequência e por menos tempo. <a href="https://pubmed.ncbi.nlm.nih.gov/30393953/">Trevisan e colegas, 2018</a></li>
+      <li>A busca intensa por regras e padrões é apontada como fonte de talento no autismo. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC2677592">Baron-Cohen e colegas, 2009</a></li>
+      <li>Autistas relatam como pontos fortes no trabalho a atenção aos detalhes, o senso moral e a habilidade técnica. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC8992926">Cope e Remington, 2022</a></li>
+      <li>Adultos autistas descrevem exaustão crônica e menor tolerância a estímulos. <a href="https://pdxscholar.library.pdx.edu/socwork_fac/378">Raymaker e colegas, 2020</a></li>
+      <li>Quem tem TDAH convive, ao longo da vida, com mais dificuldade para regular emoções. <a href="https://pmc.ncbi.nlm.nih.gov/articles/PMC4282137">Shaw e colegas, 2014</a></li>
+    </ul>
+  </details>
+</section>
+
+<section class="cartao premio" id="chocolate">
+  <h2>Chocolate desbloqueado</h2>
+  <p>Tire um print desta tela, mande para o meu WhatsApp e ganhe um chocolate.</p>
+  <p>Obrigado por ler.</p>
+</section>
+
+</main>
+
+<footer>Cleuton Vieira</footer>
+
+<script>
+(function(){
+  var cartoes = Array.prototype.slice.call(document.querySelectorAll('main .cartao'));
+  var texto = document.getElementById('faixa-texto');
+  var avanco = document.getElementById('avanco');
+  var total = cartoes.length;
+  function atualizar(){
+    var meio = window.innerHeight * 0.5;
+    var atual = 0;
+    for (var i = 0; i < total; i++){
+      if (cartoes[i].getBoundingClientRect().top <= meio) atual = i;
+    }
+    var noFim = (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 4);
+    if (noFim) atual = total - 1;
+    var faltam = total - 1 - atual;
+    avanco.style.width = Math.round((atual / (total - 1)) * 100) + '%';
+    if (faltam === 0){
+      texto.innerHTML = '<strong>Chocolate desbloqueado.</strong>';
+    } else if (faltam === 1){
+      texto.innerHTML = 'Falta <strong>1 cartão</strong> para o chocolate.';
+    } else {
+      texto.innerHTML = 'Faltam <strong>' + faltam + ' cartões</strong> para o chocolate.';
+    }
+  }
+  window.addEventListener('scroll', atualizar, {passive:true});
+  window.addEventListener('resize', atualizar);
+  atualizar();
+})();
+</script>
+</body>
+</html>
