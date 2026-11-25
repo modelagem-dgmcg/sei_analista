@@ -15,8 +15,8 @@ console.log("%cDesenvolvido por Cleuton Vieira. Colaboração: Yasmim Moraes.", 
 // ==================== VERSÃO ====================
 // Atualizar a cada nova entrega. Aparece no rodapé da tela junto com a versão do
 // servidor (Code.gs), para conferir de relance se os dois estão atualizados.
-const VERSAO_APP = 'v26.22';
-const VERSAO_APP_DATA = '03/11/2026 14:00';
+const VERSAO_APP = 'v26.23';
+const VERSAO_APP_DATA = '25/11/2026 17:00';
 console.log('Analista ' + VERSAO_APP + ' — ' + VERSAO_APP_DATA);
 
 // As chaves de IA são cadastradas pelo gestor no SEI Gestão e entregues pelo servidor
@@ -342,6 +342,7 @@ async function _entrarComResposta(res) {
         document.getElementById('app').classList.remove('hidden');
         iniciarMonitoramentoNovosItens();
         _carregarChavesDaGestao();
+        if (typeof encCarregarEstado === 'function') encCarregarEstado();
         await _concluirPendenciasAposLogin();
         return;
       }
@@ -358,6 +359,7 @@ async function _entrarComResposta(res) {
       usuarioAtual = res.usuario;
       _mostrarVersaoServidor(res.versao_backend);
       _carregarChavesDaGestao();
+      if (typeof encCarregarEstado === 'function') encCarregarEstado();
       document.getElementById('login-screen').classList.add('hidden');
       document.getElementById('app').classList.remove('hidden');
       document.getElementById('sidebar-nome').textContent = usuarioAtual.nome;
@@ -4322,6 +4324,7 @@ function renderizarCards(cards) {
           <button class="btn btn-sm" style="background:#0dcaf0;" onclick="fixarEvidenciaDaMemoria('${cardId}')"><i class="ti ti-pin"></i> Fixar</button>
           ${c.integridade ? '' : `<button class="btn btn-sm" style="background:#fff; color:#8e1628; border:1px solid #8e1628;" title="Analisei e este achado não cabe neste processo" onclick="abrirModalIncoerente('${cardId}')"><i class="ti ti-ban"></i> Incoerente</button>`}
           <button class="btn btn-sm" style="background:#495057; color:#fff;" onclick="modalEncaminharAchado('${escAttr(ref)}')"><i class="ti ti-send"></i> Encaminhar Achado</button>
+          ${typeof encBotaoSistema === 'function' ? encBotaoSistema(cardId) : ''}
           ${c.acao ? `<button class="btn btn-sm btn-secondary" onclick="${escAttr(c.acao.js)}">${escHtml(c.acao.rotulo)}</button>` : ''}
         </div>
         <div class="status-consulta-achado" style="margin-top:10px;"></div>
