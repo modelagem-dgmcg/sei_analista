@@ -13,6 +13,14 @@ async function dbCarregar(forcar) {
   var r = await api('historico/listar');
   if (!r || r.ok === false) return false;
   DBANCO.lista = r.pareceres || []; DBANCO.erratas = r.erratas || [];
+  // Acervo CTAI (planilha nova): entra junto; se a rota ainda não existir no servidor, segue só com o histórico
+  try {
+    var ac = await api('acervo/listar');
+    if (ac && ac.ok !== false && ac.pareceres) {
+      var tem = {}; DBANCO.lista.forEach(function (x) { tem[dbNorm(x.unidade) + '|' + x.ano + '|' + x.trimestre] = 1; });
+      ac.pareceres.forEach(function (x) { if (!tem[dbNorm(x.unidade) + '|' + x.ano + '|' + x.trimestre]) DBANCO.lista.push(x); });
+    }
+  } catch (e) {}
   if (typeof HIST !== 'undefined') { HIST.lista = DBANCO.lista; HIST.erratas = DBANCO.erratas; }
   return true;
 }
@@ -71,7 +79,7 @@ async function descPuxarBanco() {
     if (!p) { var disp = (DBANCO.lista || []).filter(function (x) { return Number(x.ano) === Number(a.ano) && Number(x.trimestre) === Number(a.trimestre); }).map(function (x) { return x.unidade; }).sort(); DESC._banco = { faltando: true, disp: disp }; mostrarToast('Não achei o parecer de ' + a.unidade + ' (' + a.trimestre + 'º tri/' + a.ano + ') no banco.'); descDesenhar(); return; }
     if (dbNorm(p.unidade) !== dbNorm(a.unidade)) { a.unidade = p.unidade; DESC.fichaCampos = null; DESC._fichaUnidade = ''; }
     if (DESC.itens.length && !confirm('Já há apontamentos lançados. Trocar pelos do parecer guardado no banco?')) return;
-    var det = await api('historico/obter', { id: p.id });
+    var det = await api(String(p.id).indexOf('acv:') === 0 ? 'acervo/obter' : 'historico/obter', { id: p.id });
     if (!det || det.ok === false) { mostrarToast((det && det.erro) || 'Erro ao ler o parecer no banco.'); return; }
     a.tipo = p.tipo_unidade && p.tipo_unidade !== 'OUTRO' ? p.tipo_unidade : a.tipo;
     if (p.oss) a.nome_oss = a.nome_oss || p.oss;
@@ -80,7 +88,7 @@ async function descPuxarBanco() {
     DESC.itens = dbMontarItens(det);
     // contexto: últimos trimestres da mesma unidade
     var ant = dbAnteriores(a.unidade, a.ano, a.trimestre, 4), dets = [];
-    for (var i = 0; i < ant.length; i++) { var d = await api('historico/obter', { id: ant[i].id }); dets.push({ p: ant[i], d: (d && d.ok !== false) ? d : null }); }
+    for (var i = 0; i < ant.length; i++) { var d = await api(String(ant[i].id).indexOf('acv:') === 0 ? 'acervo/obter' : 'historico/obter', { id: ant[i].id }); dets.push({ p: ant[i], d: (d && d.ok !== false) ? d : null }); }
     DESC._banco = { parecer: p, det: det, anteriores: dets };
     DESC._sujo = true;
     descDesenhar(); descMudou();
