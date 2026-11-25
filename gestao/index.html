@@ -716,19 +716,18 @@ async function telaUsuarios() {
         <h2 style="margin:0;"><i class="ti ti-users"></i> Usuários <small>${ativos} ativo(s) de ${_usuarios.length}</small></h2>
         <button class="btn btn-escuro" style="margin-left:auto;" onclick="formUsuario()"><i class="ti ti-user-plus"></i> Novo usuário</button>
       </div>
-      <div class="rolagem"><table class="tabela"><tr><th>Nome</th><th>Login</th><th>Gerência</th><th>Perfil</th><th>Acesso</th><th>IA</th><th>Situação</th><th></th></tr>` +
+      <div class="rolagem"><table class="tabela"><tr><th>Nome</th><th>Login</th><th>Gerência</th><th>Perfil</th><th>Acesso</th><th>Situação</th><th></th></tr>` +
       _usuarios.map(u => `<tr style="${u.ativo ? '' : 'opacity:.55;'}">
         <td><b>${esc(u.nome)}</b></td><td>${esc(u.login)}</td><td>${esc(u.gerencia)}</td>
         <td>${u.perfil === 'admin' ? '<span class="etq azul">Administrador</span>' : 'Analista'}</td>
         <td>${acesso(u)}</td>
-        <td>${iaDaPessoaHtml(u.login)}</td>
         <td>${!u.ativo ? '<span class="etq">Desativado</span>' : u.bloqueado ? '<span class="etq vermelho">Bloqueado por senha errada</span>' : '<span class="etq" style="background:#d1e7dd;color:#0f5132;">Ativo</span>'}</td>
         <td style="white-space:nowrap;">
           <button class="btn" title="Editar" onclick="formUsuario(${u.id})"><i class="ti ti-pencil"></i></button>
           <button class="btn" title="Redefinir senha" onclick="redefinirSenha(${u.id})"><i class="ti ti-key"></i></button>
           ${u.bloqueado ? `<button class="btn" title="Liberar o login" onclick="desbloquear(${u.id})"><i class="ti ti-lock-open"></i></button>` : ''}
         </td></tr>`).join('') + `</table></div>
-      <div class="dica" style="margin-top:10px;">Mudanças de perfil, acesso ou situação valem na hora: se a pessoa estiver logada, ela precisa entrar de novo. Mudanças de IA valem no próximo login dela.</div>
+      <div class="dica" style="margin-top:10px;">Mudanças de perfil, acesso ou situação valem na hora: se a pessoa estiver logada, ela precisa entrar de novo. A IA é a mesma para todos (chave geral, no quadro abaixo).</div>
     </div>` + painelChavesHtml();
   _avisoUsuarios = '';
 }
@@ -755,7 +754,6 @@ function formUsuario(id) {
     <label class="marcar"><input type="checkbox" id="fu-app-raiox" ${lista.includes('raiox') ? 'checked' : ''}> Raio-X <span class="dica" style="margin:0;">(escrutínio geral; só quem for liberado)</span></label>
     ${u ? `<label class="marcar" style="margin-top:12px;"><input type="checkbox" id="fu-ativo" ${u.ativo ? 'checked' : ''}> Ativo (desmarque para cortar o acesso, mantendo o histórico)</label>`
         : `<label>Senha inicial</label><input id="fu-senha" value="${SENHA_TESTE_PADRAO}"><div class="dica">Senha de teste. Antes do uso real, cada pessoa deve ter a sua.</div>`}
-    ${secaoIAHtml(u ? u.login : '')}
     <div id="fu-erro" class="erro hidden"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
       <button class="btn" onclick="fecharJanela()">Cancelar</button>
@@ -783,7 +781,7 @@ async function salvarUsuario(id) {
   const padrao = perfil === 'admin' ? 'analista,gestao,docs,descontos' : 'analista';
   const corpo = { nome_usuario: $('fu-nome').value.trim(), gerencia_usuario: $('fu-gerencia').value.trim(), perfil_usuario: perfil,
     apps_usuario: marcados.join(',') === padrao ? '' : marcados.join(',') };
-  corpo.ia_escolhas = escolhasIA();
+  corpo.ia_escolhas = {};   // a IA agora é uma chave geral; a pessoa não escolhe mais
   if (id) { corpo.id_usuario = id; corpo.ativo_usuario = $('fu-ativo').checked; }
   else {
     corpo.login_usuario = $('fu-login').value.trim().toLowerCase();
@@ -821,93 +819,22 @@ async function desbloquear(id) {
   telaUsuarios();
 }
 
-// ==================== IA DE CADA PESSOA (dentro de Usuários) ====================
+// ==================== CHAVE GERAL DE IA ====================
 // As chaves ficam guardadas no servidor; a tela nunca recebe a chave completa, só o final.
+// Há uma chave geral por serviço, valendo para todos os usuários (não há mais chave por pessoa nem por gerência).
 let _chaves = [], _chavesUsuarios = [], _servicosIA = {};
-
-// Uma chave vale para: toda a diretoria ('*'), gerências inteiras (k.gerencias) e/ou pessoas (k.para).
-const _normG = g => String(g || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().toLowerCase();
-function _gerenciaDoLogin(login) {
-  const u = _chavesUsuarios.find(x => x.email === String(login).toLowerCase());
-  return u ? u.gerencia : '';
-}
-function _valeGerencia(k, login) {
-  const g = _normG(_gerenciaDoLogin(login));
-  return !!g && (k.gerencias || []).some(x => _normG(x) === g);
-}
-function _chaveValePara(k, login) {
-  if (!k.ativa) return false;
-  const fora = (k.exceto || []).includes(login);
-  if (k.para === '*') return !fora;
-  if (Array.isArray(k.para) && k.para.includes(login)) return true;
-  return !fora && _valeGerencia(k, login);
-}
-// Mais específica primeiro: pessoa (0), gerência (1), diretoria (2). Empate: menor ordem.
-function _escopoRank(k, login) {
-  if (Array.isArray(k.para) && k.para.includes(login)) return 0;
-  return _valeGerencia(k, login) ? 1 : 2;
-}
-function _chaveDe(login, servico) {
-  return _chaves.filter(k => k.servico === servico && _chaveValePara(k, login))
-    .sort((a, b) => (_escopoRank(a, login) - _escopoRank(b, login)) || (a.ordem - b.ordem))[0] || null;
-}
-function _rotuloEscopo(k) {
-  if (k.para === '*') return ' (diretoria)';
-  if ((k.gerencias || []).length && !(k.para || []).length) return ' (gerência)';
-  return '';
-}
-function iaDaPessoaHtml(login) {
-  const servicos = Object.keys(_servicosIA).filter(s => _chaveDe(login, s));
-  return servicos.length
-    ? servicos.map(s => { const k = _chaveDe(login, s); return `<span class="etq azul" style="margin:0 4px 4px 0;" title="${esc(k.rotulo)} ••••${esc(k.final)}">${esc(_servicosIA[s])}</span>`; }).join('')
-    : '<span class="zero">sem IA</span>';
-}
-
-// Seção "IA desta pessoa" da janela de cadastro
-function secaoIAHtml(login) {
-  const linhas = Object.entries(_servicosIA).map(([s, nome]) => {
-    const atual = login ? _chaveDe(login, s) : (_chaves.filter(k => k.servico === s && k.ativa && k.para === '*').sort((a, b) => a.ordem - b.ordem)[0] || null);
-    const opcoes = _chaves.filter(k => k.servico === s).map(k => `<option value="${esc(k.id)}" ${atual && atual.id === k.id ? 'selected' : ''}>${esc(k.rotulo)} ••••${esc(k.final)}${_rotuloEscopo(k)}${k.ativa ? '' : ' (suspensa)'}</option>`).join('');
-    return `<div style="display:grid; grid-template-columns:110px 1fr; gap:6px 10px; align-items:center; margin-bottom:8px;">
-      <b style="font-size:.85rem;">${esc(nome)}</b>
-      <select id="fia-${s}" onchange="$('fia-nova-${s}').style.display = this.value === '__nova' ? 'grid' : 'none'">
-        <option value="__nenhum" ${atual ? '' : 'selected'}>Sem acesso</option>${opcoes}<option value="__nova">Cadastrar uma chave nova…</option></select>
-      <div id="fia-nova-${s}" style="display:none; grid-column:2; grid-template-columns:1fr 1fr; gap:6px;">
-        <input id="fia-chave-${s}" type="password" autocomplete="off" placeholder="Cole a chave de ${esc(nome)}">
-        <input id="fia-rotulo-${s}" placeholder="Nome para lembrar (opcional)"></div>
-    </div>`;
-  }).join('');
-  return `<label style="margin-top:14px;">IA desta pessoa</label>
-    <div style="border:1px solid var(--borda); border-radius:6px; padding:10px 12px;">${linhas}
-      <div class="dica" style="margin:4px 0 0;">Chaves da mesma conta dividem o mesmo limite de uso. Para a pessoa ter a própria cota, cadastre uma chave de outra conta.</div></div>`;
-}
-function escolhasIA() {
-  const e = {};
-  Object.keys(_servicosIA).forEach(s => {
-    const v = $('fia-' + s)?.value;
-    if (!v) return;
-    if (v === '__nenhum') e[s] = { modo: 'nenhum' };
-    else if (v === '__nova') e[s] = { modo: 'nova', chave: $('fia-chave-' + s).value.trim(), rotulo: $('fia-rotulo-' + s).value.trim() };
-    else e[s] = { modo: 'existente', id: v };
-  });
-  return e;
-}
 
 // Quadro das chaves (tarefas que são da chave, não da pessoa)
 function painelChavesHtml() {
-  const nomeDe = e => (_chavesUsuarios.find(u => u.email === e) || {}).nome || e;
-  const quem = k => {
-    if (k.para === '*') return '<b>Toda a diretoria</b>' + ((k.exceto || []).length ? ` <span style="color:var(--mudo);">(menos ${k.exceto.length})</span>` : '');
-    const partes = [];
-    if ((k.gerencias || []).length) partes.push('<b>Gerência:</b> ' + k.gerencias.map(g => esc(g)).join(', ') + ((k.exceto || []).length ? ` <span style="color:var(--mudo);">(menos ${k.exceto.length})</span>` : ''));
-    if ((k.para || []).length) partes.push(k.para.map(e => esc(nomeDe(e))).join(', '));
-    return partes.length ? partes.join('<br>') : '<span class="zero">ninguém</span>';
-  };
+  const geral = k => k.para === '*' && !(k.exceto || []).length;
+  const antigas = _chaves.filter(k => !geral(k));
+  const quem = k => geral(k) ? 'Todos os usuários' : '<span class="etq vermelho">Chave antiga (só para alguns)</span>';
   return `<div class="bloco">
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
-      <h2 style="margin:0;"><i class="ti ti-key"></i> Chaves de IA cadastradas <small>${_chaves.length}</small></h2>
-      <button class="btn" style="margin-left:auto;" onclick="formChave('')"><i class="ti ti-plus"></i> Nova chave (diretoria ou gerência)</button></div>
-    <div class="dica" style="margin:0 0 10px;">Cada chave pode valer para toda a diretoria, para uma ou mais gerências, ou para pessoas (cadastradas na janela de cada uma). Quando mais de uma chave do mesmo serviço serve para a pessoa, vale a mais específica: pessoa, depois gerência, depois diretoria. Aqui você também troca uma chave vencida, suspende, apaga e define a ordem de tentativa.</div>
+      <h2 style="margin:0;"><i class="ti ti-key"></i> Chave de IA geral <small>${_chaves.length}</small></h2>
+      <button class="btn" style="margin-left:auto;" onclick="formChave('')"><i class="ti ti-plus"></i> Nova chave</button></div>
+    <div class="dica" style="margin:0 0 10px;">Uma chave por serviço de IA, valendo para todos os usuários. Para usar mais de um serviço, cadastre uma chave de cada e defina a ordem de tentativa (1 é tentado primeiro). Aqui você também troca uma chave vencida, suspende ou apaga. A mudança vale no próximo login de cada pessoa.</div>
+    ${antigas.length ? `<div class="erro" style="margin-bottom:10px;">Ainda há ${antigas.length} chave(s) antiga(s), cadastrada(s) só para uma gerência ou pessoas, e elas valem antes da geral para quem as recebeu. Para todos usarem a geral, apague a antiga ou edite-a e salve (ela passa a valer para todos).</div>` : ''}
     ${_chaves.length ? `<div class="rolagem"><table class="tabela"><tr><th>Ordem</th><th>Serviço</th><th>Chave</th><th>Quem usa</th><th>Situação</th><th></th></tr>` +
       _chaves.map(k => `<tr style="${k.ativa ? '' : 'opacity:.55;'}"><td class="n"><b>${k.ordem}</b></td>
         <td><b>${esc(k.servico_nome)}</b><br><span style="color:var(--mudo); font-size:.75rem;">${esc(k.rotulo)}</span></td>
@@ -915,33 +842,22 @@ function painelChavesHtml() {
         <td>${k.ativa ? '<span class="etq azul">Ativa</span>' : '<span class="etq">Suspensa</span>'}</td>
         <td style="white-space:nowrap;"><button class="btn" title="Editar" onclick="formChave('${esc(k.id)}')"><i class="ti ti-pencil"></i></button>
           <button class="btn" title="Apagar" onclick="removerChave('${esc(k.id)}')"><i class="ti ti-trash"></i></button></td></tr>`).join('') + '</table></div>'
-      : '<div class="vazio">Nenhuma chave cadastrada ainda. Crie uma chave para a diretoria ou para uma gerência, ou cadastre na janela de cada pessoa.</div>'}
+      : '<div class="vazio">Nenhuma chave cadastrada ainda. Clique em "Nova chave" e cadastre a do DeepSeek.</div>'}
   </div>`;
 }
 
 function formChave(id) {
   const k = id ? _chaves.find(x => x.id === id) : null;
-  const modo = !k || k.para === '*' ? 'diretoria' : ((k.gerencias || []).length ? 'gerencias' : 'pessoas');
-  const vistas = {};   // "GGPCG" e "ggpcg " contam como a mesma gerência
-  [..._chavesUsuarios.map(u => u.gerencia), ...(k ? (k.gerencias || []) : [])].forEach(g => { g = String(g || '').replace(/\s+/g, ' ').trim(); if (g && !vistas[_normG(g)]) vistas[_normG(g)] = g; });
-  const todasGer = Object.values(vistas).sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const marcada = g => k && (k.gerencias || []).some(x => _normG(x) === _normG(g));
   const fundo = document.createElement('div');
   fundo.className = 'janela-fundo'; fundo.id = 'janela-chave';
   fundo.innerHTML = `<div class="janela">
     <h2>${k ? 'Editar chave' : 'Nova chave de IA'}</h2>
-    <label>Serviço</label><select id="fk-servico" ${k ? 'disabled' : ''}>${Object.entries(_servicosIA).map(([v, n]) => `<option value="${v}" ${k && k.servico === v ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
-    <label>Nome para lembrar</label><input id="fk-rotulo" value="${esc(k ? k.rotulo : '')}" placeholder="ex.: DeepSeek da GGPCG">
+    <label>Serviço</label><select id="fk-servico" ${k ? 'disabled' : ''}>${Object.entries(_servicosIA).map(([v, n]) => `<option value="${v}" ${(k ? k.servico === v : v === 'deepseek') ? 'selected' : ''}>${esc(n)}</option>`).join('')}</select>
+    <label>Nome para lembrar</label><input id="fk-rotulo" value="${esc(k ? k.rotulo : '')}" placeholder="ex.: DeepSeek geral">
     <label>${k ? 'Trocar a chave (opcional)' : 'Chave'}</label><input id="fk-chave" type="password" autocomplete="off" placeholder="${k ? 'Deixe em branco para manter a atual (final ' + esc(k.final) + ')' : 'Cole a chave do serviço'}">
     <div class="dica">Depois de salva, a chave não aparece mais aqui; só os 4 últimos caracteres.</div>
     <label>Ordem de tentativa</label><select id="fk-ordem">${[1, 2, 3, 4, 5, 6].map(n => `<option ${(k ? k.ordem : 1) === n ? 'selected' : ''}>${n}</option>`).join('')}</select>
-    <label style="margin-top:12px;">Quem usa esta chave</label>
-    <label class="marcar"><input type="radio" name="fk-escopo" value="diretoria" ${modo === 'diretoria' ? 'checked' : ''} onchange="$('fk-gers').style.display='none'"> Toda a diretoria (todos os usuários)</label>
-    <label class="marcar"><input type="radio" name="fk-escopo" value="gerencias" ${modo === 'gerencias' ? 'checked' : ''} onchange="$('fk-gers').style.display='block'"> Só as gerências marcadas</label>
-    <div id="fk-gers" style="display:${modo === 'gerencias' ? 'block' : 'none'}; margin:4px 0 4px 24px; max-height:160px; overflow:auto; border:1px solid var(--borda); border-radius:6px; padding:6px 10px;">
-      ${todasGer.length ? todasGer.map(g => `<label class="marcar"><input type="checkbox" class="fk-ger" value="${esc(g)}" ${marcada(g) ? 'checked' : ''}> ${esc(g)}</label>`).join('') : '<span class="zero">Nenhuma gerência cadastrada nos usuários.</span>'}</div>
-    ${k && (k.para || []).length && k.para !== '*' ? `<label class="marcar"><input type="radio" name="fk-escopo" value="pessoas" ${modo === 'pessoas' ? 'checked' : ''} onchange="$('fk-gers').style.display='none'"> Só as pessoas já escolhidas no cadastro de cada uma</label>` : ''}
-    <div class="dica">Se uma pessoa tem chave própria, ela vale primeiro; depois a da gerência dela; depois a da diretoria. A gerência de cada pessoa é a do cadastro de usuários.</div>
+    <div class="dica">Esta chave vale para todos os usuários.</div>
     <label class="marcar" style="margin-top:10px;"><input type="checkbox" id="fk-ativa" ${!k || k.ativa ? 'checked' : ''}> Ativa (desmarque para suspender sem apagar)</label>
     <div id="fk-erro" class="erro hidden"></div>
     <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
@@ -954,10 +870,8 @@ function formChave(id) {
 async function salvarChave(id) {
   const erro = $('fk-erro'); erro.classList.add('hidden');
   const k = id ? _chaves.find(x => x.id === id) : null;
-  const modo = (document.querySelector('input[name="fk-escopo"]:checked') || {}).value || 'diretoria';
-  const gerencias = modo === 'gerencias' ? [...document.querySelectorAll('.fk-ger:checked')].map(x => x.value) : [];
-  if (modo === 'gerencias' && !gerencias.length) { erro.textContent = 'Marque pelo menos uma gerência.'; erro.classList.remove('hidden'); return; }
-  const para = modo === 'diretoria' ? '*' : (k && Array.isArray(k.para) ? k.para : []);
+  const gerencias = [], para = '*';   // chave geral: vale para todos os usuários
+  if (!k && !$('fk-chave').value.trim()) { erro.textContent = 'Cole a chave do serviço.'; erro.classList.remove('hidden'); return; }
   const botao = $('fk-salvar'); botao.disabled = true;
   const res = await api('adm/chaves-salvar', { id: id || '', servico: k ? k.servico : $('fk-servico').value, rotulo: $('fk-rotulo').value.trim(),
     chave: $('fk-chave').value.trim(), ordem: Number($('fk-ordem').value), para, gerencias, ativa: $('fk-ativa').checked });
